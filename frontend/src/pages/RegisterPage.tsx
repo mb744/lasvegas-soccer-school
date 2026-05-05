@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useForm, useFieldArray, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -7,15 +6,16 @@ import { z } from 'zod'
 import { Layout } from '../components/Layout'
 import { SignaturePad } from '../components/SignaturePad'
 import { Api } from '../api/client'
-import type { InvitationLookupResponse, SubmitRegistrationRequest } from '../api/types'
+import { useAuth } from '../auth/AuthContext'
+import type { PlayerSummary, SubmitRegistrationRequest } from '../api/types'
 
 const playerSchema = z.object({
+  playerId: z.number().int().positive().nullable().optional(),
   firstName: z.string().min(1),
   lastName: z.string().min(1),
   dateOfBirth: z.string().min(1),
   schoolGrade: z.string().min(1),
-  shirtSize: z.string().min(1),
-  shortSize: z.string().min(1),
+  uniformSize: z.string().min(1),
   shoeSize: z.string().min(1),
   heardFrom: z.string().optional(),
   waiverParticipantName: z.string().min(1),
@@ -42,16 +42,16 @@ const formSchema = z.object({
 
 type FormValues = z.infer<typeof formSchema>
 
-const SHIRT_SIZES = ['YXS', 'YS', 'YM', 'YL', 'YXL', 'AS', 'AM', 'AL', 'AXL', 'A2XL']
+const UNIFORM_SIZES = ['YXS', 'YS', 'YM', 'YL', 'YXL', 'AS', 'AM', 'AL', 'AXL', 'A2XL']
 const GRADES = ['Pre-K', 'K', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12']
 
 const emptyPlayer = {
+  playerId: null as number | null,
   firstName: '',
   lastName: '',
   dateOfBirth: '',
   schoolGrade: '',
-  shirtSize: '',
-  shortSize: '',
+  uniformSize: '',
   shoeSize: '',
   heardFrom: '',
   waiverParticipantName: '',
@@ -63,11 +63,9 @@ const emptyPlayer = {
 }
 
 export function RegisterPage() {
-  const { token = '' } = useParams()
   const { t, i18n } = useTranslation()
-
-  const [invite, setInvite] = useState<InvitationLookupResponse | null>(null)
-  const [loadError, setLoadError] = useState<string | null>(null)
+  const { me } = useAuth()
+  const [roster, setRoster] = useState<PlayerSummary[]>([])
   const [submitState, setSubmitState] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle')
   const [submitError, setSubmitError] = useState<string | null>(null)
 
@@ -90,26 +88,22 @@ export function RegisterPage() {
 
   const { fields, append, remove } = useFieldArray({ control: form.control, name: 'players' })
 
+  // Load roster + prefill parent profile from auth.
   useEffect(() => {
-    let active = true
-    Api.lookupInvite(token)
-      .then(data => {
-        if (!active) return
-        setInvite(data)
-        const lang = data.language === 1 ? 'es' : 'en'
-        if (i18n.resolvedLanguage !== lang) i18n.changeLanguage(lang)
-        if (data.email) form.setValue('email', data.email)
-        if (data.phone) form.setValue('cellPhone', data.phone)
-      })
-      .catch(() => {
-        if (active) setLoadError(t('register.invalidLink'))
-      })
-    return () => { active = false }
-  }, [token])
+    if (!me) return
+    form.setValue('parentFirstName', me.firstName)
+    form.setValue('parentLastName', me.lastName)
+    form.setValue('email', me.email)
+    if (me.phone) form.setValue('cellPhone', me.phone)
+    const lang = me.language === 1 ? 'es' : 'en'
+    if (i18n.resolvedLanguage !== lang) i18n.changeLanguage(lang)
+  }, [me])
+
+  useEffect(() => {
+    Api.listPlayers().then(setRoster).catch(() => {})
+  }, [])
 
   // Sync prepopulated waiver fields whenever parent info or player name/DOB change.
-  // Watching specific fields and updating per-player waiver fields if they're still
-  // matching the previous parent value (i.e. user hasn't customized them).
   const watch = form.watch
   const parentFirst = watch('parentFirstName')
   const parentLast = watch('parentLastName')
@@ -136,7 +130,6 @@ export function RegisterPage() {
     setSubmitState('submitting')
     setSubmitError(null)
     const payload: SubmitRegistrationRequest = {
-      token,
       parentFirstName: values.parentFirstName,
       parentLastName: values.parentLastName,
       addressLine1: values.addressLine1,
@@ -149,12 +142,12 @@ export function RegisterPage() {
       language: i18n.resolvedLanguage?.startsWith('es') ? 1 : 0,
       waiverConsent: values.waiverConsent,
       players: values.players.map(p => ({
-        firstName: p.firstName,
-        lastName: p.lastName,
-        dateOfBirth: p.dateOfBirth,
+        playerId: p.playerId ?? null,
+        firstName: p.playerId ? undefined : p.firstName,
+        lastName: p.playerId ? undefined : p.lastName,
+        dateOfBirth: p.playerId ? undefined : p.dateOfBirth,
         schoolGrade: p.schoolGrade,
-        shirtSize: p.shirtSize,
-        shortSize: p.shortSize,
+        uniformSize: p.uniformSize,
         shoeSize: p.shoeSize,
         heardFrom: p.heardFrom,
         waiverParticipantName: p.waiverParticipantName,
@@ -175,26 +168,6 @@ export function RegisterPage() {
     }
   }
 
-  if (loadError) {
-    return (
-      <Layout>
-        <div className="max-w-2xl mx-auto px-4 py-16 text-center">
-          <h1 className="text-2xl font-bold text-rose-700">{loadError}</h1>
-        </div>
-      </Layout>
-    )
-  }
-
-  if (invite?.alreadyRegistered) {
-    return (
-      <Layout>
-        <div className="max-w-2xl mx-auto px-4 py-16 text-center">
-          <h1 className="text-2xl font-bold text-emerald-800">{t('register.alreadyUsed')}</h1>
-        </div>
-      </Layout>
-    )
-  }
-
   if (submitState === 'success') {
     return (
       <Layout>
@@ -203,14 +176,6 @@ export function RegisterPage() {
           <h1 className="text-3xl font-bold text-emerald-800">{t('register.successTitle')}</h1>
           <p className="mt-3 text-slate-600">{t('register.successBody')}</p>
         </div>
-      </Layout>
-    )
-  }
-
-  if (!invite) {
-    return (
-      <Layout>
-        <div className="max-w-2xl mx-auto px-4 py-16 text-center text-slate-500">{t('common.loading')}</div>
       </Layout>
     )
   }
@@ -227,6 +192,7 @@ export function RegisterPage() {
           <PlayersSection
             fields={fields}
             form={form}
+            roster={roster}
             onAdd={() => append(emptyPlayer)}
             onRemove={(i) => remove(i)}
           />
@@ -264,13 +230,11 @@ export function RegisterPage() {
   )
 }
 
-// Heuristic: is `value` derived from one of the player names in `players`?
 function isPlayerNameDerived(value: string, players: any[], skipIdx: number) {
   const norm = value.trim().toLowerCase()
   return players.some((p, i) => i !== skipIdx && norm === `${p.firstName} ${p.lastName}`.trim().toLowerCase())
 }
 function isParentNameDerived(_value: string) {
-  // We don't know the previous parent name reliably; only auto-fill when empty.
   return false
 }
 
@@ -345,15 +309,20 @@ function ParentSection({ form }: { form: any }) {
 function PlayersSection({
   fields,
   form,
+  roster,
   onAdd,
   onRemove,
 }: {
   fields: any[]
   form: any
+  roster: PlayerSummary[]
   onAdd: () => void
   onRemove: (i: number) => void
 }) {
   const { t } = useTranslation()
+  const usedIds: number[] = (form.watch('players') as any[])
+    .map(p => p.playerId)
+    .filter((x: number | null | undefined): x is number => typeof x === 'number')
   return (
     <div className="space-y-6">
       {fields.map((field, idx) => (
@@ -361,6 +330,8 @@ function PlayersSection({
           key={field.id}
           idx={idx}
           form={form}
+          roster={roster}
+          usedIds={usedIds}
           canRemove={fields.length > 1}
           onRemove={() => onRemove(idx)}
         />
@@ -380,16 +351,41 @@ function PlayersSection({
 function PlayerCard({
   idx,
   form,
+  roster,
+  usedIds,
   canRemove,
   onRemove,
 }: {
   idx: number
   form: any
+  roster: PlayerSummary[]
+  usedIds: number[]
   canRemove: boolean
   onRemove: () => void
 }) {
   const { t } = useTranslation()
   const e = form.formState.errors.players?.[idx] ?? {}
+  const playerId: number | null = form.watch(`players.${idx}.playerId`) ?? null
+  const usingExisting = playerId !== null
+
+  const onPickRoster = (id: number) => {
+    const r = roster.find(p => p.id === id)
+    if (!r) return
+    form.setValue(`players.${idx}.playerId`, id)
+    form.setValue(`players.${idx}.firstName`, r.firstName)
+    form.setValue(`players.${idx}.lastName`, r.lastName)
+    form.setValue(`players.${idx}.dateOfBirth`, r.dateOfBirth)
+  }
+
+  const switchToNew = () => {
+    form.setValue(`players.${idx}.playerId`, null)
+    form.setValue(`players.${idx}.firstName`, '')
+    form.setValue(`players.${idx}.lastName`, '')
+    form.setValue(`players.${idx}.dateOfBirth`, '')
+  }
+
+  const availableRoster = roster.filter(r => r.id === playerId || !usedIds.includes(r.id))
+
   return (
     <div className="bg-white border border-slate-200 rounded-lg p-6 space-y-6">
       <div className="flex items-center justify-between">
@@ -401,15 +397,37 @@ function PlayerCard({
         )}
       </div>
 
+      {roster.length > 0 && (
+        <div className="grid sm:grid-cols-2 gap-3 bg-slate-50 rounded-md p-4">
+          <Field label={t('register.players.pickRoster')} span={2}>
+            <select
+              className={inputCls}
+              value={playerId ?? ''}
+              onChange={(ev) => {
+                const v = ev.target.value
+                if (v === '') switchToNew()
+                else onPickRoster(Number(v))
+              }}
+            >
+              <option value="">{t('register.players.newPlayer')}</option>
+              {availableRoster.map(r => (
+                <option key={r.id} value={r.id}>{r.firstName} {r.lastName} ({r.dateOfBirth})</option>
+              ))}
+            </select>
+            <span className="text-xs text-slate-500 mt-1">{t('register.players.rosterHint')}</span>
+          </Field>
+        </div>
+      )}
+
       <div className="grid sm:grid-cols-2 gap-4">
         <Field label={t('register.players.firstName')} error={e.firstName && t('common.required')}>
-          <input className={inputCls} {...form.register(`players.${idx}.firstName`)} />
+          <input className={inputCls} disabled={usingExisting} {...form.register(`players.${idx}.firstName`)} />
         </Field>
         <Field label={t('register.players.lastName')} error={e.lastName && t('common.required')}>
-          <input className={inputCls} {...form.register(`players.${idx}.lastName`)} />
+          <input className={inputCls} disabled={usingExisting} {...form.register(`players.${idx}.lastName`)} />
         </Field>
         <Field label={t('register.players.dob')} error={e.dateOfBirth && t('common.required')}>
-          <input type="date" className={inputCls} {...form.register(`players.${idx}.dateOfBirth`)} />
+          <input type="date" className={inputCls} disabled={usingExisting} {...form.register(`players.${idx}.dateOfBirth`)} />
         </Field>
         <Field label={t('register.players.grade')} error={e.schoolGrade && t('common.required')}>
           <select className={inputCls} {...form.register(`players.${idx}.schoolGrade`)}>
@@ -417,16 +435,10 @@ function PlayerCard({
             {GRADES.map(g => <option key={g} value={g}>{g}</option>)}
           </select>
         </Field>
-        <Field label={t('register.players.shirtSize')} error={e.shirtSize && t('common.required')}>
-          <select className={inputCls} {...form.register(`players.${idx}.shirtSize`)}>
+        <Field label={t('register.players.uniformSize')} error={e.uniformSize && t('common.required')}>
+          <select className={inputCls} {...form.register(`players.${idx}.uniformSize`)}>
             <option value="">—</option>
-            {SHIRT_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-        </Field>
-        <Field label={t('register.players.shortSize')} error={e.shortSize && t('common.required')}>
-          <select className={inputCls} {...form.register(`players.${idx}.shortSize`)}>
-            <option value="">—</option>
-            {SHIRT_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
+            {UNIFORM_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
         </Field>
         <Field label={t('register.players.shoeSize')} error={e.shoeSize && t('common.required')}>

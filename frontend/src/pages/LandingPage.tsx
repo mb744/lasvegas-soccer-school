@@ -1,9 +1,12 @@
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Layout } from '../components/Layout'
+import { useAuth } from '../auth/AuthContext'
 
 export function LandingPage() {
   const { t } = useTranslation()
+  const { me } = useAuth()
+  const ctaTo = me ? '/register' : '/signup'
 
   const pillars = [
     { key: 'coach', icon: '🏆' },
@@ -21,13 +24,21 @@ export function LandingPage() {
           <p className="mt-4 text-lg sm:text-xl text-emerald-50 max-w-2xl mx-auto">
             {t('landing.subhero')}
           </p>
-          <div className="mt-8">
-            <a
-              href="#info"
+          <div className="mt-8 flex items-center justify-center gap-3">
+            <Link
+              to={ctaTo}
               className="inline-block bg-white text-emerald-800 font-semibold px-6 py-3 rounded-md shadow hover:shadow-lg transition"
             >
               {t('landing.cta')}
-            </a>
+            </Link>
+            {!me && (
+              <Link
+                to="/login"
+                className="inline-block bg-emerald-900/40 text-white font-medium px-5 py-3 rounded-md border border-emerald-100/30 hover:bg-emerald-900/60 transition"
+              >
+                {t('auth.login')}
+              </Link>
+            )}
           </div>
         </div>
       </section>
@@ -49,15 +60,6 @@ export function LandingPage() {
 
         <div className="mt-12 bg-amber-50 border border-amber-200 rounded-lg p-6 text-amber-800 text-sm">
           {t('landing.placeholder')}
-        </div>
-
-        <div className="mt-10 text-center">
-          <Link
-            to="/admin"
-            className="text-sm text-slate-400 hover:text-slate-600"
-          >
-            Admin →
-          </Link>
         </div>
       </section>
     </Layout>

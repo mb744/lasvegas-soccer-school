@@ -2,16 +2,34 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { LandingPage } from './pages/LandingPage'
 import { RegisterPage } from './pages/RegisterPage'
 import { AdminPage } from './pages/AdminPage'
+import { LoginPage } from './pages/LoginPage'
+import { SignupPage } from './pages/SignupPage'
+import { PrivacyPage } from './pages/PrivacyPage'
+import { DataDeletionPage } from './pages/DataDeletionPage'
+import { AuthProvider } from './auth/AuthContext'
+import { RequireAuth } from './auth/RequireAuth'
 
 export default function App() {
   return (
     <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<LandingPage />} />
-        <Route path="/register/:token" element={<RegisterPage />} />
-        <Route path="/admin" element={<AdminPage />} />
-        <Route path="*" element={<LandingPage />} />
-      </Routes>
+      <AuthProvider>
+        <Routes>
+          <Route path="/" element={<LandingPage />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/signup" element={<SignupPage />} />
+          <Route path="/privacy" element={<PrivacyPage />} />
+          <Route path="/data-deletion" element={<DataDeletionPage />} />
+          <Route
+            path="/register"
+            element={<RequireAuth><RegisterPage /></RequireAuth>}
+          />
+          <Route
+            path="/admin"
+            element={<RequireAuth adminOnly><AdminPage /></RequireAuth>}
+          />
+          <Route path="*" element={<LandingPage />} />
+        </Routes>
+      </AuthProvider>
     </BrowserRouter>
   )
 }
