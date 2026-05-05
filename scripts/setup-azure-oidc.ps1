@@ -55,63 +55,62 @@ function Info($msg) { Write-Host "    $msg" -ForegroundColor Gray }
 function Ok($msg)   { Write-Host "    $msg" -ForegroundColor Green }
 function Warn($msg) { Write-Host "    $msg" -ForegroundColor Yellow }
 
-# Find az.cmd / az.exe regardless of PATH quirks
-$azCmd = (Get-Command az -ErrorAction SilentlyContinue).Source
-if (-not $azCmd) { throw "az CLI not found on PATH." }
+if (-not (Get-Command az -ErrorAction SilentlyContinue)) {
+    throw "az CLI not found on PATH."
+}
 
-# Run an az command. Returns stdout (string) on success, $null if -AllowMissing and the
-# resource doesn't exist. Retries on transient network errors. Throws otherwise.
+# Run an az command via the PowerShell call operator (splatting preserves arg boundaries
+# including those containing spaces, e.g. JMESPath queries). Returns stdout text on success,
+# $null if -AllowMissing and the resource doesn't exist. Retries on transient network errors.
 function Invoke-Az {
     param(
-        [Parameter(Mandatory)] [string[]] $Args,
+        [Parameter(Mandatory)] [string[]] $AzArgs,
         [switch] $AllowMissing,
         [int] $MaxAttempts = 4
     )
+
     for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
-        $stdoutFile = [System.IO.Path]::GetTempFileName()
-        $stderrFile = [System.IO.Path]::GetTempFileName()
-        try {
-            $proc = Start-Process -FilePath $azCmd `
-                -ArgumentList $Args `
-                -NoNewWindow -Wait -PassThru `
-                -RedirectStandardOutput $stdoutFile `
-                -RedirectStandardError $stderrFile
+        # Merge stderr into the success stream so we can capture both into one variable
+        # without $ErrorActionPreference='Stop' interfering with native command output.
+        $merged = & az @AzArgs 2>&1
+        $exitCode = $LASTEXITCODE
 
-            $stdout = ''
-            if (Test-Path $stdoutFile) { $stdout = (Get-Content $stdoutFile -Raw) }
-            $stderr = ''
-            if (Test-Path $stderrFile) { $stderr = (Get-Content $stderrFile -Raw) }
-
-            if ($proc.ExitCode -eq 0) {
-                return $stdout
+        $stdoutLines = New-Object System.Collections.Generic.List[string]
+        $stderrLines = New-Object System.Collections.Generic.List[string]
+        foreach ($line in $merged) {
+            if ($line -is [System.Management.Automation.ErrorRecord]) {
+                [void]$stderrLines.Add([string]$line)
+            } else {
+                [void]$stdoutLines.Add([string]$line)
             }
-
-            if ($AllowMissing -and ($stderr -match 'ResourceNotFound|was not found|cannot be found|does not exist|not exist|Not Found')) {
-                return $null
-            }
-
-            $isTransient = $stderr -match '(Connection aborted|10054|RemoteDisconnected|read timed out|timed? ?out|temporarily unavailable|HTTPSConnectionPool|503 |429 |Bad Gateway|502 |504 )'
-            if ($isTransient -and $attempt -lt $MaxAttempts) {
-                $delay = 5 * $attempt
-                Warn "[transient network error] retrying in $delay s (attempt $attempt of $MaxAttempts)"
-                Start-Sleep -Seconds $delay
-                continue
-            }
-
-            throw "az $($Args -join ' ') failed (exit $($proc.ExitCode)):`n$stderr"
         }
-        finally {
-            Remove-Item $stdoutFile -Force -ErrorAction SilentlyContinue
-            Remove-Item $stderrFile -Force -ErrorAction SilentlyContinue
+        $stdout = $stdoutLines -join "`n"
+        $stderr = $stderrLines -join "`n"
+        $allText = "$stdout`n$stderr"
+
+        if ($exitCode -eq 0) { return $stdout }
+
+        if ($AllowMissing -and ($allText -match '(?i)ResourceNotFound|was not found|cannot be found|does not exist|Not Found')) {
+            return $null
         }
+
+        $isTransient = $allText -match '(?i)(Connection aborted|10054|RemoteDisconnected|read timed out|timed? ?out|temporarily unavailable|HTTPSConnectionPool|\b503\b|\b429\b|\b502\b|\b504\b|Bad Gateway)'
+        if ($isTransient -and $attempt -lt $MaxAttempts) {
+            $delay = 5 * $attempt
+            Warn "[transient network error] retrying in $delay s (attempt $attempt of $MaxAttempts)"
+            Start-Sleep -Seconds $delay
+            continue
+        }
+
+        throw "az $($AzArgs -join ' ') failed (exit $exitCode):`n$allText"
     }
-    throw "az $($Args -join ' ') failed after $MaxAttempts attempts (transient errors)."
+    throw "az $($AzArgs -join ' ') failed after $MaxAttempts attempts (transient errors)."
 }
 
 # ---- 0. Sanity checks ----
 Step "Checking az login + subscription access"
-Invoke-Az @('account','set','--subscription',$SubscriptionId) | Out-Null
-$accountJson = Invoke-Az @('account','show','--query','{sub:id, tenant:tenantId, user:user.name}','-o','json')
+Invoke-Az -AzArgs @('account','set','--subscription',$SubscriptionId) | Out-Null
+$accountJson = Invoke-Az -AzArgs @('account','show','--query','{sub:id,tenant:tenantId,user:user.name}','-o','json')
 $current = $accountJson | ConvertFrom-Json
 if ($current.sub -ne $SubscriptionId) {
     throw "Active subscription is $($current.sub), expected $SubscriptionId. Run 'az login --tenant $TenantId' first."
@@ -123,9 +122,9 @@ Ok "Logged in as $($current.user) on sub $SubscriptionId"
 
 # ---- 1. Resource group ----
 Step "Ensuring resource group '$ResourceGroup' exists in '$Location'"
-$rgExists = (Invoke-Az @('group','exists','--name',$ResourceGroup)).Trim()
+$rgExists = (Invoke-Az -AzArgs @('group','exists','--name',$ResourceGroup)).Trim()
 if ($rgExists -ne 'true') {
-    Invoke-Az @('group','create','--name',$ResourceGroup,'--location',$Location) | Out-Null
+    Invoke-Az -AzArgs @('group','create','--name',$ResourceGroup,'--location',$Location) | Out-Null
     Ok "Created resource group"
 } else {
     Ok "Resource group already exists"
@@ -133,9 +132,9 @@ if ($rgExists -ne 'true') {
 
 # ---- 2. User-assigned managed identity for OIDC deployments ----
 Step "Ensuring user-assigned managed identity '$IdentityName' exists"
-$identityJson = Invoke-Az @('identity','show','--name',$IdentityName,'--resource-group',$ResourceGroup,'--output','json') -AllowMissing
+$identityJson = Invoke-Az -AzArgs @('identity','show','--name',$IdentityName,'--resource-group',$ResourceGroup,'--output','json') -AllowMissing
 if (-not $identityJson) {
-    $identityJson = Invoke-Az @('identity','create','--name',$IdentityName,'--resource-group',$ResourceGroup,'--location',$Location,'-o','json')
+    $identityJson = Invoke-Az -AzArgs @('identity','create','--name',$IdentityName,'--resource-group',$ResourceGroup,'--location',$Location,'-o','json')
     Ok "Created managed identity"
 } else {
     Ok "Managed identity already exists"
@@ -156,7 +155,7 @@ $federations = @(
 )
 
 foreach ($fed in $federations) {
-    $existing = Invoke-Az @('identity','federated-credential','show','--name',$fed.Name,'--identity-name',$IdentityName,'--resource-group',$ResourceGroup,'-o','json') -AllowMissing
+    $existing = Invoke-Az -AzArgs @('identity','federated-credential','show','--name',$fed.Name,'--identity-name',$IdentityName,'--resource-group',$ResourceGroup,'-o','json') -AllowMissing
     if ($existing) {
         Info ("  " + $fed.Name + " - already exists")
     } else {
@@ -169,9 +168,9 @@ foreach ($fed in $federations) {
         } | ConvertTo-Json -Compress
         $tmp = [System.IO.Path]::GetTempFileName()
         try {
-            # Write as ASCII so PS 5.1 doesn't add a UTF-16 BOM that az can't parse
-            [System.IO.File]::WriteAllText($tmp, $params, [System.Text.UTF8Encoding]::new($false))
-            Invoke-Az @('identity','federated-credential','create','--identity-name',$IdentityName,'--resource-group',$ResourceGroup,'--parameters',('@' + $tmp)) | Out-Null
+            # Write as UTF-8 without BOM so az parses it correctly
+            [System.IO.File]::WriteAllText($tmp, $params, (New-Object System.Text.UTF8Encoding $false))
+            Invoke-Az -AzArgs @('identity','federated-credential','create','--identity-name',$IdentityName,'--resource-group',$ResourceGroup,'--parameters',('@' + $tmp)) | Out-Null
             Ok ("  Created " + $fed.Name)
         } finally {
             Remove-Item $tmp -Force -ErrorAction SilentlyContinue
@@ -182,7 +181,7 @@ foreach ($fed in $federations) {
 # ---- 4. Grant Contributor on the resource group ----
 Step "Granting Contributor role on RG to managed identity"
 $rgScope = "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroup"
-$existingRoleJson = Invoke-Az @(
+$existingRoleJson = Invoke-Az -AzArgs @(
     'role','assignment','list',
     '--assignee-object-id',$principalId,
     '--assignee-principal-type','ServicePrincipal',
@@ -192,11 +191,10 @@ $existingRoleJson = Invoke-Az @(
 )
 $existingRole = $existingRoleJson.Trim()
 if (-not $existingRole) {
-    # Identity may take a few seconds to propagate to ARM
     $assigned = $false
     for ($i = 1; $i -le 6; $i++) {
         try {
-            Invoke-Az @(
+            Invoke-Az -AzArgs @(
                 'role','assignment','create',
                 '--assignee-object-id',$principalId,
                 '--assignee-principal-type','ServicePrincipal',
@@ -217,7 +215,7 @@ if (-not $existingRole) {
 }
 
 # ---- 5. Output ----
-$signedInJson = Invoke-Az @('ad','signed-in-user','show','-o','json')
+$signedInJson = Invoke-Az -AzArgs @('ad','signed-in-user','show','-o','json')
 $signedInUser = $signedInJson | ConvertFrom-Json
 $signedInObjectId = $signedInUser.id
 $signedInUpn = $signedInUser.userPrincipalName
@@ -238,6 +236,6 @@ Write-Host "  AZURE_RESOURCE_GROUP       = $ResourceGroup"
 Write-Host "  SQL_AAD_ADMIN_OBJECT_ID    = $signedInObjectId"
 Write-Host "  SQL_AAD_ADMIN_LOGIN        = $signedInUpn"
 Write-Host ""
-Write-Host "Or run: gh variable set <NAME> --body '<value>' --repo $GithubRepo"
+Write-Host "Or run scripts/set-github-vars.ps1 with these values."
 Write-Host ""
 Write-Host "All values above are non-secret; the federated credential means there is no client secret to store."
