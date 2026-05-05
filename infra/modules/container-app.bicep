@@ -1,0 +1,102 @@
+param name string
+param location string
+param tags object = {}
+param environmentId string
+param image string
+param managedIdentityResourceId string
+param managedIdentityClientId string
+
+@secure()
+param sqlConnectionString string
+
+@secure()
+param adminApiKey string
+
+@description('Min replicas (0 enables scale-to-zero).')
+param minReplicas int = 0
+param maxReplicas int = 3
+
+resource app 'Microsoft.App/containerApps@2024-03-01' = {
+  name: name
+  location: location
+  tags: tags
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${managedIdentityResourceId}': {}
+    }
+  }
+  properties: {
+    managedEnvironmentId: environmentId
+    configuration: {
+      ingress: {
+        external: true
+        targetPort: 8080
+        transport: 'auto'
+        allowInsecure: false
+        traffic: [
+          { latestRevision: true, weight: 100 }
+        ]
+      }
+      secrets: [
+        { name: 'sql-connection-string', value: sqlConnectionString }
+        { name: 'admin-api-key', value: adminApiKey }
+      ]
+      // GHCR public package — no registry auth needed.
+      // To switch to a private package, add a `registries` block referencing a PAT secret.
+    }
+    template: {
+      containers: [
+        {
+          name: 'app'
+          image: image
+          resources: {
+            cpu: json('0.5')
+            memory: '1Gi'
+          }
+          env: [
+            { name: 'ASPNETCORE_URLS', value: 'http://+:8080' }
+            { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
+            // Tells DefaultAzureCredential which user-assigned managed identity to use.
+            { name: 'AZURE_CLIENT_ID', value: managedIdentityClientId }
+            { name: 'ConnectionStrings__DefaultConnection', secretRef: 'sql-connection-string' }
+            { name: 'App__AdminApiKey', secretRef: 'admin-api-key' }
+            // CORS not strictly needed in single-origin deploy but kept for parity with dev.
+            { name: 'App__Cors__AllowedOrigins__0', value: 'https://${name}.${reference(environmentId, '2024-03-01').defaultDomain}' }
+            { name: 'App__PublicBaseUrl', value: 'https://${name}.${reference(environmentId, '2024-03-01').defaultDomain}' }
+          ]
+          probes: [
+            {
+              type: 'Liveness'
+              httpGet: { path: '/health', port: 8080 }
+              initialDelaySeconds: 10
+              periodSeconds: 30
+            }
+            {
+              type: 'Readiness'
+              httpGet: { path: '/health', port: 8080 }
+              initialDelaySeconds: 5
+              periodSeconds: 10
+            }
+          ]
+        }
+      ]
+      scale: {
+        minReplicas: minReplicas
+        maxReplicas: maxReplicas
+        rules: [
+          {
+            name: 'http-rule'
+            http: {
+              metadata: { concurrentRequests: '50' }
+            }
+          }
+        ]
+      }
+    }
+  }
+}
+
+output id string = app.id
+output name string = app.name
+output fqdn string = app.properties.configuration.ingress.fqdn

@@ -1,0 +1,15 @@
+# Default: let git decide
+* text=auto
+
+# Force LF — these run on Linux runners or in containers
+*.sh        text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+Dockerfile  text eol=lf
+*.bicep     text eol=lf
+*.bicepparam text eol=lf
+
+# Binary
+*.png binary
+*.jpg binary
+*.pdf binary

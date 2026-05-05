@@ -1,0 +1,25 @@
+# --- .NET ---
+bin/
+obj/
+*.user
+.vs/
+appsettings.*.local.json
+
+# --- Node / Vite ---
+node_modules/
+dist/
+.vite/
+.eslintcache
+
+# --- IDE / OS ---
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# --- Local artifacts ---
+test-waiver.pdf
+*.pfx
+.env
+.env.local
