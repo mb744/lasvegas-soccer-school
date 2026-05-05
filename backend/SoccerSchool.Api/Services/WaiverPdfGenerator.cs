@@ -7,7 +7,7 @@ namespace SoccerSchool.Api.Services;
 
 public interface IWaiverPdfGenerator
 {
-    byte[] GenerateForPlayer(Registration registration, Player player);
+    byte[] GenerateForPlayer(Registration registration, RegistrationPlayer registrationPlayer);
     byte[] GenerateForRegistration(Registration registration);
 }
 
@@ -21,15 +21,15 @@ public class WaiverPdfGenerator : IWaiverPdfGenerator
     private const string Accent = "#0a7d3b";
     private const string SectionBg = "#e2e8f0";
 
-    public byte[] GenerateForPlayer(Registration r, Player p) =>
-        Document.Create(c => RenderPlayerPage(c, r, p)).GeneratePdf();
+    public byte[] GenerateForPlayer(Registration r, RegistrationPlayer rp) =>
+        Document.Create(c => RenderPlayerPage(c, r, rp)).GeneratePdf();
 
     public byte[] GenerateForRegistration(Registration r) =>
         Document.Create(c =>
         {
             RenderSummaryPage(c, r);
-            foreach (var p in r.Players)
-                RenderPlayerPage(c, r, p);
+            foreach (var rp in r.Players)
+                RenderPlayerPage(c, r, rp);
         }).GeneratePdf();
 
     private static void RenderSummaryPage(IDocumentContainer container, Registration r)
@@ -46,6 +46,7 @@ public class WaiverPdfGenerator : IWaiverPdfGenerator
                 col.Item().AlignCenter().Text(es ? "RESUMEN DE INSCRIPCIÓN" : "REGISTRATION SUMMARY")
                     .FontSize(15).Bold();
                 col.Item().AlignCenter().Text(Brand).FontSize(11).SemiBold().FontColor(Accent);
+                col.Item().AlignCenter().Text($"{(es ? "Temporada" : "Season")}: {r.Season}").FontSize(10);
                 col.Item().PaddingTop(2).LineHorizontal(0.5f).LineColor(Accent);
             });
 
@@ -74,7 +75,7 @@ public class WaiverPdfGenerator : IWaiverPdfGenerator
                     LabelCell(table, es ? "Enviado:" : "Submitted:");
                     ValueCell(table, r.CreatedAt.ToString("yyyy-MM-dd HH:mm 'UTC'"));
                     LabelCell(table, es ? "Exenciones firmadas:" : "Waivers signed:");
-                    ValueCell(table, $"{r.Players.Count(p => !string.IsNullOrEmpty(p.SignatureDataUrl))} / {r.Players.Count}");
+                    ValueCell(table, $"{r.Players.Count(rp => !string.IsNullOrEmpty(rp.SignatureDataUrl))} / {r.Players.Count}");
                 });
 
                 col.Item().PaddingTop(4).Element(e =>
@@ -86,9 +87,8 @@ public class WaiverPdfGenerator : IWaiverPdfGenerator
                     {
                         c.RelativeColumn(2.5f); // Name
                         c.ConstantColumn(75);   // DOB
-                        c.ConstantColumn(50);   // Grade
-                        c.ConstantColumn(50);   // Shirt
-                        c.ConstantColumn(50);   // Short
+                        c.ConstantColumn(55);   // Grade
+                        c.ConstantColumn(65);   // Uniform
                         c.ConstantColumn(55);   // Shoe
                         c.ConstantColumn(55);   // Signed?
                     });
@@ -96,25 +96,23 @@ public class WaiverPdfGenerator : IWaiverPdfGenerator
                     HeaderCell(table, es ? "Nombre" : "Name");
                     HeaderCell(table, es ? "Nac." : "DOB");
                     HeaderCell(table, es ? "Grado" : "Grade");
-                    HeaderCell(table, es ? "Camiseta" : "Shirt");
-                    HeaderCell(table, es ? "Pantalón" : "Short");
+                    HeaderCell(table, es ? "Uniforme" : "Uniform");
                     HeaderCell(table, es ? "Calzado" : "Shoe");
                     HeaderCell(table, es ? "Firmada" : "Signed");
 
-                    foreach (var p in r.Players)
+                    foreach (var rp in r.Players)
                     {
+                        var p = rp.Player!;
                         BodyCell(table, $"{p.FirstName} {p.LastName}", bold: true);
                         BodyCell(table, p.DateOfBirth.ToString("yyyy-MM-dd"));
-                        BodyCell(table, p.SchoolGrade);
-                        BodyCell(table, p.ShirtSize);
-                        BodyCell(table, p.ShortSize);
-                        BodyCell(table, p.ShoeSize);
-                        BodyCell(table, !string.IsNullOrEmpty(p.SignatureDataUrl) ? "✓" : "—");
+                        BodyCell(table, rp.SchoolGrade);
+                        BodyCell(table, rp.UniformSize);
+                        BodyCell(table, rp.ShoeSize);
+                        BodyCell(table, !string.IsNullOrEmpty(rp.SignatureDataUrl) ? "✓" : "—");
                     }
                 });
 
-                // Optional: heard-from info per player (only if any exist)
-                if (r.Players.Any(p => !string.IsNullOrWhiteSpace(p.HeardFrom)))
+                if (r.Players.Any(rp => !string.IsNullOrWhiteSpace(rp.HeardFrom)))
                 {
                     col.Item().PaddingTop(4).Element(e =>
                         SectionHeader(e, es ? "¿Cómo se enteraron de nosotros?" : "How they heard about us"));
@@ -125,10 +123,11 @@ public class WaiverPdfGenerator : IWaiverPdfGenerator
                             c.ConstantColumn(160);
                             c.RelativeColumn();
                         });
-                        foreach (var p in r.Players.Where(p => !string.IsNullOrWhiteSpace(p.HeardFrom)))
+                        foreach (var rp in r.Players.Where(rp => !string.IsNullOrWhiteSpace(rp.HeardFrom)))
                         {
+                            var p = rp.Player!;
                             LabelCell(table, $"{p.FirstName} {p.LastName}:");
-                            ValueCell(table, p.HeardFrom!);
+                            ValueCell(table, rp.HeardFrom!);
                         }
                     });
                 }
@@ -156,9 +155,10 @@ public class WaiverPdfGenerator : IWaiverPdfGenerator
         table.Cell().BorderBottom(0.25f).BorderColor("#e2e8f0").Padding(2)
             .Text(t => { var span = t.Span(text); if (bold) span.SemiBold(); });
 
-    private static void RenderPlayerPage(IDocumentContainer container, Registration r, Player p)
+    private static void RenderPlayerPage(IDocumentContainer container, Registration r, RegistrationPlayer rp)
     {
         var t = WaiverText.For(r.Language);
+        var p = rp.Player!;
         container.Page(page =>
         {
             page.Size(PageSizes.Letter);
@@ -184,12 +184,12 @@ public class WaiverPdfGenerator : IWaiverPdfGenerator
                         c.ConstantColumn(150);
                         c.RelativeColumn();
                     });
-                    LabelCell(table, t.LblParticipantName); ValueCell(table, p.WaiverParticipantName ?? $"{p.FirstName} {p.LastName}");
+                    LabelCell(table, t.LblParticipantName); ValueCell(table, rp.WaiverParticipantName ?? $"{p.FirstName} {p.LastName}");
                     LabelCell(table, t.LblDob); ValueCell(table, p.DateOfBirth.ToString("yyyy-MM-dd"));
-                    LabelCell(table, t.LblTeam); ValueCell(table, string.IsNullOrWhiteSpace(p.WaiverTeamName) ? "—" : p.WaiverTeamName!);
-                    LabelCell(table, t.LblParentGuardian); ValueCell(table, p.WaiverParentGuardianName ?? $"{r.ParentFirstName} {r.ParentLastName}");
-                    LabelCell(table, t.LblPhone); ValueCell(table, p.WaiverPhone ?? r.CellPhone);
-                    LabelCell(table, t.LblEmail); ValueCell(table, p.WaiverEmail ?? r.Email);
+                    LabelCell(table, t.LblTeam); ValueCell(table, string.IsNullOrWhiteSpace(rp.WaiverTeamName) ? "—" : rp.WaiverTeamName!);
+                    LabelCell(table, t.LblParentGuardian); ValueCell(table, rp.WaiverParentGuardianName ?? $"{r.ParentFirstName} {r.ParentLastName}");
+                    LabelCell(table, t.LblPhone); ValueCell(table, rp.WaiverPhone ?? r.CellPhone);
+                    LabelCell(table, t.LblEmail); ValueCell(table, rp.WaiverEmail ?? r.Email);
                 });
 
                 col.Item().Element(e => SectionHeader(e, t.SectionRisk));
@@ -247,15 +247,15 @@ public class WaiverPdfGenerator : IWaiverPdfGenerator
                         c.ConstantColumn(120);
                     });
                     LabelCell(table, t.LblParentGuardian);
-                    ValueCell(table, p.WaiverParentGuardianName ?? $"{r.ParentFirstName} {r.ParentLastName}");
+                    ValueCell(table, rp.WaiverParentGuardianName ?? $"{r.ParentFirstName} {r.ParentLastName}");
                     LabelCell(table, t.LblDate);
-                    ValueCell(table, (p.SignedAt ?? DateTime.UtcNow).ToString("yyyy-MM-dd HH:mm 'UTC'"));
+                    ValueCell(table, (rp.SignedAt ?? DateTime.UtcNow).ToString("yyyy-MM-dd HH:mm 'UTC'"));
                 });
                 col.Item().PaddingTop(2).Text(t.LblSignature).SemiBold();
                 col.Item().Border(0.5f).BorderColor("#94a3b8").Background("#f8fafc")
                     .Height(50).Element(box =>
                     {
-                        var sigBytes = TryDecodeDataUrl(p.SignatureDataUrl);
+                        var sigBytes = TryDecodeDataUrl(rp.SignatureDataUrl);
                         if (sigBytes is not null)
                             box.Padding(2).AlignCenter().AlignMiddle().MaxHeight(46).Image(sigBytes);
                         else

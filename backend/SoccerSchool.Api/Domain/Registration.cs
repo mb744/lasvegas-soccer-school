@@ -2,9 +2,20 @@ using System.ComponentModel.DataAnnotations;
 
 namespace SoccerSchool.Api.Domain;
 
+/// <summary>
+/// A season-specific enrollment submitted by a ParentAccount.
+/// Parent contact fields are snapshotted at submit time so historical
+/// records and waiver PDFs reflect what was agreed to.
+/// </summary>
 public class Registration
 {
     public int Id { get; set; }
+
+    public int ParentAccountId { get; set; }
+    public ParentAccount? ParentAccount { get; set; }
+
+    [Required, MaxLength(16)]
+    public string Season { get; set; } = string.Empty;
 
     [Required, MaxLength(80)]
     public string ParentFirstName { get; set; } = string.Empty;
@@ -41,5 +52,5 @@ public class Registration
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
-    public List<Player> Players { get; set; } = new();
+    public List<RegistrationPlayer> Players { get; set; } = new();
 }

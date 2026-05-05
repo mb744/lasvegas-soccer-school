@@ -3,18 +3,20 @@ using SoccerSchool.Api.Domain;
 
 namespace SoccerSchool.Api.Dtos;
 
-public record PlayerDto
+public record RegistrationPlayerInput
 {
-    [Required, MaxLength(80)] public string FirstName { get; init; } = string.Empty;
-    [Required, MaxLength(80)] public string LastName { get; init; } = string.Empty;
-    [Required] public DateOnly DateOfBirth { get; init; }
+    /// <summary>If set, attach this existing roster Player. If null, create a new Player from the inline fields.</summary>
+    public int? PlayerId { get; init; }
+
+    [MaxLength(80)] public string? FirstName { get; init; }
+    [MaxLength(80)] public string? LastName { get; init; }
+    public DateOnly? DateOfBirth { get; init; }
+
     [Required, MaxLength(40)] public string SchoolGrade { get; init; } = string.Empty;
-    [Required, MaxLength(10)] public string ShirtSize { get; init; } = string.Empty;
-    [Required, MaxLength(10)] public string ShortSize { get; init; } = string.Empty;
+    [Required, MaxLength(10)] public string UniformSize { get; init; } = string.Empty;
     [Required, MaxLength(10)] public string ShoeSize { get; init; } = string.Empty;
     [MaxLength(120)] public string? HeardFrom { get; init; }
 
-    // Per-player waiver (editable, prepopulated client-side)
     [MaxLength(160)] public string? WaiverParticipantName { get; init; }
     [MaxLength(120)] public string? WaiverTeamName { get; init; }
     [MaxLength(160)] public string? WaiverParentGuardianName { get; init; }
@@ -28,8 +30,6 @@ public record PlayerDto
 
 public record SubmitRegistrationRequest
 {
-    [Required] public string Token { get; init; } = string.Empty;
-
     [Required, MaxLength(80)] public string ParentFirstName { get; init; } = string.Empty;
     [Required, MaxLength(80)] public string ParentLastName { get; init; } = string.Empty;
     [Required, MaxLength(200)] public string AddressLine1 { get; init; } = string.Empty;
@@ -45,11 +45,12 @@ public record SubmitRegistrationRequest
     [Required] public bool WaiverConsent { get; init; }
 
     [Required, MinLength(1)]
-    public List<PlayerDto> Players { get; init; } = new();
+    public List<RegistrationPlayerInput> Players { get; init; } = new();
 }
 
 public record RegistrationSummary(
     int Id,
+    string Season,
     string ParentFirstName,
     string ParentLastName,
     string Email,
@@ -61,6 +62,7 @@ public record RegistrationSummary(
 
 public record RegistrationDetail(
     int Id,
+    string Season,
     string ParentFirstName,
     string ParentLastName,
     string AddressLine1,
@@ -74,17 +76,17 @@ public record RegistrationDetail(
     bool WaiverConsent,
     DateTime? WaiverSignedAt,
     DateTime CreatedAt,
-    List<PlayerDetail> Players
+    List<RegistrationPlayerDetail> Players
 );
 
-public record PlayerDetail(
+public record RegistrationPlayerDetail(
     int Id,
+    int PlayerId,
     string FirstName,
     string LastName,
     DateOnly DateOfBirth,
     string SchoolGrade,
-    string ShirtSize,
-    string ShortSize,
+    string UniformSize,
     string ShoeSize,
     string? HeardFrom,
     string? WaiverParticipantName,

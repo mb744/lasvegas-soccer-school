@@ -3,7 +3,7 @@ using SoccerSchool.Api.Domain;
 
 namespace SoccerSchool.Api.Dtos;
 
-public record CreateInvitationRequest
+public record CreateOutreachRequest
 {
     [EmailAddress, MaxLength(256)]
     public string? Email { get; init; }
@@ -14,25 +14,17 @@ public record CreateInvitationRequest
     public Language Language { get; init; } = Language.English;
 }
 
-public record InvitationResponse(
+public record OutreachResponse(
     int Id,
-    string Token,
     string? Email,
     string? Phone,
     Language Language,
-    InvitationStatus Status,
+    OutreachStatus Status,
     string? StatusMessage,
     string Link,
     DateTime CreatedAt,
     DateTime? SentAt,
-    DateTime? RegisteredAt
-);
-
-public record InvitationLookupResponse(
-    string Token,
-    Language Language,
-    InvitationStatus Status,
-    string? Email,
-    string? Phone,
-    bool AlreadyRegistered
+    DateTime? AccountCreatedAt,
+    DateTime? RegisteredAt,
+    int? ParentAccountId
 );

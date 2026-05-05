@@ -1,10 +1,10 @@
 namespace SoccerSchool.Api.Domain;
 
-public enum InvitationStatus
+public enum OutreachStatus
 {
     Pending = 0,
     Sent = 1,
-    Opened = 2,
+    AccountCreated = 2,
     Registered = 3,
     Failed = 4
 }
