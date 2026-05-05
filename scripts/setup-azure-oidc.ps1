@@ -69,9 +69,12 @@ function Invoke-Az {
         [int] $MaxAttempts = 4
     )
 
+    # Local override: in PS 5.1, native-command stderr captured via 2>&1 produces
+    # ErrorRecord objects that the parent's $ErrorActionPreference='Stop' would
+    # turn into terminating errors. We want to inspect them, not crash on them.
+    $ErrorActionPreference = 'Continue'
+
     for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
-        # Merge stderr into the success stream so we can capture both into one variable
-        # without $ErrorActionPreference='Stop' interfering with native command output.
         $merged = & az @AzArgs 2>&1
         $exitCode = $LASTEXITCODE
 
