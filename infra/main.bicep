@@ -28,6 +28,12 @@ param activeSeason string = '2026/27'
 @description('Optional custom domain bound to the Container App (e.g. registration.lasvegassoccerschool.org). When set, the app generates outreach links and OAuth redirect URIs against this host instead of the auto-generated Container Apps FQDN. The hostname binding itself is one-time, done via `az containerapp hostname add/bind` after DNS is configured.')
 param customDomain string = ''
 
+@description('When true, provisions Azure Communication Services (ACS) + Email Communication Service + Azure-managed email domain. Wired into the container app for email outreach. SMS phone numbers must still be purchased separately and provided via acsSmsFromNumber.')
+param enableAcs bool = false
+
+@description('Sender phone number for ACS SMS in E.164 format (e.g. +18005551212). Purchase the number in the Azure portal first; ACS does not expose phone-number purchase to Bicep. Empty disables SMS outreach.')
+param acsSmsFromNumber string = ''
+
 @description('Email of the bootstrap admin Identity user. Created (with Admin role) on first start. Leave empty to skip bootstrap.')
 param adminBootstrapEmail string = ''
 
@@ -106,6 +112,14 @@ module containerEnv 'modules/container-apps-env.bicep' = {
   }
 }
 
+module acs 'modules/acs.bicep' = if (enableAcs) {
+  name: 'acs'
+  params: {
+    appName: appName
+    tags: commonTags
+  }
+}
+
 module containerApp 'modules/container-app.bicep' = {
   name: 'containerApp'
   params: {
@@ -125,6 +139,9 @@ module containerApp 'modules/container-app.bicep' = {
     googleOAuthClientSecret: googleOAuthClientSecret
     facebookOAuthAppId: facebookOAuthAppId
     facebookOAuthAppSecret: facebookOAuthAppSecret
+    acsConnectionString: enableAcs ? acs!.outputs.connectionString : ''
+    acsEmailFromAddress: enableAcs ? acs!.outputs.fromAddress : ''
+    acsSmsFromNumber: acsSmsFromNumber
   }
 }
 

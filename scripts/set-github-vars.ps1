@@ -10,7 +10,8 @@
                 SQL_AAD_ADMIN_OBJECT_ID, SQL_AAD_ADMIN_LOGIN,
                 ACTIVE_SEASON (optional), CUSTOM_DOMAIN (optional),
                 ADMIN_BOOTSTRAP_EMAIL (optional),
-                GOOGLE_OAUTH_CLIENT_ID (optional), FACEBOOK_OAUTH_APP_ID (optional)
+                GOOGLE_OAUTH_CLIENT_ID (optional), FACEBOOK_OAUTH_APP_ID (optional),
+                ENABLE_ACS (optional, 'true'/'false'), ACS_SMS_FROM_NUMBER (optional, E.164)
 
     Secrets:    ADMIN_BOOTSTRAP_PASSWORD (optional),
                 GOOGLE_OAUTH_CLIENT_SECRET (optional), FACEBOOK_OAUTH_APP_SECRET (optional)
@@ -42,7 +43,7 @@ param(
     [Parameter(Mandatory)] [string] $SqlAdminObjectId,
     [Parameter(Mandatory)] [string] $SqlAdminLogin,
 
-    # Optional season + custom domain + admin bootstrap + OAuth
+    # Optional season + custom domain + admin bootstrap + OAuth + ACS
     [string] $ActiveSeason,
     [string] $CustomDomain,
     [string] $AdminBootstrapEmail,
@@ -50,7 +51,9 @@ param(
     [string] $GoogleClientId,
     [string] $GoogleClientSecret,
     [string] $FacebookAppId,
-    [string] $FacebookAppSecret
+    [string] $FacebookAppSecret,
+    [ValidateSet('true', 'false', '')] [string] $EnableAcs,
+    [string] $AcsSmsFromNumber
 )
 
 $ErrorActionPreference = 'Stop'
@@ -67,6 +70,8 @@ $vars = [ordered]@{
     ADMIN_BOOTSTRAP_EMAIL   = $AdminBootstrapEmail
     GOOGLE_OAUTH_CLIENT_ID  = $GoogleClientId
     FACEBOOK_OAUTH_APP_ID   = $FacebookAppId
+    ENABLE_ACS              = $EnableAcs
+    ACS_SMS_FROM_NUMBER     = $AcsSmsFromNumber
 }
 
 foreach ($name in $vars.Keys) {

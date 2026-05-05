@@ -102,6 +102,8 @@ jobs:
             googleOAuthClientSecret=${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
             facebookOAuthAppId=${{ vars.FACEBOOK_OAUTH_APP_ID }}
             facebookOAuthAppSecret=${{ secrets.FACEBOOK_OAUTH_APP_SECRET }}
+            enableAcs=${{ vars.ENABLE_ACS || 'false' }}
+            acsSmsFromNumber=${{ vars.ACS_SMS_FROM_NUMBER }}
           deploymentName: lvss-${{ github.run_id }}
           failOnStdErr: false
 

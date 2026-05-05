@@ -31,6 +31,16 @@ param facebookOAuthAppSecret string = ''
 @description('Active season label, e.g. "2026/27". Stamped onto new registrations.')
 param activeSeason string = '2026/27'
 
+@description('Optional ACS connection string for outreach email/SMS. Empty disables ACS.')
+@secure()
+param acsConnectionString string = ''
+
+@description('Optional sender email for ACS, e.g. donotreply@xxx.azurecomm.net. Empty disables email outreach.')
+param acsEmailFromAddress string = ''
+
+@description('Optional sender phone number for ACS SMS in E.164 format, e.g. +18005551212. Empty disables SMS outreach.')
+param acsSmsFromNumber string = ''
+
 @description('Optional custom domain (e.g. registration.lasvegassoccerschool.org). When set, PublicBaseUrl + OAuth redirect URIs use it instead of the auto-generated Container Apps FQDN. The actual hostname binding (managed cert + ingress.customDomains) is done by a post-Bicep step in deploy.yml because cert provisioning requires the hostname to be already registered on the container app, which Bicep cannot do in a single pass.')
 param customDomain string = ''
 
@@ -41,6 +51,7 @@ param maxReplicas int = 3
 var hasGoogle = !empty(googleOAuthClientId) && !empty(googleOAuthClientSecret)
 var hasFacebook = !empty(facebookOAuthAppId) && !empty(facebookOAuthAppSecret)
 var hasAdminBootstrap = !empty(adminBootstrapEmail) && !empty(adminBootstrapPassword)
+var hasAcs = !empty(acsConnectionString)
 
 var baseSecrets = [
   { name: 'sql-connection-string', value: sqlConnectionString }
@@ -54,7 +65,10 @@ var facebookSecrets = hasFacebook ? [
 var adminSecrets = hasAdminBootstrap ? [
   { name: 'admin-bootstrap-password', value: adminBootstrapPassword }
 ] : []
-var allSecrets = concat(baseSecrets, googleSecrets, facebookSecrets, adminSecrets)
+var acsSecrets = hasAcs ? [
+  { name: 'acs-connection-string', value: acsConnectionString }
+] : []
+var allSecrets = concat(baseSecrets, googleSecrets, facebookSecrets, adminSecrets, acsSecrets)
 
 var defaultDomain = reference(environmentId, '2024-03-01').defaultDomain
 var defaultFqdn = '${name}.${defaultDomain}'
@@ -84,7 +98,18 @@ var adminEnv = hasAdminBootstrap ? [
   { name: 'App__Admin__Email', value: adminBootstrapEmail }
   { name: 'App__Admin__Password', secretRef: 'admin-bootstrap-password' }
 ] : []
-var allEnv = concat(baseEnv, googleEnv, facebookEnv, adminEnv)
+// ACS: connection string is required for any sending; email/sms from values are
+// optional individually, so only the configured channels appear in the env.
+var acsEnvCore = hasAcs ? [
+  { name: 'Acs__ConnectionString', secretRef: 'acs-connection-string' }
+] : []
+var acsEnvEmail = hasAcs && !empty(acsEmailFromAddress) ? [
+  { name: 'Acs__EmailFromAddress', value: acsEmailFromAddress }
+] : []
+var acsEnvSms = hasAcs && !empty(acsSmsFromNumber) ? [
+  { name: 'Acs__SmsFromNumber', value: acsSmsFromNumber }
+] : []
+var allEnv = concat(baseEnv, googleEnv, facebookEnv, adminEnv, acsEnvCore, acsEnvEmail, acsEnvSms)
 
 resource app 'Microsoft.App/containerApps@2024-03-01' = {
   name: name
