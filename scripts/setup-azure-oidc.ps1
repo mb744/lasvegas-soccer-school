@@ -180,8 +180,7 @@ Step "Granting Contributor role on RG to managed identity"
 $rgScope = "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroup"
 $existingRoleJson = Invoke-Az -AzArgs @(
     'role','assignment','list',
-    '--assignee-object-id',$principalId,
-    '--assignee-principal-type','ServicePrincipal',
+    '--assignee',$principalId,
     '--scope',$rgScope,
     '--role','Contributor',
     '--query','[0].id','-o','tsv'
