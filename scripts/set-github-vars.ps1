@@ -8,7 +8,8 @@
 
     Variables:  AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID, AZURE_RESOURCE_GROUP,
                 SQL_AAD_ADMIN_OBJECT_ID, SQL_AAD_ADMIN_LOGIN,
-                ACTIVE_SEASON (optional), ADMIN_BOOTSTRAP_EMAIL (optional),
+                ACTIVE_SEASON (optional), CUSTOM_DOMAIN (optional),
+                ADMIN_BOOTSTRAP_EMAIL (optional),
                 GOOGLE_OAUTH_CLIENT_ID (optional), FACEBOOK_OAUTH_APP_ID (optional)
 
     Secrets:    ADMIN_BOOTSTRAP_PASSWORD (optional),
@@ -41,8 +42,9 @@ param(
     [Parameter(Mandatory)] [string] $SqlAdminObjectId,
     [Parameter(Mandatory)] [string] $SqlAdminLogin,
 
-    # Optional season + admin bootstrap + OAuth
+    # Optional season + custom domain + admin bootstrap + OAuth
     [string] $ActiveSeason,
+    [string] $CustomDomain,
     [string] $AdminBootstrapEmail,
     [string] $AdminBootstrapPassword,
     [string] $GoogleClientId,
@@ -61,6 +63,7 @@ $vars = [ordered]@{
     SQL_AAD_ADMIN_OBJECT_ID = $SqlAdminObjectId
     SQL_AAD_ADMIN_LOGIN     = $SqlAdminLogin
     ACTIVE_SEASON           = $ActiveSeason
+    CUSTOM_DOMAIN           = $CustomDomain
     ADMIN_BOOTSTRAP_EMAIL   = $AdminBootstrapEmail
     GOOGLE_OAUTH_CLIENT_ID  = $GoogleClientId
     FACEBOOK_OAUTH_APP_ID   = $FacebookAppId

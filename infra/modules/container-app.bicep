@@ -31,6 +31,9 @@ param facebookOAuthAppSecret string = ''
 @description('Active season label, e.g. "2026/27". Stamped onto new registrations.')
 param activeSeason string = '2026/27'
 
+@description('Optional custom domain (e.g. registration.lasvegassoccerschool.org). When set, PublicBaseUrl + OAuth redirect URIs use it instead of the auto-generated Container Apps FQDN. The hostname binding itself is done out-of-band via `az containerapp hostname add/bind` after DNS records are in place.')
+param customDomain string = ''
+
 @description('Min replicas (0 enables scale-to-zero).')
 param minReplicas int = 0
 param maxReplicas int = 3
@@ -54,7 +57,9 @@ var adminSecrets = hasAdminBootstrap ? [
 var allSecrets = concat(baseSecrets, googleSecrets, facebookSecrets, adminSecrets)
 
 var defaultDomain = reference(environmentId, '2024-03-01').defaultDomain
-var publicBaseUrl = 'https://${name}.${defaultDomain}'
+var defaultFqdn = '${name}.${defaultDomain}'
+var publicHost = !empty(customDomain) ? customDomain : defaultFqdn
+var publicBaseUrl = 'https://${publicHost}'
 
 var baseEnv = [
   { name: 'ASPNETCORE_URLS', value: 'http://+:8080' }
@@ -152,6 +157,9 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
 output id string = app.id
 output name string = app.name
 output fqdn string = app.properties.configuration.ingress.fqdn
+output defaultFqdn string = defaultFqdn
 output publicBaseUrl string = publicBaseUrl
 output googleRedirectUri string = '${publicBaseUrl}/signin-google'
 output facebookRedirectUri string = '${publicBaseUrl}/signin-facebook'
+// Needed for the one-time `az containerapp hostname add/bind` after DNS records are placed.
+output customDomainVerificationId string = app.properties.customDomainVerificationId

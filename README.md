@@ -286,6 +286,52 @@ pwsh ./scripts/grant-mi-db-access.ps1 `
 
 After this, EF Core migrations run on the next container start and the API is fully operational.
 
+### Binding a custom domain
+
+The Bicep module accepts a `customDomain` param (wired in via the `CUSTOM_DOMAIN` GitHub repo variable). When set, the app's `PublicBaseUrl`, OAuth `signin-google` / `signin-facebook` redirect URIs, and the outreach links it sends all use the custom hostname instead of the auto-generated `*.azurecontainerapps.io` FQDN.
+
+The hostname binding itself is a one-time, manual step done after DNS records are in place — it's intentionally not in Bicep because the managed certificate provisioning depends on DNS propagation and would make the deploy flaky.
+
+```powershell
+# 1. Set the GitHub repo variable so the next deploy bakes the custom host
+#    into env vars (PublicBaseUrl + OAuth redirect URIs).
+gh variable set CUSTOM_DOMAIN --body "registration.lasvegassoccerschool.org" --repo <owner>/<repo>
+
+# 2. Push to main (or workflow_dispatch). The "Show deployment outputs" step
+#    prints the values you need:
+#    - Container App default FQDN  (e.g. lvss-app.<env-id>.<region>.azurecontainerapps.io)
+#    - Custom Domain Verification ID  (a 64-char string)
+```
+
+In **GoDaddy DNS** for `lasvegassoccerschool.org`, add two records:
+
+| Type  | Host | Value |
+|---|---|---|
+| CNAME | `registration` | the *default* Container App FQDN from the deploy output |
+| TXT   | `asuid.registration` | the *Custom Domain Verification ID* from the deploy output |
+
+Wait ~5 minutes for DNS to propagate, then bind:
+
+```powershell
+$RG  = 'soccer-school-west'
+$APP = 'lvss-app'
+$DOMAIN = 'registration.lasvegassoccerschool.org'
+
+az containerapp hostname add  -g $RG -n $APP --hostname $DOMAIN
+az containerapp hostname bind -g $RG -n $APP --hostname $DOMAIN --validation-method CNAME
+# Cert provisioning takes a few minutes. Check status:
+az containerapp hostname list -g $RG -n $APP -o table
+```
+
+Once status shows `Succeeded`, hit `https://registration.lasvegassoccerschool.org` — should serve the app over the managed cert.
+
+Finally, update **both OAuth consoles** to add the production redirect URIs (keep the localhost ones for dev):
+
+- Google → Authorized redirect URIs: `https://registration.lasvegassoccerschool.org/signin-google`
+- Google → Authorized JavaScript origins: `https://registration.lasvegassoccerschool.org`
+- Facebook → Valid OAuth Redirect URIs: `https://registration.lasvegassoccerschool.org/signin-facebook`
+- Facebook → App Domains: `lasvegassoccerschool.org`
+
 ### Adding ACS (email + SMS outreach) later
 
 When you're ready, add an ACS resource (Bicep module or portal), then set the Container App's env vars:

@@ -95,6 +95,7 @@ jobs:
             sqlAadAdminObjectId=${{ vars.SQL_AAD_ADMIN_OBJECT_ID }}
             sqlAadAdminLogin=${{ vars.SQL_AAD_ADMIN_LOGIN }}
             activeSeason=${{ vars.ACTIVE_SEASON || '2026/27' }}
+            customDomain=${{ vars.CUSTOM_DOMAIN }}
             adminBootstrapEmail=${{ vars.ADMIN_BOOTSTRAP_EMAIL }}
             adminBootstrapPassword=${{ secrets.ADMIN_BOOTSTRAP_PASSWORD }}
             googleOAuthClientId=${{ vars.GOOGLE_OAUTH_CLIENT_ID }}
@@ -112,13 +113,18 @@ jobs:
           set -e
           OUTPUTS=$(az deployment group show -g "$RG" -n "$DEP" --query properties.outputs -o json)
           APP_URL=$(echo "$OUTPUTS" | jq -r '.appUrl.value // empty')
+          PUBLIC_URL=$(echo "$OUTPUTS" | jq -r '.publicBaseUrl.value // empty')
+          DEFAULT_FQDN=$(echo "$OUTPUTS" | jq -r '.defaultFqdn.value // empty')
           SQL_FQDN=$(echo "$OUTPUTS" | jq -r '.sqlServerFqdn.value // empty')
           MI_CLIENT=$(echo "$OUTPUTS" | jq -r '.managedIdentityClientId.value // empty')
           GOOGLE_REDIRECT=$(echo "$OUTPUTS" | jq -r '.googleRedirectUri.value // empty')
           FACEBOOK_REDIRECT=$(echo "$OUTPUTS" | jq -r '.facebookRedirectUri.value // empty')
+          VERIFY_ID=$(echo "$OUTPUTS" | jq -r '.customDomainVerificationId.value // empty')
           echo "::notice title=App URL::$APP_URL"
-          echo "App URL: $APP_URL"
+          echo "Container App default FQDN: $DEFAULT_FQDN"
+          echo "Public base URL (used for outreach links): $PUBLIC_URL"
           echo "SQL FQDN: $SQL_FQDN"
           echo "Managed Identity Client ID: $MI_CLIENT"
           echo "Google redirect URI: $GOOGLE_REDIRECT"
           echo "Facebook redirect URI: $FACEBOOK_REDIRECT"
+          echo "Custom Domain Verification ID (for first-time hostname bind): $VERIFY_ID"

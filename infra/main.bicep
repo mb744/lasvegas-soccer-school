@@ -25,6 +25,9 @@ param tagEnvironment string = 'production'
 @description('Active season label stamped on new registrations, e.g. "2026/27".')
 param activeSeason string = '2026/27'
 
+@description('Optional custom domain bound to the Container App (e.g. registration.lasvegassoccerschool.org). When set, the app generates outreach links and OAuth redirect URIs against this host instead of the auto-generated Container Apps FQDN. The hostname binding itself is one-time, done via `az containerapp hostname add/bind` after DNS is configured.')
+param customDomain string = ''
+
 @description('Email of the bootstrap admin Identity user. Created (with Admin role) on first start. Leave empty to skip bootstrap.')
 param adminBootstrapEmail string = ''
 
@@ -115,6 +118,7 @@ module containerApp 'modules/container-app.bicep' = {
     managedIdentityClientId: managedIdentity.outputs.clientId
     sqlConnectionString: sql.outputs.connectionString
     activeSeason: activeSeason
+    customDomain: customDomain
     adminBootstrapEmail: adminBootstrapEmail
     adminBootstrapPassword: adminBootstrapPassword
     googleOAuthClientId: googleOAuthClientId
@@ -126,9 +130,13 @@ module containerApp 'modules/container-app.bicep' = {
 
 // ----- Outputs -----
 output appUrl string = 'https://${containerApp.outputs.fqdn}'
+output publicBaseUrl string = containerApp.outputs.publicBaseUrl
+output defaultFqdn string = containerApp.outputs.defaultFqdn
 output containerAppName string = containerApp.outputs.name
 output sqlServerFqdn string = sql.outputs.serverFqdn
 output managedIdentityClientId string = managedIdentity.outputs.clientId
 // Paste these into the Google / Facebook developer consoles when registering the app.
 output googleRedirectUri string = containerApp.outputs.googleRedirectUri
 output facebookRedirectUri string = containerApp.outputs.facebookRedirectUri
+// Needed for the one-time `az containerapp hostname bind` to attach the custom domain.
+output customDomainVerificationId string = containerApp.outputs.customDomainVerificationId
