@@ -128,3 +128,23 @@ jobs:
           echo "Google redirect URI: $GOOGLE_REDIRECT"
           echo "Facebook redirect URI: $FACEBOOK_REDIRECT"
           echo "Custom Domain Verification ID (for first-time hostname bind): $VERIFY_ID"
+
+      # Bicep can't declare the customDomain binding because cert provisioning needs the
+      # hostname registered on the container app first (chicken-and-egg in a single pass).
+      # Both `hostname add` and `hostname bind` are idempotent — no-ops when already bound.
+      - name: Bind custom domain (idempotent)
+        if: vars.CUSTOM_DOMAIN != ''
+        env:
+          RG: ${{ vars.AZURE_RESOURCE_GROUP }}
+          APP_NAME: lvss-app
+          DOMAIN: ${{ vars.CUSTOM_DOMAIN }}
+        run: |
+          set -e
+          ENV_NAME=$(az containerapp env list -g "$RG" --query "[0].name" -o tsv)
+          echo "Environment: $ENV_NAME"
+          # `hostname add` is no-op (errors out non-fatally) if hostname already registered.
+          az containerapp hostname add  -g "$RG" -n "$APP_NAME" --hostname "$DOMAIN" || echo "hostname add: already registered or transient — continuing"
+          # `hostname bind --validation-method CNAME` provisions a managed cert if none
+          # exists for this hostname yet, otherwise re-binds the existing one.
+          az containerapp hostname bind -g "$RG" -n "$APP_NAME" --hostname "$DOMAIN" --environment "$ENV_NAME" --validation-method CNAME
+          az containerapp hostname list -g "$RG" -n "$APP_NAME" -o table

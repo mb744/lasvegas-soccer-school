@@ -31,7 +31,7 @@ param facebookOAuthAppSecret string = ''
 @description('Active season label, e.g. "2026/27". Stamped onto new registrations.')
 param activeSeason string = '2026/27'
 
-@description('Optional custom domain (e.g. registration.lasvegassoccerschool.org). When set, the deploy provisions a managed cert against this hostname (DNS records must already be in place — CNAME to the default Container Apps FQDN, plus TXT asuid.<host>=<verificationId>) and binds it to the ingress. App env vars and OAuth redirect URIs also use this hostname.')
+@description('Optional custom domain (e.g. registration.lasvegassoccerschool.org). When set, PublicBaseUrl + OAuth redirect URIs use it instead of the auto-generated Container Apps FQDN. The actual hostname binding (managed cert + ingress.customDomains) is done by a post-Bicep step in deploy.yml because cert provisioning requires the hostname to be already registered on the container app, which Bicep cannot do in a single pass.')
 param customDomain string = ''
 
 @description('Min replicas (0 enables scale-to-zero).')
@@ -61,12 +61,6 @@ var defaultFqdn = '${name}.${defaultDomain}'
 var publicHost = !empty(customDomain) ? customDomain : defaultFqdn
 var publicBaseUrl = 'https://${publicHost}'
 
-// Custom-domain binding: managed cert + ingress.customDomains entry. Bicep replaces
-// the entire containerApps resource on every deploy, so the binding has to live in
-// the template — otherwise each deploy strips out a portal- or CLI-bound domain.
-var envName = split(environmentId, '/')[8]
-var certName = !empty(customDomain) ? 'mc-${replace(customDomain, '.', '-')}' : ''
-
 var baseEnv = [
   { name: 'ASPNETCORE_URLS', value: 'http://+:8080' }
   { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
@@ -92,24 +86,6 @@ var adminEnv = hasAdminBootstrap ? [
 ] : []
 var allEnv = concat(baseEnv, googleEnv, facebookEnv, adminEnv)
 
-resource managedEnv 'Microsoft.App/managedEnvironments@2024-03-01' existing = {
-  name: envName
-}
-
-// Managed certificate for the custom domain. Provisioned only when customDomain is set.
-// Requires DNS to be in place (CNAME registration → defaultFqdn, TXT asuid.registration → verification ID)
-// before this deploy runs, otherwise cert validation fails and the deploy errors out.
-resource cert 'Microsoft.App/managedEnvironments/managedCertificates@2024-03-01' = if (!empty(customDomain)) {
-  parent: managedEnv
-  name: certName
-  location: location
-  tags: tags
-  properties: {
-    subjectName: customDomain
-    domainControlValidation: 'CNAME'
-  }
-}
-
 resource app 'Microsoft.App/containerApps@2024-03-01' = {
   name: name
   location: location
@@ -131,13 +107,10 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
         traffic: [
           { latestRevision: true, weight: 100 }
         ]
-        customDomains: empty(customDomain) ? [] : [
-          {
-            name: customDomain
-            bindingType: 'SniEnabled'
-            certificateId: cert.id
-          }
-        ]
+        // customDomains intentionally not set here. A post-Bicep step in
+        // deploy.yml runs `az containerapp hostname add/bind` after the
+        // container app exists, which Azure handles in the right order
+        // (registers hostname first, then provisions the managed cert).
       }
       secrets: allSecrets
       // GHCR public package — no registry auth needed.
