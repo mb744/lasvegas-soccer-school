@@ -53,7 +53,10 @@ resource allowAzureServices 'Microsoft.Sql/servers/firewallRules@2023-08-01-prev
   }
 }
 
-// Free serverless General Purpose tier — auto-pauses, 32 GB, ~100k vCore-sec/mo free.
+// Serverless General Purpose tier — auto-pauses after 60 min idle so cost stays minimal.
+// Storage capped at 5 GB (cheap); auto-grow disabled so a runaway can't surprise the bill.
+// Note: the free-tier offer (`useFreeLimit`) is not available in westus (Microsoft.Sql region constraint),
+// so this is paid serverless. Expected cost at very low traffic with auto-pause: ~$0–5 / month.
 resource sqlDatabase 'Microsoft.Sql/servers/databases@2023-08-01-preview' = {
   name: databaseName
   parent: sqlServer
@@ -71,10 +74,8 @@ resource sqlDatabase 'Microsoft.Sql/servers/databases@2023-08-01-preview' = {
     zoneRedundant: false
     minCapacity: json('0.5')
     autoPauseDelay: 60
-    maxSizeBytes: 34359738368  // 32 GB
+    maxSizeBytes: 5368709120  // 5 GB
     requestedBackupStorageRedundancy: 'Local'
-    useFreeLimit: true
-    freeLimitExhaustionBehavior: 'AutoPause'
   }
 }
 

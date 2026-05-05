@@ -167,7 +167,7 @@ pwsh ./scripts/setup-azure-oidc.ps1 `
   -SubscriptionId <sub-id> `
   -TenantId       <tenant-id> `
   -ResourceGroup  soccer-school-west `
-  -Location       westus3 `
+  -Location       westus `
   -GithubRepo     <owner>/<repo>
 
 # Script prints the values you need. Set them as GitHub repo VARIABLES (not secrets — none are sensitive):
@@ -241,9 +241,11 @@ Invoke-RestMethod -Uri "$base/api/invitations" -Method Post -Headers $h `
 | Resource | Cost |
 |---|---|
 | Container Apps Consumption (scale-to-zero) | $0 idle |
-| Azure SQL serverless (free offer, autopaused) | $0 (within 100k vCore-sec/mo) |
+| Azure SQL serverless (paid; autopaused) | ~$0–5/mo at low traffic |
 | Log Analytics (PerGB2018, low volume) | ~$0–2/mo |
 | Managed Identity, Bicep, GHCR (public) | $0 |
+
+> The Azure SQL free serverless offer isn't available in `westus`. To get the $0 SQL tier, redeploy to `westus2` or `westus3` and add `useFreeLimit: true` back to [`infra/modules/sql.bicep`](infra/modules/sql.bicep).
 
 ## Roadmap / not yet implemented
 
