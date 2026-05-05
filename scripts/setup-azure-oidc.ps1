@@ -104,7 +104,7 @@ foreach ($fed in $federations) {
         --resource-group $ResourceGroup `
         -o json 2>$null
     if ($existing) {
-        Info "  $($fed.Name) — already exists"
+        Info "  $($fed.Name) - already exists"
     } else {
         $params = @{
             name        = $fed.Name
@@ -145,7 +145,7 @@ if (-not $existingRole) {
             break
         } catch {
             if ($i -eq 6) { throw }
-            Info "  Identity not yet propagated; retrying ($i)…"
+            Info "  Identity not yet propagated; retrying ($i)..."
             Start-Sleep -Seconds 5
         }
     }
@@ -162,10 +162,10 @@ if (-not $signedInUpn) { $signedInUpn = $signedInUser.displayName }
 
 Write-Host ""
 Write-Host "================================================================" -ForegroundColor Green
-Write-Host " ✓ Azure OIDC setup complete" -ForegroundColor Green
+Write-Host " [OK] Azure OIDC setup complete" -ForegroundColor Green
 Write-Host "================================================================" -ForegroundColor Green
 Write-Host ""
-Write-Host "Set these as GitHub repo VARIABLES (Settings → Secrets and variables → Actions → Variables):"
+Write-Host "Set these as GitHub repo VARIABLES (Settings -> Secrets and variables -> Actions -> Variables):"
 Write-Host ""
 Write-Host "  AZURE_CLIENT_ID            = $clientId"
 Write-Host "  AZURE_TENANT_ID            = $TenantId"

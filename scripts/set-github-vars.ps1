@@ -36,9 +36,9 @@ $vars = [ordered]@{
 }
 
 foreach ($name in $vars.Keys) {
-    Write-Host "Setting $name…" -ForegroundColor Cyan
+    Write-Host "Setting $name..." -ForegroundColor Cyan
     gh variable set $name --body $vars[$name] --repo $Repo
 }
 
 Write-Host ""
-Write-Host "✓ All variables set. Verify with: gh variable list --repo $Repo" -ForegroundColor Green
+Write-Host "[OK] All variables set. Verify with: gh variable list --repo $Repo" -ForegroundColor Green

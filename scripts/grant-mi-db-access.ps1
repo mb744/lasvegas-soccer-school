@@ -7,7 +7,7 @@
     auth and you (the human admin) are the AAD admin; this script signs in as you
     and creates a database user for the Container App's managed identity.
 
-    Idempotent — safe to re-run.
+    Idempotent - safe to re-run.
 
 .PARAMETER SqlServerFqdn
     The full DNS name of the Azure SQL server, e.g. lvss-sql-xxxx.database.windows.net.
@@ -59,12 +59,12 @@ Write-Host $sql -ForegroundColor Gray
 Write-Host ""
 
 if ($sqlcmd) {
-    Write-Host "==> Running via sqlcmd with Azure AD interactive auth…" -ForegroundColor Cyan
+    Write-Host "==> Running via sqlcmd with Azure AD interactive auth..." -ForegroundColor Cyan
     & sqlcmd -S $SqlServerFqdn -d $DatabaseName -G --authentication-method=ActiveDirectoryInteractive -Q $sql
     if ($LASTEXITCODE -ne 0) {
         throw "sqlcmd failed with exit code $LASTEXITCODE"
     }
-    Write-Host "✓ Done." -ForegroundColor Green
+    Write-Host "[OK] Done." -ForegroundColor Green
 } else {
-    Write-Host "Copy the T-SQL above and run it via Portal → SQL Database → Query editor (signed in as your Entra admin user)." -ForegroundColor Yellow
+    Write-Host "Copy the T-SQL above and run it via Portal -> SQL Database -> Query editor (signed in as your Entra admin user)." -ForegroundColor Yellow
 }
