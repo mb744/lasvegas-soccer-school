@@ -26,11 +26,12 @@
     Name of the user-assigned managed identity used for GitHub OIDC. Defaults to gh-deploy.
 
 .EXAMPLE
-    pwsh ./scripts/setup-azure-oidc.ps1 `
+    # Works on Windows PowerShell 5.1 and PowerShell 7
+    powershell -File ./scripts/setup-azure-oidc.ps1 `
       -SubscriptionId f81bd820-6980-49b2-ab4b-1e1677695214 `
       -TenantId 8ad10099-6570-4225-834d-e5a9acdd7264 `
       -ResourceGroup soccer-school-west `
-      -Location westus3 `
+      -Location westus `
       -GithubRepo mb744/lasvegas-soccer-school
 #>
 
@@ -155,7 +156,9 @@ if (-not $existingRole) {
 # ---- 5. Output ----
 $signedInUser = az ad signed-in-user show -o json | ConvertFrom-Json
 $signedInObjectId = $signedInUser.id
-$signedInUpn = $signedInUser.userPrincipalName ?? $signedInUser.mail ?? $signedInUser.displayName
+$signedInUpn = $signedInUser.userPrincipalName
+if (-not $signedInUpn) { $signedInUpn = $signedInUser.mail }
+if (-not $signedInUpn) { $signedInUpn = $signedInUser.displayName }
 
 Write-Host ""
 Write-Host "================================================================" -ForegroundColor Green
