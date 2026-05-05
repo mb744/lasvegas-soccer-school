@@ -162,22 +162,16 @@ foreach ($fed in $federations) {
     if ($existing) {
         Info ("  " + $fed.Name + " - already exists")
     } else {
-        $params = @{
-            name        = $fed.Name
-            issuer      = 'https://token.actions.githubusercontent.com'
-            subject     = $fed.Subject
-            audiences   = @('api://AzureADTokenExchange')
-            description = "GitHub Actions OIDC for $GithubRepo"
-        } | ConvertTo-Json -Compress
-        $tmp = [System.IO.Path]::GetTempFileName()
-        try {
-            # Write as UTF-8 without BOM so az parses it correctly
-            [System.IO.File]::WriteAllText($tmp, $params, (New-Object System.Text.UTF8Encoding $false))
-            Invoke-Az -AzArgs @('identity','federated-credential','create','--identity-name',$IdentityName,'--resource-group',$ResourceGroup,'--parameters',('@' + $tmp)) | Out-Null
-            Ok ("  Created " + $fed.Name)
-        } finally {
-            Remove-Item $tmp -Force -ErrorAction SilentlyContinue
-        }
+        Invoke-Az -AzArgs @(
+            'identity','federated-credential','create',
+            '--name',          $fed.Name,
+            '--identity-name', $IdentityName,
+            '--resource-group',$ResourceGroup,
+            '--issuer',        'https://token.actions.githubusercontent.com',
+            '--subject',       $fed.Subject,
+            '--audiences',     'api://AzureADTokenExchange'
+        ) | Out-Null
+        Ok ("  Created " + $fed.Name)
     }
 }
 
