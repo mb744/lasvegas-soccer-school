@@ -94,6 +94,13 @@ jobs:
             containerImage=${{ needs.build-and-push.outputs.image }}
             sqlAadAdminObjectId=${{ vars.SQL_AAD_ADMIN_OBJECT_ID }}
             sqlAadAdminLogin=${{ vars.SQL_AAD_ADMIN_LOGIN }}
+            activeSeason=${{ vars.ACTIVE_SEASON || '2026/27' }}
+            adminBootstrapEmail=${{ vars.ADMIN_BOOTSTRAP_EMAIL }}
+            adminBootstrapPassword=${{ secrets.ADMIN_BOOTSTRAP_PASSWORD }}
+            googleOAuthClientId=${{ vars.GOOGLE_OAUTH_CLIENT_ID }}
+            googleOAuthClientSecret=${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+            facebookOAuthAppId=${{ vars.FACEBOOK_OAUTH_APP_ID }}
+            facebookOAuthAppSecret=${{ secrets.FACEBOOK_OAUTH_APP_SECRET }}
           deploymentName: lvss-${{ github.run_id }}
           failOnStdErr: false
 
@@ -107,7 +114,11 @@ jobs:
           APP_URL=$(echo "$OUTPUTS" | jq -r '.appUrl.value // empty')
           SQL_FQDN=$(echo "$OUTPUTS" | jq -r '.sqlServerFqdn.value // empty')
           MI_CLIENT=$(echo "$OUTPUTS" | jq -r '.managedIdentityClientId.value // empty')
+          GOOGLE_REDIRECT=$(echo "$OUTPUTS" | jq -r '.googleRedirectUri.value // empty')
+          FACEBOOK_REDIRECT=$(echo "$OUTPUTS" | jq -r '.facebookRedirectUri.value // empty')
           echo "::notice title=App URL::$APP_URL"
           echo "App URL: $APP_URL"
           echo "SQL FQDN: $SQL_FQDN"
           echo "Managed Identity Client ID: $MI_CLIENT"
+          echo "Google redirect URI: $GOOGLE_REDIRECT"
+          echo "Facebook redirect URI: $FACEBOOK_REDIRECT"

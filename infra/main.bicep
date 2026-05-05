@@ -22,6 +22,28 @@ param sqlAadAdminLogin string
 @description('Tag value applied to all resources.')
 param tagEnvironment string = 'production'
 
+@description('Active season label stamped on new registrations, e.g. "2026/27".')
+param activeSeason string = '2026/27'
+
+@description('Email of the bootstrap admin Identity user. Created (with Admin role) on first start. Leave empty to skip bootstrap.')
+param adminBootstrapEmail string = ''
+
+@secure()
+@description('Initial password for the bootstrap admin. Used only at create time; ignored if user already exists.')
+param adminBootstrapPassword string = ''
+
+@description('Google OAuth Client ID. Leave empty to disable Google login.')
+param googleOAuthClientId string = ''
+
+@secure()
+param googleOAuthClientSecret string = ''
+
+@description('Facebook OAuth App ID. Leave empty to disable Facebook login.')
+param facebookOAuthAppId string = ''
+
+@secure()
+param facebookOAuthAppSecret string = ''
+
 // ----- Naming -----
 var nameSuffix = uniqueString(resourceGroup().id)
 var logAnalyticsName = '${appName}-logs-${nameSuffix}'
@@ -92,7 +114,13 @@ module containerApp 'modules/container-app.bicep' = {
     managedIdentityResourceId: managedIdentity.outputs.id
     managedIdentityClientId: managedIdentity.outputs.clientId
     sqlConnectionString: sql.outputs.connectionString
-    adminApiKey: guid(resourceGroup().id, 'admin-api-key')
+    activeSeason: activeSeason
+    adminBootstrapEmail: adminBootstrapEmail
+    adminBootstrapPassword: adminBootstrapPassword
+    googleOAuthClientId: googleOAuthClientId
+    googleOAuthClientSecret: googleOAuthClientSecret
+    facebookOAuthAppId: facebookOAuthAppId
+    facebookOAuthAppSecret: facebookOAuthAppSecret
   }
 }
 
@@ -101,3 +129,6 @@ output appUrl string = 'https://${containerApp.outputs.fqdn}'
 output containerAppName string = containerApp.outputs.name
 output sqlServerFqdn string = sql.outputs.serverFqdn
 output managedIdentityClientId string = managedIdentity.outputs.clientId
+// Paste these into the Google / Facebook developer consoles when registering the app.
+output googleRedirectUri string = containerApp.outputs.googleRedirectUri
+output facebookRedirectUri string = containerApp.outputs.facebookRedirectUri

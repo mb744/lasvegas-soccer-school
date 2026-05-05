@@ -4,19 +4,21 @@ Bilingual (English / Español) registration system for Las Vegas Soccer School.
 
 ## What it does
 
-1. **Admin** opens `/admin`, enters a parent's email or phone + language, clicks **Send invitation**.
-2. App generates a unique tokenized link and emails / texts it via **Azure Communication Services**.
-3. Parent clicks the link → bilingual landing page → registration form for parent + multiple players + electronic waiver consent.
-4. On submit, the app stores the registration and a signed **PDF waiver** is generated on demand from `/admin`.
+1. **Parent** lands on the marketing page (typically from a Facebook ad), clicks **Start your registration**.
+2. They sign up — with **Google**, **Facebook**, or email + password.
+3. They register player(s) for the active season: parent info, per-player size/grade, and a fresh per-player digital waiver each season.
+4. **Admin** can pre-empt by sending a registration link to a specific email or phone (tracked through `Sent → Account created → Registered`), see all registrations, edit, delete, and download signed waiver PDFs.
+
+The same parent account can register the same kid each season; sizes, grade, and waiver are collected fresh each time.
 
 ## Stack
 
 | Layer | Tech |
 |---|---|
 | Frontend | React 19 + Vite + TypeScript + Tailwind v4 + react-router + react-i18next + react-hook-form + zod |
-| Backend | ASP.NET Core 10 Web API + EF Core + QuestPDF |
+| Backend | ASP.NET Core 10 Web API + EF Core + ASP.NET Identity (cookie auth) + Google/Facebook OAuth + QuestPDF |
 | Database | SQL Server LocalDB (dev) / Azure SQL (prod) |
-| Notifications | Azure Communication Services (email + SMS) |
+| Notifications | Azure Communication Services (email + SMS) for the admin "send registration link" feature |
 
 ## Repo layout
 
@@ -24,20 +26,23 @@ Bilingual (English / Español) registration system for Las Vegas Soccer School.
 LasVegasSoccerSchool/
 ├── backend/
 │   └── SoccerSchool.Api/        # ASP.NET Core Web API
-│       ├── Auth/                # Admin API key middleware
-│       ├── Controllers/         # InvitationsController, RegistrationsController
+│       ├── Auth/                # Roles constants
+│       ├── Controllers/         # Auth, Players, Registrations, Outreach
 │       ├── Data/                # EF Core DbContext + migrations
-│       ├── Domain/              # Invitation, Registration, Player, enums
+│       ├── Domain/              # ApplicationUser, ParentAccount, Player, Registration,
+│       │                        # RegistrationPlayer, Outreach, enums
 │       ├── Dtos/                # Request / response DTOs
 │       ├── Options/             # Strongly-typed appsettings
-│       └── Services/            # Token gen, ACS sender, waiver PDF
+│       └── Services/            # Outreach sender (ACS email + SMS), waiver PDF
 ├── frontend/                    # Vite React app
 │   └── src/
-│       ├── api/                 # Axios client + types
-│       ├── components/          # Layout, LanguageToggle
+│       ├── api/                 # Axios client (cookie auth) + types
+│       ├── auth/                # AuthContext + RequireAuth route guard
+│       ├── components/          # Layout, LanguageToggle, SignaturePad
 │       ├── i18n/                # en.ts, es.ts, init
-│       └── pages/               # LandingPage, RegisterPage, AdminPage
-└── LasVegasSoccerSchool.sln
+│       └── pages/               # Landing, Login, Signup, Register, Admin
+├── infra/                       # Bicep modules (Container Apps, SQL, Log Analytics, MI)
+└── LasVegasSoccerSchool.slnx
 ```
 
 ## Running locally
@@ -69,9 +74,40 @@ npm run dev
 # UI on http://localhost:5173
 ```
 
-Then open <http://localhost:5173/admin> and enter the dev admin key from `appsettings.json`:
-- Default: `dev-admin-key-change-me`
-- Change for production!
+### First admin (local)
+
+To use `/admin` locally, set the bootstrap admin in `appsettings.Development.json` (or via `dotnet user-secrets`):
+
+```jsonc
+{
+  "App": {
+    "Admin": { "Email": "you@example.com", "Password": "Local-pwd-8+chars" }
+  }
+}
+```
+
+On startup the API ensures that user exists and grants the `Admin` role. After the first run you can change the password via any normal flow; the bootstrap section only creates the user — it doesn't reset the password if the user already exists.
+
+### Social login locally (optional)
+
+Email + password works without any extra config. To exercise Google / Facebook locally:
+
+```jsonc
+{
+  "App": {
+    "OAuth": {
+      "Google":   { "ClientId": "xxx.apps.googleusercontent.com", "ClientSecret": "GOCSPX-..." },
+      "Facebook": { "AppId": "...", "AppSecret": "..." }
+    }
+  }
+}
+```
+
+When registering the OAuth apps, add these as authorized redirect URIs:
+- Google:   `http://localhost:5173/signin-google`
+- Facebook: `http://localhost:5173/signin-facebook`
+
+(Vite proxies `/api/auth/external/*` and `/signin-*` callbacks to the backend on `:5282`.)
 
 ## Configuration
 
@@ -83,41 +119,58 @@ Then open <http://localhost:5173/admin> and enter the dev admin key from `appset
     "DefaultConnection": "Server=(localdb)\\MSSQLLocalDB;Database=LasVegasSoccerSchool;..."
   },
   "App": {
-    "PublicBaseUrl": "http://localhost:5173",       // base for invite links
-    "AdminApiKey": "dev-admin-key-change-me",       // X-Admin-Key header value
-    "Cors": { "AllowedOrigins": [ "http://localhost:5173" ] }
+    "PublicBaseUrl": "http://localhost:5173",   // base for outreach links
+    "ActiveSeason":  "2026/27",                 // stamped on every new Registration
+    "Cors":  { "AllowedOrigins": [ "http://localhost:5173" ] },
+    "Admin": { "Email": "", "Password": "" },   // bootstrap admin (see "First admin")
+    "OAuth": {
+      "Google":   { "ClientId": "", "ClientSecret": "" },
+      "Facebook": { "AppId": "",    "AppSecret": "" }
+    }
   },
   "Acs": {
-    "ConnectionString": "",     // Azure Communication Services connection string
-    "EmailFromAddress": "",     // verified sender, e.g. donotreply@yourdomain.com
-    "SmsFromNumber": ""         // E.164 number provisioned in ACS, e.g. +17025551212
+    "ConnectionString": "",
+    "EmailFromAddress": "",
+    "SmsFromNumber": ""
   }
 }
 ```
 
-If `Acs:ConnectionString` is empty, the API still creates the invitation and returns the link — the admin UI shows it for manual copy/paste. The status will be `Failed` with the message `ACS not configured`.
+If `Acs:*` is empty the admin "send registration link" still records an outreach row but its status will be `Failed` with a message — useful for tracking outreach manually.
 
 ## Endpoints
 
 | Method | Route | Auth |
 |---|---|---|
-| POST | `/api/invitations` | Admin |
-| GET | `/api/invitations` | Admin |
-| POST | `/api/invitations/{id}/resend` | Admin |
-| GET | `/api/invitations/by-token/{token}` | Public |
-| POST | `/api/registrations` | Public (token-gated) |
-| GET | `/api/registrations` | Admin |
-| GET | `/api/registrations/{id}` | Admin |
-| GET | `/api/registrations/{id}/waivers.pdf` | Admin (combined: one waiver per player) |
-| GET | `/api/registrations/{id}/players/{playerId}/waiver.pdf` | Admin (single player) |
+| POST | `/api/auth/signup`               | Public |
+| POST | `/api/auth/login`                | Public |
+| POST | `/api/auth/logout`               | Authenticated |
+| GET  | `/api/auth/me`                   | Authenticated |
+| GET  | `/api/auth/external/{provider}`  | Public — kicks off Google/Facebook OAuth |
+| GET  | `/api/auth/external/callback`    | Public — OAuth callback |
+| GET  | `/api/players`                   | Authenticated (parent) |
+| POST | `/api/players`                   | Authenticated (parent) |
+| PUT  | `/api/players/{id}`              | Authenticated (parent) |
+| DELETE | `/api/players/{id}`            | Authenticated (parent) |
+| POST | `/api/registrations`             | Authenticated (parent) |
+| GET  | `/api/registrations/mine`        | Authenticated (parent) |
+| GET  | `/api/registrations/{id}`        | Owner or Admin |
+| GET  | `/api/registrations/{id}/waivers.pdf` | Owner or Admin (combined: one waiver per player) |
+| GET  | `/api/registrations/{id}/players/{rpId}/waiver.pdf` | Owner or Admin |
+| GET  | `/api/registrations`             | Admin |
+| DELETE | `/api/registrations/{id}`      | Admin |
+| POST | `/api/outreach`                  | Admin |
+| GET  | `/api/outreach`                  | Admin |
+| POST | `/api/outreach/{id}/resend`      | Admin |
+| DELETE | `/api/outreach/{id}`           | Admin |
 
-Admin endpoints require header `X-Admin-Key: <AdminApiKey>`.
+Auth is cookie-based (Identity application cookie `lvss.auth`). Admin endpoints require the `Admin` role.
 
 ## Waiver
 
-One waiver is generated **per player**. The form prepopulates Participant Name (player), Parent/Guardian Name, Phone, and Email from the parent's section — all fields are editable. Team Name is optional.
+One waiver is generated **per player per season**. The form prepopulates Participant Name (player), Parent/Guardian Name, Phone, and Email from the parent's section — all fields are editable. Team Name is optional.
 
-Each waiver is **digitally signed** on a canvas signature pad (mouse / trackpad / finger) and stored as a base64 PNG in the database. The signed PDF embeds that signature image alongside the timestamp.
+Each waiver is **digitally signed** on a canvas signature pad (mouse / trackpad / finger) and stored as a base64 PNG on the corresponding `RegistrationPlayer` row. The signed PDF embeds that signature image alongside the timestamp.
 
 Both English and Spanish versions of the full template (Assumption of Risk, Waiver of Liability, Medical Authorization, Media Release, Rules Acknowledgment) are baked into:
 - Frontend (rendered in the form): [`frontend/src/i18n/en.ts`](frontend/src/i18n/en.ts) and [`es.ts`](frontend/src/i18n/es.ts) under `register.waiver.*`
@@ -127,11 +180,33 @@ Edit those two locations together if you tweak the wording.
 
 ## Other bilingual content
 
-- Email subject/body and SMS body for the invite link: [`Services/InviteSender.cs`](backend/SoccerSchool.Api/Services/InviteSender.cs) — `BuildEmailContent` / `BuildSmsBody`
+- Email subject/body and SMS body for the outreach link: [`Services/OutreachSender.cs`](backend/SoccerSchool.Api/Services/OutreachSender.cs) — `BuildEmailContent` / `BuildSmsBody`
+
+## Setting up social login (Google + Facebook)
+
+Both providers require you to register an OAuth app in their developer console and paste the credentials into the deployment.
+
+### Google
+
+1. <https://console.cloud.google.com/apis/credentials> → **Create Credentials → OAuth client ID** → Web application.
+2. Authorized redirect URIs:
+   - `https://<your-app-fqdn>/signin-google`     (production)
+   - `http://localhost:5173/signin-google`       (dev)
+3. Copy the **Client ID** and **Client secret**.
+
+### Facebook
+
+1. <https://developers.facebook.com/apps> → **Create App** → "Authenticate and request data from users with Facebook Login" → Consumer.
+2. Add **Facebook Login** product → Settings → Valid OAuth Redirect URIs:
+   - `https://<your-app-fqdn>/signin-facebook`
+   - `http://localhost:5173/signin-facebook`
+3. App Settings → Basic → copy **App ID** and **App secret**.
+
+The Bicep deploy outputs both redirect URIs (`googleRedirectUri`, `facebookRedirectUri`) — paste them straight into the consoles.
 
 ## Deploying to Azure (containerized)
 
-This repo deploys as a **single Docker container** to **Azure Container Apps** (scale-to-zero), with **Azure SQL serverless free tier** for data and a **user-assigned managed identity** for passwordless DB auth. Images are published to **GHCR** via GitHub Actions, and infra is provisioned via **Bicep**.
+This repo deploys as a **single Docker container** to **Azure Container Apps** (scale-to-zero), with **Azure SQL serverless** for data and a **user-assigned managed identity** for passwordless DB auth. Images are published to **GHCR** via GitHub Actions, and infra is provisioned via **Bicep**.
 
 ```
 ┌──────────────────────┐      ┌─────────────────────┐
@@ -151,18 +226,18 @@ This repo deploys as a **single Docker container** to **Azure Container Apps** (
 │        │                          Identity       │
 │        │ Active Directory Default                │
 │        ▼                                         │
-│   Azure SQL Server  ──▶  Database (free SL)      │
+│   Azure SQL Server  ──▶  Database (serverless)   │
 └──────────────────────────────────────────────────┘
 ```
 
 ### One-time setup
 
 ```powershell
-# 1. Log in to the right Azure tenant (this is in tenant 8ad10099-..., not your default)
+# 1. Log in to the right Azure tenant
 az login --tenant <your-tenant-id>
 
-# 2. Configure OIDC: creates managed identity, federated credential trusting the GitHub repo,
-#    grants Contributor on the resource group. Idempotent.
+# 2. Configure OIDC: managed identity, federated credential trusting the GitHub repo,
+#    Contributor on the resource group. Idempotent.
 pwsh ./scripts/setup-azure-oidc.ps1 `
   -SubscriptionId <sub-id> `
   -TenantId       <tenant-id> `
@@ -170,15 +245,22 @@ pwsh ./scripts/setup-azure-oidc.ps1 `
   -Location       westus `
   -GithubRepo     <owner>/<repo>
 
-# Script prints the values you need. Set them as GitHub repo VARIABLES (not secrets — none are sensitive):
+# 3. Set GitHub repo variables + secrets. Optional fields can be omitted; the deploy
+#    will still run but will skip any provider whose values aren't set.
 pwsh ./scripts/set-github-vars.ps1 `
-  -Repo             <owner>/<repo> `
-  -ClientId         <from output> `
-  -TenantId         <from output> `
-  -SubscriptionId   <from output> `
-  -ResourceGroup    soccer-school-west `
-  -SqlAdminObjectId <from output> `
-  -SqlAdminLogin    "<your UPN>"
+  -Repo                   <owner>/<repo> `
+  -ClientId               <from setup-oidc output> `
+  -TenantId               <from setup-oidc output> `
+  -SubscriptionId         <from setup-oidc output> `
+  -ResourceGroup          soccer-school-west `
+  -SqlAdminObjectId       <from setup-oidc output> `
+  -SqlAdminLogin          "<your UPN>" `
+  -AdminBootstrapEmail    "you@example.com" `
+  -AdminBootstrapPassword "Some-strong-temp-pwd-1!" `
+  -GoogleClientId         "xxx.apps.googleusercontent.com" `
+  -GoogleClientSecret     "GOCSPX-..." `
+  -FacebookAppId          "1234567890" `
+  -FacebookAppSecret      "abcdef1234"
 ```
 
 ### Deploy
@@ -188,9 +270,9 @@ Push to `main`. The `Deploy` workflow:
 2. Pushes to `ghcr.io/<owner>/<repo>:sha-<short>` and `:latest`
 3. Flips the GHCR package to **public** so Container Apps can pull anonymously
 4. Logs into Azure via OIDC (no client secret stored anywhere)
-5. Runs `az deployment group create` with the new image tag
+5. Runs `az deployment group create` with the new image tag + OAuth credentials + admin bootstrap
 
-The deploy job's "Show deployment outputs" step prints the app URL.
+The deploy job's "Show deployment outputs" step prints the app URL **and the Google / Facebook redirect URIs** to paste into the developer consoles on first deploy.
 
 ### One-time post-deploy: grant the managed identity DB access
 
@@ -202,15 +284,9 @@ pwsh ./scripts/grant-mi-db-access.ps1 `
   -ManagedIdentityName lvss-id-<suffix>
 ```
 
-Get the `<suffix>` from the deploy job output, or:
-```powershell
-az resource list -g soccer-school-west --resource-type Microsoft.Sql/servers --query "[0].name" -o tsv
-az resource list -g soccer-school-west --resource-type Microsoft.ManagedIdentity/userAssignedIdentities --query "[?starts_with(name, 'lvss-id')].name" -o tsv
-```
-
 After this, EF Core migrations run on the next container start and the API is fully operational.
 
-### Adding ACS (email + SMS invites) later
+### Adding ACS (email + SMS outreach) later
 
 When you're ready, add an ACS resource (Bicep module or portal), then set the Container App's env vars:
 
@@ -228,13 +304,9 @@ az containerapp update --resource-group $RG --name $APP `
 
 ### Smoke test
 
-```powershell
-$base = "https://<container-app-fqdn>"
-$key  = (az containerapp secret show -g soccer-school-west -n lvss-app --secret-name admin-api-key --query value -o tsv)
-$h = @{ "X-Admin-Key" = $key; "Content-Type" = "application/json" }
-Invoke-RestMethod -Uri "$base/api/invitations" -Method Post -Headers $h `
-  -Body '{"email":"you@yourdomain.com","language":0}'
-```
+After deploy, open `https://<container-app-fqdn>/` and either:
+- Sign up as a parent and submit a test registration, or
+- Log in with the bootstrap admin account and exercise `/admin` (send a test outreach link to your own email).
 
 ### Costs at idle (rough)
 
@@ -251,6 +323,6 @@ Invoke-RestMethod -Uri "$base/api/invitations" -Method Post -Headers $h `
 
 - Replace placeholder waiver wording with official text (sample pending).
 - Replace placeholder landing copy with brand content.
-- Strong admin auth (current X-Admin-Key is fine for one trusted admin; switch to Entra ID / OAuth if multiple admins are needed).
 - Email/SMS delivery webhooks (ACS supports them; the schema already stores `StatusMessage`).
 - CSV export of registrations.
+- Self-service password reset (Identity supports it; UI not built).

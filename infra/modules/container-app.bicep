@@ -9,12 +9,77 @@ param managedIdentityClientId string
 @secure()
 param sqlConnectionString string
 
+@description('Email of the bootstrap admin user. If set, the API ensures this user exists with the Admin role on startup.')
+param adminBootstrapEmail string = ''
+
 @secure()
-param adminApiKey string
+@description('Initial password for the bootstrap admin user. Used only when creating; ignored if the user already exists.')
+param adminBootstrapPassword string = ''
+
+@description('Google OAuth Client ID. Empty disables Google login.')
+param googleOAuthClientId string = ''
+
+@secure()
+param googleOAuthClientSecret string = ''
+
+@description('Facebook OAuth App ID. Empty disables Facebook login.')
+param facebookOAuthAppId string = ''
+
+@secure()
+param facebookOAuthAppSecret string = ''
+
+@description('Active season label, e.g. "2026/27". Stamped onto new registrations.')
+param activeSeason string = '2026/27'
 
 @description('Min replicas (0 enables scale-to-zero).')
 param minReplicas int = 0
 param maxReplicas int = 3
+
+var hasGoogle = !empty(googleOAuthClientId) && !empty(googleOAuthClientSecret)
+var hasFacebook = !empty(facebookOAuthAppId) && !empty(facebookOAuthAppSecret)
+var hasAdminBootstrap = !empty(adminBootstrapEmail) && !empty(adminBootstrapPassword)
+
+var baseSecrets = [
+  { name: 'sql-connection-string', value: sqlConnectionString }
+]
+var googleSecrets = hasGoogle ? [
+  { name: 'google-oauth-secret', value: googleOAuthClientSecret }
+] : []
+var facebookSecrets = hasFacebook ? [
+  { name: 'facebook-oauth-secret', value: facebookOAuthAppSecret }
+] : []
+var adminSecrets = hasAdminBootstrap ? [
+  { name: 'admin-bootstrap-password', value: adminBootstrapPassword }
+] : []
+var allSecrets = concat(baseSecrets, googleSecrets, facebookSecrets, adminSecrets)
+
+var defaultDomain = reference(environmentId, '2024-03-01').defaultDomain
+var publicBaseUrl = 'https://${name}.${defaultDomain}'
+
+var baseEnv = [
+  { name: 'ASPNETCORE_URLS', value: 'http://+:8080' }
+  { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
+  // Tells DefaultAzureCredential which user-assigned managed identity to use.
+  { name: 'AZURE_CLIENT_ID', value: managedIdentityClientId }
+  { name: 'ConnectionStrings__DefaultConnection', secretRef: 'sql-connection-string' }
+  { name: 'App__ActiveSeason', value: activeSeason }
+  { name: 'App__PublicBaseUrl', value: publicBaseUrl }
+  // CORS not strictly needed in single-origin deploy but kept for parity with dev.
+  { name: 'App__Cors__AllowedOrigins__0', value: publicBaseUrl }
+]
+var googleEnv = hasGoogle ? [
+  { name: 'App__OAuth__Google__ClientId', value: googleOAuthClientId }
+  { name: 'App__OAuth__Google__ClientSecret', secretRef: 'google-oauth-secret' }
+] : []
+var facebookEnv = hasFacebook ? [
+  { name: 'App__OAuth__Facebook__AppId', value: facebookOAuthAppId }
+  { name: 'App__OAuth__Facebook__AppSecret', secretRef: 'facebook-oauth-secret' }
+] : []
+var adminEnv = hasAdminBootstrap ? [
+  { name: 'App__Admin__Email', value: adminBootstrapEmail }
+  { name: 'App__Admin__Password', secretRef: 'admin-bootstrap-password' }
+] : []
+var allEnv = concat(baseEnv, googleEnv, facebookEnv, adminEnv)
 
 resource app 'Microsoft.App/containerApps@2024-03-01' = {
   name: name
@@ -38,10 +103,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
           { latestRevision: true, weight: 100 }
         ]
       }
-      secrets: [
-        { name: 'sql-connection-string', value: sqlConnectionString }
-        { name: 'admin-api-key', value: adminApiKey }
-      ]
+      secrets: allSecrets
       // GHCR public package — no registry auth needed.
       // To switch to a private package, add a `registries` block referencing a PAT secret.
     }
@@ -54,17 +116,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
             cpu: json('0.5')
             memory: '1Gi'
           }
-          env: [
-            { name: 'ASPNETCORE_URLS', value: 'http://+:8080' }
-            { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
-            // Tells DefaultAzureCredential which user-assigned managed identity to use.
-            { name: 'AZURE_CLIENT_ID', value: managedIdentityClientId }
-            { name: 'ConnectionStrings__DefaultConnection', secretRef: 'sql-connection-string' }
-            { name: 'App__AdminApiKey', secretRef: 'admin-api-key' }
-            // CORS not strictly needed in single-origin deploy but kept for parity with dev.
-            { name: 'App__Cors__AllowedOrigins__0', value: 'https://${name}.${reference(environmentId, '2024-03-01').defaultDomain}' }
-            { name: 'App__PublicBaseUrl', value: 'https://${name}.${reference(environmentId, '2024-03-01').defaultDomain}' }
-          ]
+          env: allEnv
           probes: [
             {
               type: 'Liveness'
@@ -100,3 +152,6 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
 output id string = app.id
 output name string = app.name
 output fqdn string = app.properties.configuration.ingress.fqdn
+output publicBaseUrl string = publicBaseUrl
+output googleRedirectUri string = '${publicBaseUrl}/signin-google'
+output facebookRedirectUri string = '${publicBaseUrl}/signin-facebook'
