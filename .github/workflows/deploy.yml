@@ -83,6 +83,7 @@ jobs:
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
       - name: Deploy Bicep
+        id: deploy
         uses: azure/arm-deploy@v2
         with:
           scope: resourcegroup
@@ -93,16 +94,20 @@ jobs:
             containerImage=${{ needs.build-and-push.outputs.image }}
             sqlAadAdminObjectId=${{ vars.SQL_AAD_ADMIN_OBJECT_ID }}
             sqlAadAdminLogin=${{ vars.SQL_AAD_ADMIN_LOGIN }}
+          deploymentName: lvss-${{ github.run_id }}
           failOnStdErr: false
 
       - name: Show deployment outputs
         env:
           RG: ${{ vars.AZURE_RESOURCE_GROUP }}
+          DEP: lvss-${{ github.run_id }}
         run: |
           set -e
-          OUTPUTS=$(az deployment group list \
-            --resource-group "$RG" \
-            --query "[?properties.provisioningState=='Succeeded'] | [0].properties.outputs" -o json)
+          OUTPUTS=$(az deployment group show -g "$RG" -n "$DEP" --query properties.outputs -o json)
           APP_URL=$(echo "$OUTPUTS" | jq -r '.appUrl.value // empty')
+          SQL_FQDN=$(echo "$OUTPUTS" | jq -r '.sqlServerFqdn.value // empty')
+          MI_CLIENT=$(echo "$OUTPUTS" | jq -r '.managedIdentityClientId.value // empty')
           echo "::notice title=App URL::$APP_URL"
           echo "App URL: $APP_URL"
+          echo "SQL FQDN: $SQL_FQDN"
+          echo "Managed Identity Client ID: $MI_CLIENT"
