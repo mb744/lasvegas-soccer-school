@@ -7,6 +7,9 @@
     trusting the GitHub repo's `main` branch, and grants the identity Contributor on the resource group.
     Prints the values you need to paste into GitHub repo variables.
 
+    All Azure CLI calls retry on transient network errors. If a call fails non-transiently,
+    re-run the script - every step is idempotent.
+
 .PARAMETER SubscriptionId
     Target Azure subscription ID.
 
@@ -50,11 +53,66 @@ $ErrorActionPreference = 'Stop'
 function Step($msg) { Write-Host "==> $msg" -ForegroundColor Cyan }
 function Info($msg) { Write-Host "    $msg" -ForegroundColor Gray }
 function Ok($msg)   { Write-Host "    $msg" -ForegroundColor Green }
+function Warn($msg) { Write-Host "    $msg" -ForegroundColor Yellow }
+
+# Find az.cmd / az.exe regardless of PATH quirks
+$azCmd = (Get-Command az -ErrorAction SilentlyContinue).Source
+if (-not $azCmd) { throw "az CLI not found on PATH." }
+
+# Run an az command. Returns stdout (string) on success, $null if -AllowMissing and the
+# resource doesn't exist. Retries on transient network errors. Throws otherwise.
+function Invoke-Az {
+    param(
+        [Parameter(Mandatory)] [string[]] $Args,
+        [switch] $AllowMissing,
+        [int] $MaxAttempts = 4
+    )
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        $stdoutFile = [System.IO.Path]::GetTempFileName()
+        $stderrFile = [System.IO.Path]::GetTempFileName()
+        try {
+            $proc = Start-Process -FilePath $azCmd `
+                -ArgumentList $Args `
+                -NoNewWindow -Wait -PassThru `
+                -RedirectStandardOutput $stdoutFile `
+                -RedirectStandardError $stderrFile
+
+            $stdout = ''
+            if (Test-Path $stdoutFile) { $stdout = (Get-Content $stdoutFile -Raw) }
+            $stderr = ''
+            if (Test-Path $stderrFile) { $stderr = (Get-Content $stderrFile -Raw) }
+
+            if ($proc.ExitCode -eq 0) {
+                return $stdout
+            }
+
+            if ($AllowMissing -and ($stderr -match 'ResourceNotFound|was not found|cannot be found|does not exist|not exist|Not Found')) {
+                return $null
+            }
+
+            $isTransient = $stderr -match '(Connection aborted|10054|RemoteDisconnected|read timed out|timed? ?out|temporarily unavailable|HTTPSConnectionPool|503 |429 |Bad Gateway|502 |504 )'
+            if ($isTransient -and $attempt -lt $MaxAttempts) {
+                $delay = 5 * $attempt
+                Warn "[transient network error] retrying in $delay s (attempt $attempt of $MaxAttempts)"
+                Start-Sleep -Seconds $delay
+                continue
+            }
+
+            throw "az $($Args -join ' ') failed (exit $($proc.ExitCode)):`n$stderr"
+        }
+        finally {
+            Remove-Item $stdoutFile -Force -ErrorAction SilentlyContinue
+            Remove-Item $stderrFile -Force -ErrorAction SilentlyContinue
+        }
+    }
+    throw "az $($Args -join ' ') failed after $MaxAttempts attempts (transient errors)."
+}
 
 # ---- 0. Sanity checks ----
 Step "Checking az login + subscription access"
-az account set --subscription $SubscriptionId | Out-Null
-$current = az account show --query "{sub:id, tenant:tenantId, user:user.name}" -o json | ConvertFrom-Json
+Invoke-Az @('account','set','--subscription',$SubscriptionId) | Out-Null
+$accountJson = Invoke-Az @('account','show','--query','{sub:id, tenant:tenantId, user:user.name}','-o','json')
+$current = $accountJson | ConvertFrom-Json
 if ($current.sub -ne $SubscriptionId) {
     throw "Active subscription is $($current.sub), expected $SubscriptionId. Run 'az login --tenant $TenantId' first."
 }
@@ -65,9 +123,9 @@ Ok "Logged in as $($current.user) on sub $SubscriptionId"
 
 # ---- 1. Resource group ----
 Step "Ensuring resource group '$ResourceGroup' exists in '$Location'"
-$rgExists = az group exists --name $ResourceGroup
+$rgExists = (Invoke-Az @('group','exists','--name',$ResourceGroup)).Trim()
 if ($rgExists -ne 'true') {
-    az group create --name $ResourceGroup --location $Location | Out-Null
+    Invoke-Az @('group','create','--name',$ResourceGroup,'--location',$Location) | Out-Null
     Ok "Created resource group"
 } else {
     Ok "Resource group already exists"
@@ -75,14 +133,14 @@ if ($rgExists -ne 'true') {
 
 # ---- 2. User-assigned managed identity for OIDC deployments ----
 Step "Ensuring user-assigned managed identity '$IdentityName' exists"
-$identity = az identity show --name $IdentityName --resource-group $ResourceGroup --output json 2>$null | ConvertFrom-Json
-if (-not $identity) {
-    $identity = az identity create --name $IdentityName --resource-group $ResourceGroup --location $Location -o json | ConvertFrom-Json
+$identityJson = Invoke-Az @('identity','show','--name',$IdentityName,'--resource-group',$ResourceGroup,'--output','json') -AllowMissing
+if (-not $identityJson) {
+    $identityJson = Invoke-Az @('identity','create','--name',$IdentityName,'--resource-group',$ResourceGroup,'--location',$Location,'-o','json')
     Ok "Created managed identity"
 } else {
     Ok "Managed identity already exists"
 }
-
+$identity = $identityJson | ConvertFrom-Json
 $clientId = $identity.clientId
 $principalId = $identity.principalId
 Info "Client ID: $clientId"
@@ -92,19 +150,15 @@ Info "Principal ID: $principalId"
 Step "Configuring federated credentials for $GithubRepo"
 
 $federations = @(
-    @{ Name = 'github-main';        Subject = "repo:${GithubRepo}:ref:refs/heads/main" },
-    @{ Name = 'github-pull-request'; Subject = "repo:${GithubRepo}:pull_request" },
-    @{ Name = 'github-environment-production'; Subject = "repo:${GithubRepo}:environment:production" }
+    @{ Name = 'github-main';                   Subject = ('repo:' + $GithubRepo + ':ref:refs/heads/main') },
+    @{ Name = 'github-pull-request';           Subject = ('repo:' + $GithubRepo + ':pull_request') },
+    @{ Name = 'github-environment-production'; Subject = ('repo:' + $GithubRepo + ':environment:production') }
 )
 
 foreach ($fed in $federations) {
-    $existing = az identity federated-credential show `
-        --name $fed.Name `
-        --identity-name $IdentityName `
-        --resource-group $ResourceGroup `
-        -o json 2>$null
+    $existing = Invoke-Az @('identity','federated-credential','show','--name',$fed.Name,'--identity-name',$IdentityName,'--resource-group',$ResourceGroup,'-o','json') -AllowMissing
     if ($existing) {
-        Info "  $($fed.Name) - already exists"
+        Info ("  " + $fed.Name + " - already exists")
     } else {
         $params = @{
             name        = $fed.Name
@@ -113,35 +167,43 @@ foreach ($fed in $federations) {
             audiences   = @('api://AzureADTokenExchange')
             description = "GitHub Actions OIDC for $GithubRepo"
         } | ConvertTo-Json -Compress
-        $params | Set-Content -Path "fed-temp.json" -Encoding utf8
-        az identity federated-credential create `
-            --identity-name $IdentityName `
-            --resource-group $ResourceGroup `
-            --parameters '@fed-temp.json' | Out-Null
-        Remove-Item fed-temp.json -ErrorAction SilentlyContinue
-        Ok "  Created $($fed.Name)"
+        $tmp = [System.IO.Path]::GetTempFileName()
+        try {
+            # Write as ASCII so PS 5.1 doesn't add a UTF-16 BOM that az can't parse
+            [System.IO.File]::WriteAllText($tmp, $params, [System.Text.UTF8Encoding]::new($false))
+            Invoke-Az @('identity','federated-credential','create','--identity-name',$IdentityName,'--resource-group',$ResourceGroup,'--parameters',('@' + $tmp)) | Out-Null
+            Ok ("  Created " + $fed.Name)
+        } finally {
+            Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+        }
     }
 }
 
 # ---- 4. Grant Contributor on the resource group ----
 Step "Granting Contributor role on RG to managed identity"
 $rgScope = "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroup"
-$existingRole = az role assignment list `
-    --assignee-object-id $principalId `
-    --assignee-principal-type ServicePrincipal `
-    --scope $rgScope `
-    --role Contributor `
-    --query "[0].id" -o tsv 2>$null
+$existingRoleJson = Invoke-Az @(
+    'role','assignment','list',
+    '--assignee-object-id',$principalId,
+    '--assignee-principal-type','ServicePrincipal',
+    '--scope',$rgScope,
+    '--role','Contributor',
+    '--query','[0].id','-o','tsv'
+)
+$existingRole = $existingRoleJson.Trim()
 if (-not $existingRole) {
-    # MI may take a few seconds to propagate
+    # Identity may take a few seconds to propagate to ARM
+    $assigned = $false
     for ($i = 1; $i -le 6; $i++) {
         try {
-            az role assignment create `
-                --assignee-object-id $principalId `
-                --assignee-principal-type ServicePrincipal `
-                --role Contributor `
-                --scope $rgScope | Out-Null
-            Ok "Contributor granted"
+            Invoke-Az @(
+                'role','assignment','create',
+                '--assignee-object-id',$principalId,
+                '--assignee-principal-type','ServicePrincipal',
+                '--role','Contributor',
+                '--scope',$rgScope
+            ) | Out-Null
+            $assigned = $true
             break
         } catch {
             if ($i -eq 6) { throw }
@@ -149,12 +211,14 @@ if (-not $existingRole) {
             Start-Sleep -Seconds 5
         }
     }
+    if ($assigned) { Ok "Contributor granted" }
 } else {
     Ok "Contributor already granted"
 }
 
 # ---- 5. Output ----
-$signedInUser = az ad signed-in-user show -o json | ConvertFrom-Json
+$signedInJson = Invoke-Az @('ad','signed-in-user','show','-o','json')
+$signedInUser = $signedInJson | ConvertFrom-Json
 $signedInObjectId = $signedInUser.id
 $signedInUpn = $signedInUser.userPrincipalName
 if (-not $signedInUpn) { $signedInUpn = $signedInUser.mail }
