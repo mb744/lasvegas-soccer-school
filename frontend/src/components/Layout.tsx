@@ -14,19 +14,21 @@ export function Layout({ children }: { children: ReactNode }) {
     navigate('/', { replace: true })
   }
 
+  const displayName = me?.firstName?.trim() || me?.email.split('@')[0] || ''
+
   return (
     <div className="min-h-screen flex flex-col">
       <header className="bg-white border-b border-slate-200">
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-2 text-emerald-800 font-bold text-lg">
-            <span aria-hidden className="inline-block w-7 h-7 rounded-full bg-emerald-700 text-white grid place-items-center">⚽</span>
+            <img src="/logo.png" alt="" className="w-8 h-8 object-contain" />
             {t('common.appName')}
           </Link>
           <div className="flex items-center gap-3">
             <LanguageToggle />
             {me ? (
               <div className="flex items-center gap-2 text-sm">
-                <span className="text-slate-600 hidden sm:inline">{me.firstName}</span>
+                <span className="text-slate-600 hidden sm:inline">{displayName}</span>
                 <button onClick={onLogout} className="text-emerald-700 hover:underline">
                   {t('auth.logout')}
                 </button>

@@ -157,6 +157,7 @@ public class AuthController : ControllerBase
 
             var firstName = info.Principal.FindFirst(System.Security.Claims.ClaimTypes.GivenName)?.Value
                 ?? info.Principal.Identity?.Name?.Split(' ').FirstOrDefault()
+                ?? email.Split('@').FirstOrDefault()
                 ?? "";
             var lastName = info.Principal.FindFirst(System.Security.Claims.ClaimTypes.Surname)?.Value
                 ?? info.Principal.Identity?.Name?.Split(' ').Skip(1).LastOrDefault()

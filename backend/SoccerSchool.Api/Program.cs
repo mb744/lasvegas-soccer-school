@@ -219,4 +219,23 @@ static async Task SeedAdminAsync(IServiceProvider services, ILogger logger)
         await users.AddToRoleAsync(existing, Roles.Admin);
         logger.LogInformation("Granted Admin role to {Email}.", existing.Email);
     }
+
+    // Make sure the admin also has a ParentAccount so /api/auth/me returns a name
+    // and the UI doesn't show empty header / register form. Names are placeholders
+    // that get overwritten the first time admin submits a registration.
+    var db = services.GetRequiredService<AppDbContext>();
+    var hasAccount = await db.ParentAccounts.AnyAsync(p => p.UserId == existing.Id);
+    if (!hasAccount)
+    {
+        var emailLocal = (existing.Email ?? "").Split('@').FirstOrDefault() ?? "Admin";
+        db.ParentAccounts.Add(new ParentAccount
+        {
+            UserId = existing.Id,
+            FirstName = emailLocal,
+            LastName = "",
+            Language = Language.English,
+        });
+        await db.SaveChangesAsync();
+        logger.LogInformation("Created ParentAccount for admin {Email}.", existing.Email);
+    }
 }
