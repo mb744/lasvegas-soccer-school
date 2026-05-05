@@ -60,8 +60,16 @@ Write-Host ""
 
 if ($sqlcmd) {
     Write-Host "==> Running via sqlcmd with Azure AD interactive auth..." -ForegroundColor Cyan
-    & sqlcmd -S $SqlServerFqdn -d $DatabaseName -G --authentication-method=ActiveDirectoryInteractive -Q $sql
+    # -G alone works for both classic Microsoft sqlcmd (>= ~2018) and go-sqlcmd; both pick
+    # up Azure AD interactive auth and pop a browser. Avoid --authentication-method which is
+    # go-sqlcmd-only and breaks classic sqlcmd parsing.
+    & sqlcmd -S $SqlServerFqdn -d $DatabaseName -G -Q $sql
     if ($LASTEXITCODE -ne 0) {
+        Write-Host ""
+        Write-Host "sqlcmd exited with code $LASTEXITCODE." -ForegroundColor Yellow
+        Write-Host "Fall back to the Azure Portal Query editor:" -ForegroundColor Yellow
+        Write-Host "  Portal -> SQL databases -> $DatabaseName -> Query editor (preview)" -ForegroundColor Yellow
+        Write-Host "  Authenticate with Active Directory, then paste the T-SQL above." -ForegroundColor Yellow
         throw "sqlcmd failed with exit code $LASTEXITCODE"
     }
     Write-Host "[OK] Done." -ForegroundColor Green
