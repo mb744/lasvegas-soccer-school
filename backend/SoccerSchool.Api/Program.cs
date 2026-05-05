@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -15,6 +16,19 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.Configure<AppOptions>(builder.Configuration.GetSection(AppOptions.SectionName));
 builder.Services.Configure<AcsOptions>(builder.Configuration.GetSection(AcsOptions.SectionName));
+
+// Container Apps ingress terminates TLS and forwards HTTP to port 8080. Without this,
+// Request.Scheme is "http" and the OAuth handlers send `redirect_uri=http://...` to
+// Google/Facebook, which Facebook rejects with "isn't using a secure connection".
+// Honor X-Forwarded-Proto/X-Forwarded-For so Request.Scheme reflects the original https.
+builder.Services.Configure<ForwardedHeadersOptions>(opts =>
+{
+    opts.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedHost;
+    // Container Apps ingress comes from a wide range of internal IPs we don't control;
+    // trust the headers regardless of source.
+    opts.KnownIPNetworks.Clear();
+    opts.KnownProxies.Clear();
+});
 
 builder.Services.AddDbContext<AppDbContext>(opts =>
 {
@@ -120,6 +134,10 @@ using (var scope = app.Services.CreateScope())
     await MigrateWithRetryAsync(db, app.Logger);
     await SeedAdminAsync(scope.ServiceProvider, app.Logger);
 }
+
+// Must run before UseAuthentication so the Google/Facebook handlers see Request.Scheme=https
+// when the Container Apps ingress forwards a TLS-terminated request as plain HTTP.
+app.UseForwardedHeaders();
 
 if (app.Environment.IsDevelopment())
 {
