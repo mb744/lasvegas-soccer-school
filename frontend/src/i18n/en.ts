@@ -17,6 +17,11 @@ const en = {
     info: 'Info',
     pricing: 'Pricing',
   },
+  cta: {
+    title: 'Ready to play?',
+    subtitle: 'Sign up takes a minute. The first month of training is on us.',
+    button: 'Register your player',
+  },
   auth: {
     loginTitle: 'Log in',
     loginSubtitle: 'Welcome back — sign in to register your players.',

@@ -1,13 +1,10 @@
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Layout } from '../components/Layout'
-import { useAuth } from '../auth/AuthContext'
 
 export function AboutPage() {
   const { i18n } = useTranslation()
-  const { me } = useAuth()
   const es = i18n.resolvedLanguage?.startsWith('es') ?? false
-  const ctaTo = me ? '/register' : '/signup'
 
   return (
     <Layout>
@@ -120,15 +117,6 @@ export function AboutPage() {
             </Link>
           </div>
         </section>
-
-        <div className="text-center pt-2">
-          <Link
-            to={ctaTo}
-            className="inline-block bg-emerald-700 text-white font-semibold px-6 py-3 rounded-md hover:bg-emerald-800 shadow"
-          >
-            {es ? 'Inscriba a su jugador' : 'Register your player'}
-          </Link>
-        </div>
       </div>
     </Layout>
   )

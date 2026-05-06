@@ -19,6 +19,11 @@ const es: Translations = {
     info: 'Información',
     pricing: 'Precios',
   },
+  cta: {
+    title: '¿Listo para jugar?',
+    subtitle: 'La inscripción toma un minuto. El primer mes de entrenamiento es gratis.',
+    button: 'Inscriba a su jugador',
+  },
   auth: {
     loginTitle: 'Iniciar sesión',
     loginSubtitle: 'Bienvenido de nuevo — inicie sesión para inscribir a sus jugadores.',

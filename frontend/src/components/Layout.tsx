@@ -1,4 +1,4 @@
-import { Link, NavLink, useNavigate } from 'react-router-dom'
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { LanguageToggle } from './LanguageToggle'
 import type { ReactNode } from 'react'
@@ -8,6 +8,7 @@ export function Layout({ children }: { children: ReactNode }) {
   const { t } = useTranslation()
   const { me, logout } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const navLink = ({ isActive }: { isActive: boolean }) =>
     `text-sm font-medium ${isActive ? 'text-emerald-800' : 'text-slate-600 hover:text-emerald-700'}`
 
@@ -17,6 +18,8 @@ export function Layout({ children }: { children: ReactNode }) {
   }
 
   const displayName = me?.firstName?.trim() || me?.email.split('@')[0] || ''
+  const showRegisterCta = !location.pathname.startsWith('/admin')
+  const ctaTo = me ? '/register' : '/signup'
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -57,7 +60,23 @@ export function Layout({ children }: { children: ReactNode }) {
         </nav>
       </header>
       <main className="flex-1">{children}</main>
-      <footer className="bg-white border-t border-slate-200 mt-12">
+      {showRegisterCta && (
+        <section className="bg-emerald-700 text-white">
+          <div className="max-w-5xl mx-auto px-4 py-10 sm:py-12 flex flex-col sm:flex-row items-center justify-between gap-6 text-center sm:text-left">
+            <div>
+              <h2 className="text-2xl font-bold">{t('cta.title')}</h2>
+              <p className="text-emerald-50 text-sm mt-1">{t('cta.subtitle')}</p>
+            </div>
+            <Link
+              to={ctaTo}
+              className="inline-block bg-white text-emerald-800 font-semibold px-6 py-3 rounded-md shadow hover:shadow-lg transition shrink-0"
+            >
+              {t('cta.button')}
+            </Link>
+          </div>
+        </section>
+      )}
+      <footer className="bg-white border-t border-slate-200">
         <div className="max-w-5xl mx-auto px-4 py-6 text-sm text-slate-500 flex flex-wrap items-center justify-between gap-3">
           <span>© {new Date().getFullYear()} {t('common.appName')}</span>
           <div className="flex items-center gap-4">
