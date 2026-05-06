@@ -133,6 +133,6 @@ public class OutreachSender : IOutreachSender
 
     private static string BuildSmsBody(Language lang, string link) =>
         lang == Language.Spanish
-            ? $"Las Vegas Soccer School: cree su cuenta e inscriba a su jugador: {link}"
-            : $"Las Vegas Soccer School: create your account and register your player: {link}";
+            ? $"Las Vegas Soccer School: complete la inscripcion de su jugador: {link} Responda STOP para cancelar, HELP para ayuda."
+            : $"Las Vegas Soccer School: complete your player registration: {link} Reply STOP to opt out, HELP for help.";
 }
