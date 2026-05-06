@@ -4,6 +4,9 @@ using Azure.Communication.Sms;
 using Microsoft.Extensions.Options;
 using SoccerSchool.Api.Domain;
 using SoccerSchool.Api.Options;
+using Twilio;
+using Twilio.Rest.Api.V2010.Account;
+using Twilio.Types;
 
 namespace SoccerSchool.Api.Services;
 
@@ -17,11 +20,13 @@ public record SendResult(bool Success, string? Message);
 public class OutreachSender : IOutreachSender
 {
     private readonly AcsOptions _acs;
+    private readonly TwilioOptions _twilio;
     private readonly ILogger<OutreachSender> _logger;
 
-    public OutreachSender(IOptions<AcsOptions> acs, ILogger<OutreachSender> logger)
+    public OutreachSender(IOptions<AcsOptions> acs, IOptions<TwilioOptions> twilio, ILogger<OutreachSender> logger)
     {
         _acs = acs.Value;
+        _twilio = twilio.Value;
         _logger = logger;
     }
 
@@ -74,12 +79,50 @@ public class OutreachSender : IOutreachSender
 
     private async Task<SendResult> SendSmsAsync(Outreach outreach, string link, CancellationToken ct)
     {
-        if (!_acs.IsSmsConfigured)
+        // Twilio takes precedence when configured. ACS is the legacy fallback,
+        // useful only if you ever turn Twilio off again.
+        if (_twilio.IsSmsConfigured)
         {
-            _logger.LogWarning("ACS SMS not configured. Skipping send for outreach {Id}.", outreach.Id);
-            return new SendResult(false, "ACS SMS not configured (set Acs:ConnectionString and Acs:SmsFromNumber).");
+            return await SendSmsViaTwilioAsync(outreach, link, ct);
         }
+        if (_acs.IsSmsConfigured)
+        {
+            return await SendSmsViaAcsAsync(outreach, link, ct);
+        }
+        _logger.LogWarning("No SMS provider configured. Skipping send for outreach {Id}.", outreach.Id);
+        return new SendResult(false, "SMS not configured (set either Twilio:* or Acs:SmsFromNumber).");
+    }
 
+    private async Task<SendResult> SendSmsViaTwilioAsync(Outreach outreach, string link, CancellationToken ct)
+    {
+        try
+        {
+            // Twilio's static initializer is global; safe to call repeatedly.
+            TwilioClient.Init(_twilio.AccountSid, _twilio.AuthToken);
+            var body = BuildSmsBody(outreach.Language, link);
+            var msg = await MessageResource.CreateAsync(
+                to: new PhoneNumber(outreach.Phone!),
+                from: new PhoneNumber(_twilio.SmsFromNumber),
+                body: body);
+            // Twilio's initial Status is usually "queued" or "accepted"; delivery is async via webhooks.
+            return msg.ErrorCode is null
+                ? new SendResult(true, $"Twilio SMS queued (sid {msg.Sid}, status {msg.Status}).")
+                : new SendResult(false, $"Twilio error {msg.ErrorCode}: {msg.ErrorMessage}");
+        }
+        catch (Twilio.Exceptions.ApiException ex)
+        {
+            _logger.LogError(ex, "Twilio SMS send failed for outreach {Id}", outreach.Id);
+            return new SendResult(false, $"Twilio API error: {ex.Code} {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Twilio SMS send failed for outreach {Id}", outreach.Id);
+            return new SendResult(false, $"Twilio error: {ex.Message}");
+        }
+    }
+
+    private async Task<SendResult> SendSmsViaAcsAsync(Outreach outreach, string link, CancellationToken ct)
+    {
         try
         {
             var client = new SmsClient(_acs.ConnectionString);
@@ -87,8 +130,8 @@ public class OutreachSender : IOutreachSender
             var response = await client.SendAsync(_acs.SmsFromNumber, outreach.Phone!, body, cancellationToken: ct);
             var result = response.Value;
             return result.Successful
-                ? new SendResult(true, $"SMS sent (id {result.MessageId}).")
-                : new SendResult(false, $"SMS error: {result.HttpStatusCode} {result.ErrorMessage}");
+                ? new SendResult(true, $"ACS SMS sent (id {result.MessageId}).")
+                : new SendResult(false, $"ACS SMS error: {result.HttpStatusCode} {result.ErrorMessage}");
         }
         catch (RequestFailedException ex)
         {

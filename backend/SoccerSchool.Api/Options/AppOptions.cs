@@ -66,3 +66,18 @@ public class AcsOptions
     public bool IsSmsConfigured =>
         !string.IsNullOrWhiteSpace(ConnectionString) && !string.IsNullOrWhiteSpace(SmsFromNumber);
 }
+
+public class TwilioOptions
+{
+    public const string SectionName = "Twilio";
+
+    public string AccountSid { get; set; } = string.Empty;
+    public string AuthToken { get; set; } = string.Empty;
+    public string SmsFromNumber { get; set; } = string.Empty;
+
+    /// <summary>True when AccountSid + AuthToken + SmsFromNumber are all set; OutreachSender prefers Twilio over ACS for SMS in that case.</summary>
+    public bool IsSmsConfigured =>
+        !string.IsNullOrWhiteSpace(AccountSid) &&
+        !string.IsNullOrWhiteSpace(AuthToken) &&
+        !string.IsNullOrWhiteSpace(SmsFromNumber);
+}

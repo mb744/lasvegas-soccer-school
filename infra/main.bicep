@@ -40,6 +40,16 @@ param acsCustomEmailDomain string = ''
 @description('Local-part of the sender on the custom email domain. Must already exist as a Sender Username on that domain (created via the Azure portal).')
 param acsCustomEmailLocalPart string = 'registration'
 
+@description('Twilio Account SID. When provided alongside auth token + from number, OutreachSender uses Twilio for SMS instead of ACS.')
+param twilioAccountSid string = ''
+
+@secure()
+@description('Twilio auth token.')
+param twilioAuthToken string = ''
+
+@description('Twilio sender phone number in E.164 format (e.g. +18005551212). Must be a Twilio-owned number.')
+param twilioSmsFromNumber string = ''
+
 @description('Email of the bootstrap admin Identity user. Created (with Admin role) on first start. Leave empty to skip bootstrap.')
 param adminBootstrapEmail string = ''
 
@@ -150,6 +160,9 @@ module containerApp 'modules/container-app.bicep' = {
     acsConnectionString: enableAcs ? acs!.outputs.connectionString : ''
     acsEmailFromAddress: enableAcs ? acs!.outputs.fromAddress : ''
     acsSmsFromNumber: acsSmsFromNumber
+    twilioAccountSid: twilioAccountSid
+    twilioAuthToken: twilioAuthToken
+    twilioSmsFromNumber: twilioSmsFromNumber
   }
 }
 

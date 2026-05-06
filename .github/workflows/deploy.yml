@@ -106,6 +106,9 @@ jobs:
             acsSmsFromNumber=${{ vars.ACS_SMS_FROM_NUMBER }}
             acsCustomEmailDomain=${{ vars.ACS_CUSTOM_EMAIL_DOMAIN }}
             acsCustomEmailLocalPart=${{ vars.ACS_CUSTOM_EMAIL_LOCAL_PART || 'registration' }}
+            twilioAccountSid=${{ vars.TWILIO_ACCOUNT_SID }}
+            twilioAuthToken=${{ secrets.TWILIO_AUTH_TOKEN }}
+            twilioSmsFromNumber=${{ vars.TWILIO_SMS_FROM_NUMBER }}
           deploymentName: lvss-${{ github.run_id }}
           failOnStdErr: false
 

@@ -16,6 +16,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.Configure<AppOptions>(builder.Configuration.GetSection(AppOptions.SectionName));
 builder.Services.Configure<AcsOptions>(builder.Configuration.GetSection(AcsOptions.SectionName));
+builder.Services.Configure<TwilioOptions>(builder.Configuration.GetSection(TwilioOptions.SectionName));
 
 // Container Apps ingress terminates TLS and forwards HTTP to port 8080. Without this,
 // Request.Scheme is "http" and the OAuth handlers send `redirect_uri=http://...` to

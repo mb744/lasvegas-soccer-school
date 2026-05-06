@@ -41,6 +41,16 @@ param acsEmailFromAddress string = ''
 @description('Optional sender phone number for ACS SMS in E.164 format, e.g. +18005551212. Empty disables SMS outreach.')
 param acsSmsFromNumber string = ''
 
+@description('Optional Twilio Account SID. When all three Twilio params are set, OutreachSender uses Twilio for SMS instead of ACS.')
+param twilioAccountSid string = ''
+
+@secure()
+@description('Twilio auth token (aka API secret).')
+param twilioAuthToken string = ''
+
+@description('Twilio sender phone number in E.164 format (e.g. +18005551212). Must be a Twilio-owned, fully verified number.')
+param twilioSmsFromNumber string = ''
+
 @description('Optional custom domain (e.g. registration.lasvegassoccerschool.org). When set, PublicBaseUrl + OAuth redirect URIs use it instead of the auto-generated Container Apps FQDN. The actual hostname binding (managed cert + ingress.customDomains) is done by a post-Bicep step in deploy.yml because cert provisioning requires the hostname to be already registered on the container app, which Bicep cannot do in a single pass.')
 param customDomain string = ''
 
@@ -52,6 +62,7 @@ var hasGoogle = !empty(googleOAuthClientId) && !empty(googleOAuthClientSecret)
 var hasFacebook = !empty(facebookOAuthAppId) && !empty(facebookOAuthAppSecret)
 var hasAdminBootstrap = !empty(adminBootstrapEmail) && !empty(adminBootstrapPassword)
 var hasAcs = !empty(acsConnectionString)
+var hasTwilio = !empty(twilioAccountSid) && !empty(twilioAuthToken) && !empty(twilioSmsFromNumber)
 
 var baseSecrets = [
   { name: 'sql-connection-string', value: sqlConnectionString }
@@ -68,7 +79,10 @@ var adminSecrets = hasAdminBootstrap ? [
 var acsSecrets = hasAcs ? [
   { name: 'acs-connection-string', value: acsConnectionString }
 ] : []
-var allSecrets = concat(baseSecrets, googleSecrets, facebookSecrets, adminSecrets, acsSecrets)
+var twilioSecrets = hasTwilio ? [
+  { name: 'twilio-auth-token', value: twilioAuthToken }
+] : []
+var allSecrets = concat(baseSecrets, googleSecrets, facebookSecrets, adminSecrets, acsSecrets, twilioSecrets)
 
 var defaultDomain = reference(environmentId, '2024-03-01').defaultDomain
 var defaultFqdn = '${name}.${defaultDomain}'
@@ -109,7 +123,12 @@ var acsEnvEmail = hasAcs && !empty(acsEmailFromAddress) ? [
 var acsEnvSms = hasAcs && !empty(acsSmsFromNumber) ? [
   { name: 'Acs__SmsFromNumber', value: acsSmsFromNumber }
 ] : []
-var allEnv = concat(baseEnv, googleEnv, facebookEnv, adminEnv, acsEnvCore, acsEnvEmail, acsEnvSms)
+var twilioEnv = hasTwilio ? [
+  { name: 'Twilio__AccountSid', value: twilioAccountSid }
+  { name: 'Twilio__AuthToken', secretRef: 'twilio-auth-token' }
+  { name: 'Twilio__SmsFromNumber', value: twilioSmsFromNumber }
+] : []
+var allEnv = concat(baseEnv, googleEnv, facebookEnv, adminEnv, acsEnvCore, acsEnvEmail, acsEnvSms, twilioEnv)
 
 resource app 'Microsoft.App/containerApps@2024-03-01' = {
   name: name
