@@ -34,6 +34,12 @@ param enableAcs bool = false
 @description('Sender phone number for ACS SMS in E.164 format (e.g. +18005551212). Purchase the number in the Azure portal first; ACS does not expose phone-number purchase to Bicep. Empty disables SMS outreach.')
 param acsSmsFromNumber string = ''
 
+@description('Optional customer-managed email domain already verified in the Email Communication Service (e.g. "lasvegassoccerschool.org"). When set, outreach emails send from <acsCustomEmailLocalPart>@<acsCustomEmailDomain> instead of the Azure-managed *.azurecomm.net address.')
+param acsCustomEmailDomain string = ''
+
+@description('Local-part of the sender on the custom email domain. Must already exist as a Sender Username on that domain (created via the Azure portal).')
+param acsCustomEmailLocalPart string = 'registration'
+
 @description('Email of the bootstrap admin Identity user. Created (with Admin role) on first start. Leave empty to skip bootstrap.')
 param adminBootstrapEmail string = ''
 
@@ -117,6 +123,8 @@ module acs 'modules/acs.bicep' = if (enableAcs) {
   params: {
     appName: appName
     tags: commonTags
+    customEmailDomain: acsCustomEmailDomain
+    customSenderLocalPart: acsCustomEmailLocalPart
   }
 }
 

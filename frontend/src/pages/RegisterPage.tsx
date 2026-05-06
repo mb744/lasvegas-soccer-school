@@ -351,7 +351,7 @@ function PlayersSection({
       <button
         type="button"
         onClick={onAdd}
-        className="w-full bg-white border-2 border-dashed border-emerald-300 text-emerald-700 hover:bg-emerald-50 font-medium py-3 rounded-md"
+        className="w-full bg-emerald-50 border-2 border-emerald-400 text-emerald-800 hover:bg-emerald-100 hover:border-emerald-600 font-semibold py-3 rounded-md transition"
       >
         + {t('register.players.add')}
       </button>

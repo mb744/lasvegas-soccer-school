@@ -104,6 +104,8 @@ jobs:
             facebookOAuthAppSecret=${{ secrets.FACEBOOK_OAUTH_APP_SECRET }}
             enableAcs=${{ vars.ENABLE_ACS || 'false' }}
             acsSmsFromNumber=${{ vars.ACS_SMS_FROM_NUMBER }}
+            acsCustomEmailDomain=${{ vars.ACS_CUSTOM_EMAIL_DOMAIN }}
+            acsCustomEmailLocalPart=${{ vars.ACS_CUSTOM_EMAIL_LOCAL_PART || 'registration' }}
           deploymentName: lvss-${{ github.run_id }}
           failOnStdErr: false
 
