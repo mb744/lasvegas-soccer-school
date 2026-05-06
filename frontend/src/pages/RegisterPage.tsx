@@ -305,7 +305,7 @@ function ParentSection({ form }: { form: any }) {
         <input type="tel" className={inputCls} {...form.register('cellPhone')} />
         <span className="text-xs text-slate-500 mt-1">
           {t('auth.smsConsent')}{' '}
-          <a className="text-emerald-700 underline" href="https://mb744.github.io/lasvegas-soccer-school/sms-terms.html" target="_blank" rel="noopener noreferrer">
+          <a className="text-emerald-700 underline" href="/sms-terms.html" target="_blank" rel="noopener noreferrer">
             {t('auth.smsTermsLink')}
           </a>
         </span>
