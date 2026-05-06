@@ -2,6 +2,9 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { LandingPage } from './pages/LandingPage'
 import { RegisterPage } from './pages/RegisterPage'
 import { AdminPage } from './pages/AdminPage'
+import { AdminOutreachPage } from './pages/admin/OutreachPage'
+import { AdminRegistrationsPage } from './pages/admin/RegistrationsPage'
+import { AdminUsersPage } from './pages/admin/UsersPage'
 import { LoginPage } from './pages/LoginPage'
 import { SignupPage } from './pages/SignupPage'
 import { PrivacyPage } from './pages/PrivacyPage'
@@ -32,6 +35,18 @@ export default function App() {
           <Route
             path="/admin"
             element={<RequireAuth adminOnly><AdminPage /></RequireAuth>}
+          />
+          <Route
+            path="/admin/outreach"
+            element={<RequireAuth adminOnly><AdminOutreachPage /></RequireAuth>}
+          />
+          <Route
+            path="/admin/registrations"
+            element={<RequireAuth adminOnly><AdminRegistrationsPage /></RequireAuth>}
+          />
+          <Route
+            path="/admin/users"
+            element={<RequireAuth adminOnly><AdminUsersPage /></RequireAuth>}
           />
           <Route path="*" element={<LandingPage />} />
         </Routes>
