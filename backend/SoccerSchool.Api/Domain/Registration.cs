@@ -23,19 +23,19 @@ public class Registration
     [Required, MaxLength(80)]
     public string ParentLastName { get; set; } = string.Empty;
 
-    [Required, MaxLength(200)]
+    [MaxLength(200)]
     public string AddressLine1 { get; set; } = string.Empty;
 
     [MaxLength(200)]
     public string? AddressLine2 { get; set; }
 
-    [Required, MaxLength(80)]
+    [MaxLength(80)]
     public string City { get; set; } = string.Empty;
 
-    [Required, MaxLength(40)]
-    public string State { get; set; } = "NV";
+    [MaxLength(40)]
+    public string State { get; set; } = string.Empty;
 
-    [Required, MaxLength(20)]
+    [MaxLength(20)]
     public string PostalCode { get; set; } = string.Empty;
 
     [Required, MaxLength(32)]

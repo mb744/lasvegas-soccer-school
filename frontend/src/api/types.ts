@@ -63,11 +63,11 @@ export interface RegistrationPlayerInput {
 export interface SubmitRegistrationRequest {
   parentFirstName: string
   parentLastName: string
-  addressLine1: string
+  addressLine1?: string
   addressLine2?: string
-  city: string
-  state: string
-  postalCode: string
+  city?: string
+  state?: string
+  postalCode?: string
   cellPhone: string
   email: string
   language: Language

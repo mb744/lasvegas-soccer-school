@@ -32,11 +32,11 @@ public record SubmitRegistrationRequest
 {
     [Required, MaxLength(80)] public string ParentFirstName { get; init; } = string.Empty;
     [Required, MaxLength(80)] public string ParentLastName { get; init; } = string.Empty;
-    [Required, MaxLength(200)] public string AddressLine1 { get; init; } = string.Empty;
+    [MaxLength(200)] public string? AddressLine1 { get; init; }
     [MaxLength(200)] public string? AddressLine2 { get; init; }
-    [Required, MaxLength(80)] public string City { get; init; } = string.Empty;
-    [Required, MaxLength(40)] public string State { get; init; } = "NV";
-    [Required, MaxLength(20)] public string PostalCode { get; init; } = string.Empty;
+    [MaxLength(80)] public string? City { get; init; }
+    [MaxLength(40)] public string? State { get; init; }
+    [MaxLength(20)] public string? PostalCode { get; init; }
     [Required, MaxLength(32)] public string CellPhone { get; init; } = string.Empty;
     [Required, EmailAddress, MaxLength(256)] public string Email { get; init; } = string.Empty;
 

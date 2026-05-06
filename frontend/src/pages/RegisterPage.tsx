@@ -29,11 +29,11 @@ const playerSchema = z.object({
 const formSchema = z.object({
   parentFirstName: z.string().min(1),
   parentLastName: z.string().min(1),
-  addressLine1: z.string().min(1),
+  addressLine1: z.string().optional(),
   addressLine2: z.string().optional(),
-  city: z.string().min(1),
-  state: z.string().min(1),
-  postalCode: z.string().min(1),
+  city: z.string().optional(),
+  state: z.string().optional(),
+  postalCode: z.string().optional(),
   cellPhone: z.string().min(7),
   email: z.string().email(),
   waiverConsent: z.boolean().refine(v => v === true, { message: 'required' }),
@@ -286,19 +286,19 @@ function ParentSection({ form }: { form: any }) {
       <Field label={t('register.parent.lastName')} error={errors.parentLastName && t('common.required')} required>
         <input className={inputCls} {...form.register('parentLastName')} />
       </Field>
-      <Field label={t('register.parent.address1')} error={errors.addressLine1 && t('common.required')} span={2} required>
+      <Field label={t('register.parent.address1')} span={2}>
         <input className={inputCls} {...form.register('addressLine1')} />
       </Field>
       <Field label={t('register.parent.address2')} span={2}>
         <input className={inputCls} {...form.register('addressLine2')} />
       </Field>
-      <Field label={t('register.parent.city')} error={errors.city && t('common.required')} required>
+      <Field label={t('register.parent.city')}>
         <input className={inputCls} {...form.register('city')} />
       </Field>
-      <Field label={t('register.parent.state')} error={errors.state && t('common.required')} required>
+      <Field label={t('register.parent.state')}>
         <input className={inputCls} {...form.register('state')} />
       </Field>
-      <Field label={t('register.parent.postal')} error={errors.postalCode && t('common.required')} required>
+      <Field label={t('register.parent.postal')}>
         <input className={inputCls} {...form.register('postalCode')} />
       </Field>
       <Field label={t('register.parent.cell')} error={errors.cellPhone && t('common.required')} required>
