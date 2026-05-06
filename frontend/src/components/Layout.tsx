@@ -1,4 +1,4 @@
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { LanguageToggle } from './LanguageToggle'
 import type { ReactNode } from 'react'
@@ -8,6 +8,8 @@ export function Layout({ children }: { children: ReactNode }) {
   const { t } = useTranslation()
   const { me, logout } = useAuth()
   const navigate = useNavigate()
+  const navLink = ({ isActive }: { isActive: boolean }) =>
+    `text-sm font-medium ${isActive ? 'text-emerald-800' : 'text-slate-600 hover:text-emerald-700'}`
 
   const onLogout = async () => {
     await logout()
@@ -19,11 +21,16 @@ export function Layout({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen flex flex-col">
       <header className="bg-white border-b border-slate-200">
-        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-2 text-emerald-800 font-bold text-lg">
+        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
+          <Link to="/" className="flex items-center gap-2 text-emerald-800 font-bold text-lg shrink-0">
             <img src="/logo.png" alt="" className="w-8 h-8 object-contain" />
-            {t('common.appName')}
+            <span className="hidden sm:inline">{t('common.appName')}</span>
+            <span className="sm:hidden">LVSS</span>
           </Link>
+          <nav className="hidden md:flex items-center gap-5">
+            <NavLink to="/info" className={navLink}>{t('common.info')}</NavLink>
+            <NavLink to="/pricing" className={navLink}>{t('common.pricing')}</NavLink>
+          </nav>
           <div className="flex items-center gap-3">
             <LanguageToggle />
             {me ? (
@@ -40,6 +47,12 @@ export function Layout({ children }: { children: ReactNode }) {
             )}
           </div>
         </div>
+        <nav className="md:hidden border-t border-slate-100 bg-slate-50">
+          <div className="max-w-5xl mx-auto px-4 py-2 flex items-center gap-5">
+            <NavLink to="/info" className={navLink}>{t('common.info')}</NavLink>
+            <NavLink to="/pricing" className={navLink}>{t('common.pricing')}</NavLink>
+          </div>
+        </nav>
       </header>
       <main className="flex-1">{children}</main>
       <footer className="bg-white border-t border-slate-200 mt-12">
