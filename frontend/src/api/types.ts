@@ -148,6 +148,21 @@ export interface OutreachResponse {
   parentAccountId: number | null
 }
 
+// --- Admin: user management ---
+
+export interface UserSummary {
+  id: string
+  email: string
+  firstName: string
+  lastName: string
+  phone: string | null
+  isAdmin: boolean
+  isBanned: boolean
+  createdAt: string | null
+  lastLoginAt: string | null
+  registrationCount: number
+}
+
 export const OUTREACH_STATUS_LABELS: Record<OutreachStatus, string> = {
   0: 'Pending',
   1: 'Sent',

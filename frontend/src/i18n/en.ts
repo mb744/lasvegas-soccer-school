@@ -190,6 +190,16 @@ const en = {
     viewAllWaivers: 'View / Print packet',
     downloadAllWaivers: 'Download packet',
     packetHelp: 'Summary page + one signed waiver per player',
+    users: 'Users',
+    usersHelp: 'Banning prevents the user from logging in or creating a new account with the same email. Their existing registrations are kept.',
+    usersCreated: 'Created',
+    usersLastLogin: 'Last login',
+    usersRegs: 'Regs',
+    usersNeverLogin: 'Never',
+    usersActive: 'Active',
+    usersBanned: 'Banned',
+    usersBan: 'Ban',
+    usersUnban: 'Unban',
   },
 }
 

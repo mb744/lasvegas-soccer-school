@@ -77,6 +77,7 @@ public class AuthController : ControllerBase
         await AttributeOutreachAsync(req.Email, req.Phone, account.Id, OutreachStatus.AccountCreated, ct);
 
         await _signIn.SignInAsync(user, isPersistent: true);
+        await StampLastLoginAsync(user);
         return Ok(await BuildMeAsync(user, account));
     }
 
@@ -91,8 +92,15 @@ public class AuthController : ControllerBase
         if (!result.Succeeded)
             return Unauthorized(result.IsLockedOut ? "Account locked. Try again later." : "Invalid email or password.");
 
+        await StampLastLoginAsync(user);
         var account = await _db.ParentAccounts.FirstOrDefaultAsync(p => p.UserId == user.Id, ct);
         return Ok(await BuildMeAsync(user, account));
+    }
+
+    private async Task StampLastLoginAsync(ApplicationUser user)
+    {
+        user.LastLoginAt = DateTime.UtcNow;
+        await _users.UpdateAsync(user);
     }
 
     [HttpPost("logout")]
@@ -132,7 +140,13 @@ public class AuthController : ControllerBase
         // Already linked? Sign in.
         var signin = await _signIn.ExternalLoginSignInAsync(info.LoginProvider, info.ProviderKey, isPersistent: true, bypassTwoFactor: true);
         if (signin.Succeeded)
+        {
+            var existingByLogin = await _users.FindByLoginAsync(info.LoginProvider, info.ProviderKey);
+            if (existingByLogin is not null) await StampLastLoginAsync(existingByLogin);
             return Redirect(safe);
+        }
+        if (signin.IsLockedOut)
+            return Redirect("/login?error=banned");
 
         // First-time external login: create user from claims and link.
         var email = info.Principal.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
@@ -140,6 +154,9 @@ public class AuthController : ControllerBase
             return Redirect("/login?error=no_email");
 
         var user = await _users.FindByEmailAsync(email);
+        if (user is not null && await _users.IsLockedOutAsync(user))
+            return Redirect("/login?error=banned");
+
         if (user is null)
         {
             user = new ApplicationUser
@@ -183,6 +200,7 @@ public class AuthController : ControllerBase
         }
 
         await _signIn.SignInAsync(user, isPersistent: true);
+        await StampLastLoginAsync(user);
         return Redirect(safe);
     }
 

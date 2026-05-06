@@ -192,6 +192,16 @@ const es: Translations = {
     viewAllWaivers: 'Ver / Imprimir paquete',
     downloadAllWaivers: 'Descargar paquete',
     packetHelp: 'Página de resumen + una exención firmada por jugador',
+    users: 'Usuarios',
+    usersHelp: 'Bloquear evita que el usuario inicie sesión o cree una cuenta nueva con el mismo correo. Sus inscripciones existentes se conservan.',
+    usersCreated: 'Creado',
+    usersLastLogin: 'Último acceso',
+    usersRegs: 'Insc.',
+    usersNeverLogin: 'Nunca',
+    usersActive: 'Activo',
+    usersBanned: 'Bloqueado',
+    usersBan: 'Bloquear',
+    usersUnban: 'Desbloquear',
   },
 }
 

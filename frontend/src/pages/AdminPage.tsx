@@ -9,6 +9,7 @@ import {
   type RegistrationSummary,
   type RegistrationDetail,
   type RegistrationPlayerDetail,
+  type UserSummary,
 } from '../api/types'
 
 type Channel = 'email' | 'sms'
@@ -22,6 +23,7 @@ export function AdminPage() {
   const [error, setError] = useState<string | null>(null)
   const [outreach, setOutreach] = useState<OutreachResponse[]>([])
   const [registrations, setRegistrations] = useState<RegistrationSummary[]>([])
+  const [users, setUsers] = useState<UserSummary[]>([])
   const [copiedId, setCopiedId] = useState<number | null>(null)
   const [expandedId, setExpandedId] = useState<number | null>(null)
   const [details, setDetails] = useState<Record<number, RegistrationDetail>>({})
@@ -30,12 +32,28 @@ export function AdminPage() {
   const loadAll = async () => {
     setError(null)
     try {
-      const [out, regs] = await Promise.all([Api.listOutreach(), Api.listRegistrations()])
+      const [out, regs, usrs] = await Promise.all([
+        Api.listOutreach(),
+        Api.listRegistrations(),
+        Api.listUsers(),
+      ])
       setOutreach(out)
       setRegistrations(regs)
+      setUsers(usrs)
     } catch (e: any) {
       setError(e?.message ?? 'Error')
     }
+  }
+
+  const banUser = async (u: UserSummary) => {
+    if (!confirm(`Ban ${u.email}? They won't be able to log in or sign up again with this email.`)) return
+    try { await Api.banUser(u.id); await loadAll() }
+    catch (e: any) { setError(e?.response?.data ?? e?.message ?? 'Error') }
+  }
+
+  const unbanUser = async (u: UserSummary) => {
+    try { await Api.unbanUser(u.id); await loadAll() }
+    catch (e: any) { setError(e?.response?.data ?? e?.message ?? 'Error') }
   }
 
   useEffect(() => { loadAll() }, [])
@@ -240,6 +258,64 @@ export function AdminPage() {
                   />
                 ))}
                 {registrations.length === 0 && (
+                  <tr><td colSpan={8} className="py-4 text-center text-slate-400">—</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="bg-white border border-slate-200 rounded-lg p-6">
+          <h2 className="font-bold text-emerald-800">{t('admin.users')}</h2>
+          <p className="text-xs text-slate-500 mt-1">{t('admin.usersHelp')}</p>
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-slate-500 border-b">
+                  <th className="py-2 pr-4">Email</th>
+                  <th className="py-2 pr-4">Name</th>
+                  <th className="py-2 pr-4">Role</th>
+                  <th className="py-2 pr-4">{t('admin.usersCreated')}</th>
+                  <th className="py-2 pr-4">{t('admin.usersLastLogin')}</th>
+                  <th className="py-2 pr-4">{t('admin.usersRegs')}</th>
+                  <th className="py-2 pr-4">{t('admin.status')}</th>
+                  <th className="py-2 pr-4"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {users.map(u => (
+                  <tr key={u.id} className={`border-b last:border-0 ${u.isBanned ? 'bg-rose-50' : ''}`}>
+                    <td className="py-2 pr-4">{u.email}</td>
+                    <td className="py-2 pr-4">{[u.firstName, u.lastName].filter(Boolean).join(' ') || '—'}</td>
+                    <td className="py-2 pr-4">
+                      {u.isAdmin
+                        ? <span className="text-xs bg-emerald-100 text-emerald-800 rounded px-2 py-0.5 font-semibold">Admin</span>
+                        : <span className="text-xs text-slate-500">Parent</span>}
+                    </td>
+                    <td className="py-2 pr-4 text-slate-500 whitespace-nowrap">
+                      {u.createdAt ? new Date(u.createdAt).toLocaleString() : '—'}
+                    </td>
+                    <td className="py-2 pr-4 text-slate-500 whitespace-nowrap">
+                      {u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString() : <span className="text-slate-400">{t('admin.usersNeverLogin')}</span>}
+                    </td>
+                    <td className="py-2 pr-4 text-center">{u.registrationCount}</td>
+                    <td className="py-2 pr-4">
+                      {u.isBanned
+                        ? <span className="text-xs bg-rose-100 text-rose-800 rounded px-2 py-0.5 font-semibold">{t('admin.usersBanned')}</span>
+                        : <span className="text-xs bg-emerald-50 text-emerald-700 rounded px-2 py-0.5">{t('admin.usersActive')}</span>}
+                    </td>
+                    <td className="py-2 pr-4 whitespace-nowrap">
+                      {u.isAdmin ? (
+                        <span className="text-xs text-slate-400">—</span>
+                      ) : u.isBanned ? (
+                        <button onClick={() => unbanUser(u)} className="text-emerald-700 hover:underline">{t('admin.usersUnban')}</button>
+                      ) : (
+                        <button onClick={() => banUser(u)} className="text-rose-700 hover:underline">{t('admin.usersBan')}</button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {users.length === 0 && (
                   <tr><td colSpan={8} className="py-4 text-center text-slate-400">—</td></tr>
                 )}
               </tbody>

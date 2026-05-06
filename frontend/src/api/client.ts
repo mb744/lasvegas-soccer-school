@@ -10,6 +10,7 @@ import type {
   SavePlayerRequest,
   SignupRequest,
   SubmitRegistrationRequest,
+  UserSummary,
 } from './types'
 
 const api = axios.create({
@@ -126,6 +127,18 @@ export const Api = {
   },
   async deleteOutreach(id: number) {
     await api.delete(`/outreach/${id}`)
+  },
+
+  // --- Admin: user management ---
+  async listUsers() {
+    const r = await api.get<UserSummary[]>('/admin/users')
+    return r.data
+  },
+  async banUser(id: string) {
+    await api.post(`/admin/users/${id}/ban`, {})
+  },
+  async unbanUser(id: string) {
+    await api.post(`/admin/users/${id}/unban`, {})
   },
 }
 
