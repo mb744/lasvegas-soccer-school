@@ -252,15 +252,20 @@ function Field({
   error,
   children,
   span = 1,
+  required = false,
 }: {
   label: string
   error?: string
   children: React.ReactNode
   span?: 1 | 2
+  required?: boolean
 }) {
   return (
     <label className={`flex flex-col text-sm ${span === 2 ? 'sm:col-span-2' : ''}`}>
-      <span className="text-slate-700 font-medium mb-1">{label}</span>
+      <span className="text-slate-700 font-medium mb-1">
+        {label}
+        {required && <span aria-hidden className="text-rose-600 ml-0.5">*</span>}
+      </span>
       {children}
       {error && <span className="text-rose-600 text-xs mt-1">{error}</span>}
     </label>
@@ -275,31 +280,37 @@ function ParentSection({ form }: { form: any }) {
   const errors = form.formState.errors
   return (
     <Section title={t('register.parent.heading')}>
-      <Field label={t('register.parent.firstName')} error={errors.parentFirstName && t('common.required')}>
+      <Field label={t('register.parent.firstName')} error={errors.parentFirstName && t('common.required')} required>
         <input className={inputCls} {...form.register('parentFirstName')} />
       </Field>
-      <Field label={t('register.parent.lastName')} error={errors.parentLastName && t('common.required')}>
+      <Field label={t('register.parent.lastName')} error={errors.parentLastName && t('common.required')} required>
         <input className={inputCls} {...form.register('parentLastName')} />
       </Field>
-      <Field label={t('register.parent.address1')} error={errors.addressLine1 && t('common.required')} span={2}>
+      <Field label={t('register.parent.address1')} error={errors.addressLine1 && t('common.required')} span={2} required>
         <input className={inputCls} {...form.register('addressLine1')} />
       </Field>
       <Field label={t('register.parent.address2')} span={2}>
         <input className={inputCls} {...form.register('addressLine2')} />
       </Field>
-      <Field label={t('register.parent.city')} error={errors.city && t('common.required')}>
+      <Field label={t('register.parent.city')} error={errors.city && t('common.required')} required>
         <input className={inputCls} {...form.register('city')} />
       </Field>
-      <Field label={t('register.parent.state')} error={errors.state && t('common.required')}>
+      <Field label={t('register.parent.state')} error={errors.state && t('common.required')} required>
         <input className={inputCls} {...form.register('state')} />
       </Field>
-      <Field label={t('register.parent.postal')} error={errors.postalCode && t('common.required')}>
+      <Field label={t('register.parent.postal')} error={errors.postalCode && t('common.required')} required>
         <input className={inputCls} {...form.register('postalCode')} />
       </Field>
-      <Field label={t('register.parent.cell')} error={errors.cellPhone && t('common.required')}>
+      <Field label={t('register.parent.cell')} error={errors.cellPhone && t('common.required')} required>
         <input type="tel" className={inputCls} {...form.register('cellPhone')} />
+        <span className="text-xs text-slate-500 mt-1">
+          {t('auth.smsConsent')}{' '}
+          <a className="text-emerald-700 underline" href="https://mb744.github.io/lasvegas-soccer-school/sms-terms.html" target="_blank" rel="noopener noreferrer">
+            {t('auth.smsTermsLink')}
+          </a>
+        </span>
       </Field>
-      <Field label={t('register.parent.email')} error={errors.email && t('common.required')} span={2}>
+      <Field label={t('register.parent.email')} error={errors.email && t('common.required')} span={2} required>
         <input type="email" className={inputCls} {...form.register('email')} />
       </Field>
     </Section>
@@ -420,28 +431,28 @@ function PlayerCard({
       )}
 
       <div className="grid sm:grid-cols-2 gap-4">
-        <Field label={t('register.players.firstName')} error={e.firstName && t('common.required')}>
+        <Field label={t('register.players.firstName')} error={e.firstName && t('common.required')} required>
           <input className={inputCls} disabled={usingExisting} {...form.register(`players.${idx}.firstName`)} />
         </Field>
-        <Field label={t('register.players.lastName')} error={e.lastName && t('common.required')}>
+        <Field label={t('register.players.lastName')} error={e.lastName && t('common.required')} required>
           <input className={inputCls} disabled={usingExisting} {...form.register(`players.${idx}.lastName`)} />
         </Field>
-        <Field label={t('register.players.dob')} error={e.dateOfBirth && t('common.required')}>
+        <Field label={t('register.players.dob')} error={e.dateOfBirth && t('common.required')} required>
           <input type="date" className={inputCls} disabled={usingExisting} {...form.register(`players.${idx}.dateOfBirth`)} />
         </Field>
-        <Field label={t('register.players.grade')} error={e.schoolGrade && t('common.required')}>
+        <Field label={t('register.players.grade')} error={e.schoolGrade && t('common.required')} required>
           <select className={inputCls} {...form.register(`players.${idx}.schoolGrade`)}>
             <option value="">—</option>
             {GRADES.map(g => <option key={g} value={g}>{g}</option>)}
           </select>
         </Field>
-        <Field label={t('register.players.uniformSize')} error={e.uniformSize && t('common.required')}>
+        <Field label={t('register.players.uniformSize')} error={e.uniformSize && t('common.required')} required>
           <select className={inputCls} {...form.register(`players.${idx}.uniformSize`)}>
             <option value="">—</option>
             {UNIFORM_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
         </Field>
-        <Field label={t('register.players.shoeSize')} error={e.shoeSize && t('common.required')}>
+        <Field label={t('register.players.shoeSize')} error={e.shoeSize && t('common.required')} required>
           <input className={inputCls} placeholder="e.g. 4Y, 7" {...form.register(`players.${idx}.shoeSize`)} />
         </Field>
         <Field label={t('register.players.heardFrom')} span={2}>
