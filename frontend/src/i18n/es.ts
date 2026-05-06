@@ -15,6 +15,7 @@ const es: Translations = {
     error: 'Algo salió mal. Por favor intente de nuevo.',
     privacy: 'Privacidad',
     dataDeletion: 'Eliminación de datos',
+    about: 'Nosotros',
     info: 'Información',
     pricing: 'Precios',
   },

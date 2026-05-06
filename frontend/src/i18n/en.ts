@@ -13,6 +13,7 @@ const en = {
     error: 'Something went wrong. Please try again.',
     privacy: 'Privacy',
     dataDeletion: 'Data deletion',
+    about: 'About',
     info: 'Info',
     pricing: 'Pricing',
   },

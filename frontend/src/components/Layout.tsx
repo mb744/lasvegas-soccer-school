@@ -28,6 +28,7 @@ export function Layout({ children }: { children: ReactNode }) {
             <span className="sm:hidden">LVSS</span>
           </Link>
           <nav className="hidden md:flex items-center gap-5">
+            <NavLink to="/about" className={navLink}>{t('common.about')}</NavLink>
             <NavLink to="/info" className={navLink}>{t('common.info')}</NavLink>
             <NavLink to="/pricing" className={navLink}>{t('common.pricing')}</NavLink>
           </nav>
@@ -49,6 +50,7 @@ export function Layout({ children }: { children: ReactNode }) {
         </div>
         <nav className="md:hidden border-t border-slate-100 bg-slate-50">
           <div className="max-w-5xl mx-auto px-4 py-2 flex items-center gap-5">
+            <NavLink to="/about" className={navLink}>{t('common.about')}</NavLink>
             <NavLink to="/info" className={navLink}>{t('common.info')}</NavLink>
             <NavLink to="/pricing" className={navLink}>{t('common.pricing')}</NavLink>
           </div>

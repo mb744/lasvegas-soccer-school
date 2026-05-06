@@ -8,6 +8,7 @@ import { PrivacyPage } from './pages/PrivacyPage'
 import { DataDeletionPage } from './pages/DataDeletionPage'
 import { InfoPage } from './pages/InfoPage'
 import { PricingPage } from './pages/PricingPage'
+import { AboutPage } from './pages/AboutPage'
 import { AuthProvider } from './auth/AuthContext'
 import { RequireAuth } from './auth/RequireAuth'
 
@@ -19,6 +20,7 @@ export default function App() {
           <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<SignupPage />} />
+          <Route path="/about" element={<AboutPage />} />
           <Route path="/info" element={<InfoPage />} />
           <Route path="/pricing" element={<PricingPage />} />
           <Route path="/privacy" element={<PrivacyPage />} />
