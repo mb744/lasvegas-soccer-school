@@ -36,6 +36,8 @@ const en = {
     firstName: 'First name',
     lastName: 'Last name',
     phone: 'Cell phone (optional)',
+    smsConsent: 'By providing your phone number you consent to receive a one-time SMS containing your registration link. Msg & data rates may apply. Reply STOP to opt out, HELP for help.',
+    smsTermsLink: 'See SMS terms.',
     noAccount: "Don't have an account?",
     haveAccount: 'Already have an account?',
     externalError: 'Sign-in with that provider failed. Try again or use email and password.',

@@ -87,6 +87,12 @@ export function SignupPage() {
           <label className="flex flex-col text-sm">
             <span className="font-medium text-slate-700 mb-1">{t('auth.phone')}</span>
             <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} className={inputCls} />
+            <span className="text-xs text-slate-500 mt-1">
+              {t('auth.smsConsent')}{' '}
+              <a className="text-emerald-700 underline" href="https://mb744.github.io/lasvegas-soccer-school/sms-terms.html" target="_blank" rel="noopener noreferrer">
+                {t('auth.smsTermsLink')}
+              </a>
+            </span>
           </label>
           <label className="flex flex-col text-sm">
             <span className="font-medium text-slate-700 mb-1">{t('auth.password')}</span>

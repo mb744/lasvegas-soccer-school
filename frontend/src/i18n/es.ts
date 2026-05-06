@@ -38,6 +38,8 @@ const es: Translations = {
     firstName: 'Nombre',
     lastName: 'Apellido',
     phone: 'Teléfono celular (opcional)',
+    smsConsent: 'Al proporcionar su número de teléfono, usted consiente recibir un SMS único con su enlace de inscripción. Pueden aplicar tarifas de mensajes y datos. Responda STOP para cancelar, HELP para ayuda.',
+    smsTermsLink: 'Ver términos de SMS.',
     noAccount: '¿No tiene cuenta?',
     haveAccount: '¿Ya tiene cuenta?',
     externalError: 'No se pudo iniciar sesión con ese proveedor. Intente de nuevo o use correo y contraseña.',
