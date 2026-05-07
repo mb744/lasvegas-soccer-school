@@ -36,6 +36,7 @@ const formSchema = z.object({
   postalCode: z.string().optional(),
   cellPhone: z.string().min(7),
   email: z.string().email(),
+  smsConsent: z.boolean().refine(v => v === true, { message: 'sms-required' }),
   waiverConsent: z.boolean().refine(v => v === true, { message: 'required' }),
   players: z.array(playerSchema).min(1),
 })
@@ -81,6 +82,7 @@ export function RegisterPage() {
       postalCode: '',
       cellPhone: '',
       email: '',
+      smsConsent: false,
       waiverConsent: false,
       players: [emptyPlayer],
     },
@@ -303,16 +305,33 @@ function ParentSection({ form }: { form: any }) {
       </Field>
       <Field label={t('register.parent.cell')} error={errors.cellPhone && t('common.required')} required>
         <input type="tel" className={inputCls} {...form.register('cellPhone')} />
-        <span className="text-xs text-slate-500 mt-1">
-          {t('auth.smsConsent')}{' '}
-          <a className="text-emerald-700 underline" href="/sms-terms.html" target="_blank" rel="noopener noreferrer">
-            {t('auth.smsTermsLink')}
-          </a>
-        </span>
       </Field>
       <Field label={t('register.parent.email')} error={errors.email && t('common.required')} span={2} required>
         <input type="email" className={inputCls} {...form.register('email')} />
       </Field>
+      <div className="sm:col-span-2">
+        <label className="flex items-start gap-2 text-xs text-slate-700">
+          <input
+            type="checkbox"
+            className="mt-0.5 w-4 h-4"
+            {...form.register('smsConsent')}
+          />
+          <span>
+            {t('auth.smsConsentCheckbox')}
+            <span aria-hidden className="text-rose-600 ml-0.5">*</span>
+            <span
+              aria-label={t('auth.smsConsent')}
+              title={t('auth.smsConsent')}
+              className="inline-flex items-center justify-center w-4 h-4 ml-1 text-[10px] font-bold rounded-full bg-slate-300 text-white cursor-help align-middle"
+            >i</span>
+            {' '}
+            <a className="text-emerald-700 underline" href="/sms-terms.html" target="_blank" rel="noopener noreferrer">
+              {t('auth.smsTermsLink')}
+            </a>
+          </span>
+        </label>
+        {errors.smsConsent && <p className="text-rose-600 text-xs mt-1">{t('auth.smsConsentRequired')}</p>}
+      </div>
     </Section>
   )
 }
