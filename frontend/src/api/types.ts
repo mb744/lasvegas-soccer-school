@@ -224,7 +224,12 @@ export interface ListGroupsResponse {
   dynamic: DynamicGroup[]
 }
 
-export type RecipientTargetKind = 0 | 1 | 2 // Individual CustomGroup DynamicGroup
+export type RecipientTargetKind = 0 | 1 | 2 | 3 // Individual CustomGroup DynamicGroup AdHocList
+
+export interface AdHocRecipient {
+  phone: string
+  name?: string | null
+}
 
 export interface BroadcastTarget {
   kind: RecipientTargetKind
@@ -232,6 +237,8 @@ export interface BroadcastTarget {
   name?: string | null
   customGroupId?: number | null
   dynamicGroupKey?: string | null
+  /** Used only when kind = 3 (AdHocList). One-off list pasted at compose time. */
+  recipients?: AdHocRecipient[] | null
 }
 
 export interface CreateBroadcastRequest {

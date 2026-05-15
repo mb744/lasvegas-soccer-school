@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { Layout } from '../../components/Layout'
 import { Api } from '../../api/client'
 import type {
+  AdHocRecipient,
   BroadcastDetail,
   BroadcastSummary,
   ConversationParticipant,
@@ -24,7 +25,7 @@ import {
 } from '../../api/types'
 
 type Tab = 'compose' | 'groups' | 'conversations' | 'templates' | 'history'
-type RecipientMode = 'individual' | 'curated' | 'dynamic'
+type RecipientMode = 'individual' | 'curated' | 'dynamic' | 'list'
 type SendMode = 'broadcast' | 'group-chat'
 type ComposeBodyMode = 'free-form' | 'template'
 
@@ -206,6 +207,8 @@ function ComposeTab({
   const [name, setName] = useState('')
   const [customGroupId, setCustomGroupId] = useState<number | ''>('')
   const [dynamicKey, setDynamicKey] = useState<string>('')
+  const [listRaw, setListRaw] = useState('')
+  const parsedList = useMemo(() => parseRecipientList(listRaw), [listRaw])
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
   const [sending, setSending] = useState(false)
@@ -232,9 +235,12 @@ function ComposeTab({
       const g = curated.find(x => x.id === customGroupId)
       return g ? `${g.memberCount} recipients (${g.name})` : 'Pick a group'
     }
+    if (recipientMode === 'list') {
+      return parsedList.length === 0 ? 'No phones parsed yet' : `${parsedList.length} recipients`
+    }
     const d = dynamicGroups.find(x => x.key === dynamicKey)
     return d ? `${d.count} recipients (${d.label})` : 'Pick a group'
-  }, [recipientMode, phone, customGroupId, dynamicKey, curated, dynamicGroups])
+  }, [recipientMode, phone, customGroupId, dynamicKey, curated, dynamicGroups, parsedList])
 
   const target = () => {
     if (recipientMode === 'individual') {
@@ -242,6 +248,9 @@ function ComposeTab({
     }
     if (recipientMode === 'curated') {
       return { kind: 1 as const, customGroupId: customGroupId === '' ? null : Number(customGroupId) }
+    }
+    if (recipientMode === 'list') {
+      return { kind: 3 as const, recipients: parsedList }
     }
     return { kind: 2 as const, dynamicGroupKey: dynamicKey }
   }
@@ -252,6 +261,7 @@ function ComposeTab({
     if (recipientMode === 'individual' && !phone.trim()) { onError('Enter a phone number.'); return }
     if (recipientMode === 'curated' && customGroupId === '') { onError('Pick a group.'); return }
     if (recipientMode === 'dynamic' && !dynamicKey) { onError('Pick a group.'); return }
+    if (recipientMode === 'list' && parsedList.length === 0) { onError('Paste at least one phone number.'); return }
     if (mode === 'group-chat' && !title.trim()) { onError('Group chat title is required.'); return }
 
     const usingTemplate = mode === 'broadcast' && channel === 1 && bodyMode === 'template'
@@ -344,7 +354,7 @@ function ComposeTab({
       <div>
         <label className="block text-sm font-medium text-slate-700 mb-1">{t('admin.msgRecipient')}</label>
         <div className="flex flex-wrap gap-2 mb-3">
-          {(['individual', 'curated', 'dynamic'] as const).map(k => (
+          {(['individual', 'list', 'curated', 'dynamic'] as const).map(k => (
             <button key={k} type="button"
               onClick={() => setRecipientMode(k)}
               className={`px-3 py-1.5 rounded-md border text-sm ${recipientMode === k ? 'bg-emerald-700 text-white border-emerald-700' : 'bg-white border-slate-300 text-slate-700'}`}
@@ -379,6 +389,24 @@ function ComposeTab({
               <option key={d.key} value={d.key}>{d.label} ({d.count})</option>
             ))}
           </select>
+        )}
+        {recipientMode === 'list' && (
+          <div className="space-y-2">
+            <textarea rows={6} value={listRaw} onChange={e => setListRaw(e.target.value)}
+              placeholder={t('admin.msgListPlaceholder')}
+              className="border border-slate-300 rounded-md px-3 py-2 text-sm font-mono w-full" />
+            <p className="text-xs text-slate-500">{t('admin.msgListHelp')}</p>
+            {parsedList.length > 0 && (
+              <details className="text-xs">
+                <summary className="cursor-pointer text-emerald-700 hover:underline">{t('admin.msgListPreview', { count: parsedList.length })}</summary>
+                <ul className="mt-1 space-y-0.5 text-slate-600">
+                  {parsedList.map((r, i) => (
+                    <li key={i}>{r.name ? <span className="text-slate-800">{r.name}</span> : null} <span className="font-mono">{r.phone}</span></li>
+                  ))}
+                </ul>
+              </details>
+            )}
+          </div>
         )}
         <p className="mt-2 text-xs text-slate-500">{recipientPreview}</p>
       </div>
@@ -1071,6 +1099,55 @@ function TemplatesTab({
       </section>
     </div>
   )
+}
+
+/**
+ * Parses a free-form paste of phone numbers (and optional names) into a clean recipient list.
+ * Handles the common paste sources for school admins:
+ *   - bare phone per line: "+17025551212"
+ *   - "Name, +17025551212"  /  "Name +1 (702) 555-1212"
+ *   - WhatsApp's "~Maria Lopez ~+1 702 555 1212" copy-from-group-info format
+ *   - 10-digit US numbers without country code (auto-prefixed with +1)
+ * Output is deduped on the normalized phone.
+ */
+function parseRecipientList(raw: string): AdHocRecipient[] {
+  if (!raw.trim()) return []
+  const seen = new Set<string>()
+  const out: AdHocRecipient[] = []
+  // Top-level split: newlines, semicolons, or a bare tab. Commas are not split here because
+  // they're often used as the name/phone separator within a single line.
+  for (const line of raw.split(/[\n;]+/)) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+    // Greedy phone-like run: optional +, then digits and phone punctuation, anchored by digits at the ends.
+    const matches = [...trimmed.matchAll(/\+?\d[\d\s\-().]{6,}\d/g)]
+    if (matches.length === 0) continue
+    const m = matches[matches.length - 1] // rightmost phone-like sequence
+    const phone = normalizePhone(m[0])
+    if (!phone) continue
+    if (seen.has(phone)) continue
+    seen.add(phone)
+    const before = trimmed.slice(0, m.index).trim()
+    // Strip trailing comma/colon between name and phone, and WhatsApp's "~" prefix.
+    const name = before.replace(/[,:]\s*$/, '').replace(/^~+/, '').replace(/~+/g, ' ').trim()
+    out.push({ phone, name: name || null })
+  }
+  return out
+}
+
+function normalizePhone(input: string): string | null {
+  // Strip everything except + and digits. + must be at the very start, if present.
+  const cleaned = input.replace(/[^\d+]/g, '')
+  if (!cleaned) return null
+  if (cleaned.startsWith('+')) {
+    // Already E.164-ish. Reject obvious garbage (too short).
+    return cleaned.length >= 8 ? cleaned : null
+  }
+  const digits = cleaned.replace(/\+/g, '')
+  if (digits.length === 10) return `+1${digits}`           // US 10-digit
+  if (digits.length === 11 && digits.startsWith('1')) return `+${digits}` // US with leading 1
+  // International without +: better to refuse than to guess.
+  return digits.length >= 11 ? `+${digits}` : null
 }
 
 function extractError(e: any): string {

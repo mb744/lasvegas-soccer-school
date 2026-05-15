@@ -53,8 +53,11 @@ public enum RecipientTargetKindDto
 {
     Individual = 0,
     CustomGroup = 1,
-    DynamicGroup = 2
+    DynamicGroup = 2,
+    AdHocList = 3
 }
+
+public record AdHocRecipientDto(string Phone, string? Name);
 
 public record BroadcastTargetDto
 {
@@ -70,6 +73,10 @@ public record BroadcastTargetDto
 
     [MaxLength(64)]
     public string? DynamicGroupKey { get; init; }
+
+    /// <summary>Used only when Kind = AdHocList. One-off list of phones the admin typed/pasted
+    /// at compose time. Not persisted as a group.</summary>
+    public List<AdHocRecipientDto>? Recipients { get; init; }
 }
 
 public record CreateBroadcastRequest

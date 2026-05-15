@@ -516,7 +516,11 @@ public class MessagingController : ControllerBase
             Phone: dto.Phone,
             Name: dto.Name,
             CustomGroupId: dto.CustomGroupId,
-            DynamicGroupKey: dto.DynamicGroupKey);
+            DynamicGroupKey: dto.DynamicGroupKey,
+            AdHocRecipients: dto.Recipients?
+                .Where(r => !string.IsNullOrWhiteSpace(r.Phone))
+                .Select(r => new ResolvedRecipient(r.Phone.Trim(), r.Name?.Trim(), null))
+                .ToList());
 
     private static BroadcastDetail ToDetail(Broadcast b) => new(
         b.Id, b.Channel, b.Body, b.TargetLabel, b.CreatedAt,

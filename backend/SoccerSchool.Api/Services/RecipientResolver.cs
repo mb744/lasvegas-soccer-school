@@ -27,13 +27,18 @@ public record RecipientTarget(
     string? Phone = null,
     string? Name = null,
     int? CustomGroupId = null,
-    string? DynamicGroupKey = null);
+    string? DynamicGroupKey = null,
+    IReadOnlyList<ResolvedRecipient>? AdHocRecipients = null);
 
 public enum RecipientTargetKind
 {
     Individual = 0,
     CustomGroup = 1,
-    DynamicGroup = 2
+    DynamicGroup = 2,
+    /// <summary>One-off list of phones the admin pasted/typed at compose time. Not persisted.
+    /// Useful for blasting an existing WhatsApp group's members without first creating a curated
+    /// group, since WhatsApp's Business API can't address real WhatsApp group chats.</summary>
+    AdHocList = 3
 }
 
 public class RecipientResolver : IRecipientResolver
@@ -103,6 +108,13 @@ public class RecipientResolver : IRecipientResolver
                         new RecipientList($"Parents registered in {_app.ActiveSeason}", await LoadActiveSeasonParentsAsync(ct)),
                     _ => new RecipientList("Unknown group", Array.Empty<ResolvedRecipient>())
                 };
+
+            case RecipientTargetKind.AdHocList:
+                var list = (target.AdHocRecipients ?? Array.Empty<ResolvedRecipient>())
+                    .Where(r => !string.IsNullOrWhiteSpace(r.Phone))
+                    .Select(r => new ResolvedRecipient(r.Phone.Trim(), r.Name?.Trim(), null))
+                    .ToList();
+                return new RecipientList($"Ad-hoc list ({list.Count})", list);
 
             default:
                 return new RecipientList("Unknown target", Array.Empty<ResolvedRecipient>());
