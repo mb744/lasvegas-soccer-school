@@ -22,6 +22,8 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<GroupConversationParticipant> GroupConversationParticipants => Set<GroupConversationParticipant>();
     public DbSet<WhatsAppTemplate> WhatsAppTemplates => Set<WhatsAppTemplate>();
     public DbSet<WhatsAppTemplateVariable> WhatsAppTemplateVariables => Set<WhatsAppTemplateVariable>();
+    public DbSet<Team> Teams => Set<Team>();
+    public DbSet<ScheduledGame> ScheduledGames => Set<ScheduledGame>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -148,5 +150,25 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             .WithMany()
             .HasForeignKey(b => b.WhatsAppTemplateId)
             .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<Team>(b =>
+        {
+            b.HasIndex(t => t.Name).IsUnique();
+            b.HasOne(t => t.MessageGroup)
+                .WithMany()
+                .HasForeignKey(t => t.MessageGroupId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<ScheduledGame>(b =>
+        {
+            b.HasOne(g => g.Team)
+                .WithMany(t => t.Games)
+                .HasForeignKey(g => g.TeamId)
+                .OnDelete(DeleteBehavior.Cascade);
+            // Upsert key on re-sync: (team, ICS UID) must be unique.
+            b.HasIndex(g => new { g.TeamId, g.ExternalUid }).IsUnique();
+            b.HasIndex(g => g.StartsAt);
+        });
     }
 }

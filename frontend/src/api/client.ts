@@ -21,9 +21,14 @@ import type {
   RegistrationSummary,
   SaveMessageGroupRequest,
   SavePlayerRequest,
+  SaveTeamRequest,
   SaveWhatsAppTemplateRequest,
+  ScheduleSyncResult,
+  ScheduledGame,
   SignupRequest,
   SubmitRegistrationRequest,
+  TeamDetail,
+  TeamSummary,
   UserSummary,
   WhatsAppTemplate,
 } from './types'
@@ -238,6 +243,35 @@ export const Api = {
   },
   async deleteWhatsAppTemplate(id: number) {
     await api.delete(`/messaging/whatsapp-templates/${id}`)
+  },
+
+  // --- Schedules (GotSport iCal sync) ---
+  async listTeams() {
+    const r = await api.get<TeamSummary[]>('/schedule/teams')
+    return r.data
+  },
+  async getTeam(id: number) {
+    const r = await api.get<TeamDetail>(`/schedule/teams/${id}`)
+    return r.data
+  },
+  async createTeam(payload: SaveTeamRequest) {
+    const r = await api.post<TeamSummary>('/schedule/teams', payload)
+    return r.data
+  },
+  async updateTeam(id: number, payload: SaveTeamRequest) {
+    const r = await api.put<TeamSummary>(`/schedule/teams/${id}`, payload)
+    return r.data
+  },
+  async deleteTeam(id: number) {
+    await api.delete(`/schedule/teams/${id}`)
+  },
+  async syncTeam(id: number) {
+    const r = await api.post<ScheduleSyncResult>(`/schedule/teams/${id}/sync`, {})
+    return r.data
+  },
+  async listUpcomingGames(days = 14) {
+    const r = await api.get<ScheduledGame[]>('/schedule/games', { params: { days } })
+    return r.data
   },
 }
 

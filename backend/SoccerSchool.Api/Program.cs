@@ -112,6 +112,8 @@ builder.Services.AddScoped<IOutreachSender, OutreachSender>();
 builder.Services.AddScoped<IMessageSender, MessageSender>();
 builder.Services.AddScoped<IRecipientResolver, RecipientResolver>();
 builder.Services.AddScoped<IConversationService, ConversationService>();
+builder.Services.AddScoped<IScheduleSyncService, ScheduleSyncService>();
+builder.Services.AddHttpClient();
 builder.Services.AddSingleton<IWaiverPdfGenerator, WaiverPdfGenerator>();
 
 builder.Services.AddControllers();

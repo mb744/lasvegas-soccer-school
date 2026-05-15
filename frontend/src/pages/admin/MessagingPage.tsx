@@ -16,14 +16,31 @@ import type {
   MessageGroupSummary,
   MessagingConfig,
   SaveTemplateVariable,
+  ScheduledGame,
+  TeamDetail,
+  TeamSummary,
   WhatsAppTemplate,
 } from '../../api/types'
+
+// Soccer-school-specific business strings for the practice_or_game template's "wear" variable.
+// Keyed by template language (0 = EN, 1 = ES). The user's spec: shorts stays untranslated in
+// Spanish (local convention at LVSS). Edit here if uniform colors change.
+const WEAR_HOME: Record<Language, string> = {
+  0: 'white jersey, blue shorts, blue socks',
+  1: 'camisa blanca, shorts azules y medias azules',
+}
+const WEAR_AWAY: Record<Language, string> = {
+  0: 'all blue',
+  1: 'todo azul',
+}
+const GAME_VS_PREFIX: Record<Language, string> = { 0: 'Game vs', 1: 'Partido vs' }
+const PRACTICE_FALLBACK: Record<Language, string> = { 0: 'Practice', 1: 'Práctica' }
 import {
   MESSAGE_CHANNEL_LABELS,
   MESSAGE_DELIVERY_LABELS,
 } from '../../api/types'
 
-type Tab = 'compose' | 'groups' | 'conversations' | 'templates' | 'history'
+type Tab = 'compose' | 'groups' | 'conversations' | 'templates' | 'teams' | 'history'
 type RecipientMode = 'individual' | 'curated' | 'dynamic' | 'list'
 type SendMode = 'broadcast' | 'group-chat'
 type ComposeBodyMode = 'free-form' | 'template'
@@ -43,6 +60,8 @@ export function AdminMessagingPage() {
   const [broadcasts, setBroadcasts] = useState<BroadcastSummary[]>([])
   const [conversations, setConversations] = useState<GroupConversationSummary[]>([])
   const [templates, setTemplates] = useState<WhatsAppTemplate[]>([])
+  const [teams, setTeams] = useState<TeamSummary[]>([])
+  const [upcomingGames, setUpcomingGames] = useState<ScheduledGame[]>([])
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
 
@@ -66,12 +85,22 @@ export function AdminMessagingPage() {
     try { setTemplates(await Api.listWhatsAppTemplates()) }
     catch (e: any) { setError(extractError(e)) }
   }
+  const refreshTeams = async () => {
+    try { setTeams(await Api.listTeams()) }
+    catch (e: any) { setError(extractError(e)) }
+  }
+  const refreshUpcomingGames = async () => {
+    try { setUpcomingGames(await Api.listUpcomingGames(30)) }
+    catch (e: any) { setError(extractError(e)) }
+  }
 
   useEffect(() => {
     refreshConfig()
     refreshGroups()
     refreshHistory()
     refreshTemplates()
+    refreshTeams()
+    refreshUpcomingGames()
   }, [])
 
   const tabBtn = (key: Tab, label: string) => (
@@ -106,6 +135,7 @@ export function AdminMessagingPage() {
           {tabBtn('groups', t('admin.msgTabGroups'))}
           {tabBtn('conversations', t('admin.msgTabConversations'))}
           {tabBtn('templates', t('admin.msgTabTemplates'))}
+          {tabBtn('teams', t('admin.msgTabTeams'))}
           {tabBtn('history', t('admin.msgTabHistory'))}
         </div>
 
@@ -122,12 +152,23 @@ export function AdminMessagingPage() {
             curated={curated}
             dynamicGroups={dynamicGroups}
             templates={templates}
+            upcomingGames={upcomingGames}
             onSent={async (msg) => {
               setNotice(msg); setError(null)
               await refreshHistory()
               await refreshGroups()
             }}
             onError={(e) => { setError(e); setNotice(null) }}
+          />
+        )}
+
+        {tab === 'teams' && (
+          <TeamsTab
+            teams={teams}
+            curated={curated}
+            onChanged={async () => { await refreshTeams(); await refreshUpcomingGames() }}
+            onError={(e) => setError(e)}
+            onNotice={(n) => setNotice(n)}
           />
         )}
 
@@ -186,12 +227,13 @@ function Capability({ ok, label }: { ok: boolean; label: string }) {
 // --- Compose tab -----------------------------------------------------------
 
 function ComposeTab({
-  config, curated, dynamicGroups, templates, onSent, onError,
+  config, curated, dynamicGroups, templates, upcomingGames, onSent, onError,
 }: {
   config: MessagingConfig | null
   curated: MessageGroupSummary[]
   dynamicGroups: DynamicGroup[]
   templates: WhatsAppTemplate[]
+  upcomingGames: ScheduledGame[]
   onSent: (msg: string) => void | Promise<void>
   onError: (e: string) => void
 }) {
@@ -456,6 +498,31 @@ function ComposeTab({
               <p className="mt-1 text-xs text-rose-700">{t('admin.msgNoTemplates')}</p>
             )}
           </div>
+          {selectedTemplate && upcomingGames.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">{t('admin.msgPickGame')}</label>
+              <select value=""
+                onChange={e => {
+                  const gameId = Number(e.target.value)
+                  if (!gameId) return
+                  const g = upcomingGames.find(x => x.id === gameId)
+                  if (!g || !selectedTemplate) return
+                  applyGameToTemplate(g, selectedTemplate, setTemplateValues)
+                  // Auto-target the team's linked group if there is one.
+                  if (g.messageGroupId) {
+                    setRecipientMode('curated')
+                    setCustomGroupId(g.messageGroupId)
+                  }
+                }}
+                className="border border-slate-300 rounded-md px-3 py-2 text-sm w-full sm:w-96">
+                <option value="">— {t('admin.msgPickGameHint')} —</option>
+                {upcomingGames.map(g => (
+                  <option key={g.id} value={g.id}>{formatGameOption(g)}</option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-slate-500">{t('admin.msgPickGameHelp')}</p>
+            </div>
+          )}
           {selectedTemplate?.previewText && (
             <pre className="text-xs bg-slate-50 border border-slate-200 rounded p-2 whitespace-pre-wrap">{selectedTemplate.previewText}</pre>
           )}
@@ -1147,6 +1214,253 @@ function normalizePhone(input: string): string | null {
   if (digits.length === 11 && digits.startsWith('1')) return `+${digits}` // US with leading 1
   // International without +: better to refuse than to guess.
   return digits.length >= 11 ? `+${digits}` : null
+}
+
+// --- Schedule helpers ----------------------------------------------------
+
+function formatGameOption(g: ScheduledGame): string {
+  const d = new Date(g.startsAt)
+  const date = d.toLocaleDateString(undefined, { weekday: 'short', month: 'numeric', day: 'numeric' })
+  const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+  const homeAway = g.isHome === true ? ' (H)' : g.isHome === false ? ' (A)' : ''
+  const label = g.opponentName ? `vs ${g.opponentName}` : (g.summary?.trim() || g.teamName)
+  return `${date} ${time}${homeAway} — ${label}${g.location ? ` @ ${g.location}` : ''}`
+}
+
+/**
+ * Auto-fills template variable inputs from a picked game. Matching is by label substring
+ * (case-insensitive) — works for the canonical practice_or_game template (What/When/Where/wear)
+ * and is intentionally lenient so admins can rename labels without breaking the autofill.
+ *
+ * Specifically:
+ *   - "what"  → "Game vs <opponent>" (or "Practice" when there's no opponent)
+ *   - "when"  → locale-formatted date+time, in the template's language
+ *   - "where" → game location string from GotSport (park + field)
+ *   - "wear"  → home/away uniform per LVSS policy, in the template's language
+ */
+function applyGameToTemplate(
+  game: ScheduledGame,
+  template: WhatsAppTemplate,
+  setValues: React.Dispatch<React.SetStateAction<Record<string, string>>>,
+) {
+  const lang = template.language
+  const locale = lang === 1 ? 'es-US' : 'en-US'
+
+  setValues(prev => {
+    const next = { ...prev }
+    for (const v of template.variables) {
+      const label = v.label.toLowerCase()
+      const key = v.position.toString()
+      if (label.includes('what')) {
+        next[key] = game.opponentName
+          ? `${GAME_VS_PREFIX[lang]} ${game.opponentName}`
+          : (game.summary?.trim() || PRACTICE_FALLBACK[lang])
+      } else if (label.includes('when')) {
+        const d = new Date(game.startsAt)
+        next[key] = `${d.toLocaleDateString(locale, { weekday: 'short', month: 'numeric', day: 'numeric' })} ${d.toLocaleTimeString(locale, { hour: 'numeric', minute: '2-digit' })}`
+      } else if (label.includes('where') || label.includes('location')) {
+        next[key] = game.location?.trim() || ''
+      } else if (label.includes('wear')) {
+        if (game.isHome === true) next[key] = WEAR_HOME[lang]
+        else if (game.isHome === false) next[key] = WEAR_AWAY[lang]
+        // game.isHome === null (practice/training): leave for admin to type.
+      }
+    }
+    return next
+  })
+}
+
+// --- Teams tab -----------------------------------------------------------
+
+function TeamsTab({
+  teams, curated, onChanged, onError, onNotice,
+}: {
+  teams: TeamSummary[]
+  curated: MessageGroupSummary[]
+  onChanged: () => Promise<void> | void
+  onError: (e: string) => void
+  onNotice: (n: string) => void
+}) {
+  const { t } = useTranslation()
+  const [editingId, setEditingId] = useState<number | 'new' | null>(null)
+  const [name, setName] = useState('')
+  const [scheduleUrl, setScheduleUrl] = useState('')
+  const [messageGroupId, setMessageGroupId] = useState<number | ''>('')
+  const [detail, setDetail] = useState<TeamDetail | null>(null)
+  const [syncing, setSyncing] = useState(false)
+
+  const startNew = () => {
+    setEditingId('new'); setName(''); setScheduleUrl(''); setMessageGroupId(''); setDetail(null)
+  }
+  const startEdit = async (id: number) => {
+    try {
+      const d = await Api.getTeam(id)
+      setEditingId(id); setName(d.name)
+      setScheduleUrl(`https://system.gotsport.com/org_event/events/${d.gotSportEventId}/schedules?team=${d.gotSportTeamId}`)
+      setMessageGroupId(d.messageGroupId ?? ''); setDetail(d)
+    } catch (e: any) { onError(extractError(e)) }
+  }
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!name.trim()) { onError('Team name is required.'); return }
+    if (!scheduleUrl.trim()) { onError('GotSport schedule URL is required.'); return }
+    try {
+      const payload = {
+        name: name.trim(),
+        scheduleUrl: scheduleUrl.trim(),
+        messageGroupId: messageGroupId === '' ? null : Number(messageGroupId),
+      }
+      const saved = (editingId === 'new' || editingId === null)
+        ? await Api.createTeam(payload)
+        : await Api.updateTeam(editingId, payload)
+      await onChanged()
+      onNotice(`Saved team "${saved.name}".`)
+      setEditingId(saved.id)
+      // Reload detail so user can sync right away.
+      const d = await Api.getTeam(saved.id)
+      setDetail(d)
+    } catch (e: any) { onError(extractError(e)) }
+  }
+
+  const remove = async () => {
+    if (typeof editingId !== 'number') return
+    if (!confirm(`Delete team "${name}"? Synced games are removed too. Past broadcasts are unaffected.`)) return
+    try {
+      await Api.deleteTeam(editingId)
+      setEditingId(null); setDetail(null)
+      await onChanged()
+    } catch (e: any) { onError(extractError(e)) }
+  }
+
+  const sync = async () => {
+    if (typeof editingId !== 'number') return
+    setSyncing(true); onError(''); onNotice('')
+    try {
+      const r = await Api.syncTeam(editingId)
+      onNotice(r.message)
+      await onChanged()
+      const d = await Api.getTeam(editingId)
+      setDetail(d)
+    } catch (e: any) {
+      onError(extractError(e))
+    } finally { setSyncing(false) }
+  }
+
+  return (
+    <div className="grid lg:grid-cols-3 gap-4">
+      <section className="bg-white border border-slate-200 rounded-lg p-4 lg:col-span-1 space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="font-bold text-emerald-800">{t('admin.msgTeamsHeader')}</h2>
+          <button onClick={startNew} className="text-sm text-emerald-700 hover:underline">+ {t('admin.msgNewTeam')}</button>
+        </div>
+        <ul className="space-y-1">
+          {teams.map(team => (
+            <li key={team.id}>
+              <button onClick={() => startEdit(team.id)}
+                className={`w-full text-left px-2 py-1.5 rounded text-sm hover:bg-emerald-50 ${editingId === team.id ? 'bg-emerald-50 text-emerald-800 font-medium' : ''}`}>
+                <div>{team.name}</div>
+                <div className="text-xs text-slate-500">
+                  {team.upcomingGameCount} {t('admin.msgUpcomingGames')}
+                  {team.messageGroupName && <> · {team.messageGroupName}</>}
+                </div>
+              </button>
+            </li>
+          ))}
+          {teams.length === 0 && <li className="text-sm text-slate-400">{t('admin.msgNoTeams')}</li>}
+        </ul>
+        <p className="text-xs text-slate-500">{t('admin.msgTeamsHint')}</p>
+      </section>
+
+      <section className="lg:col-span-2 space-y-4">
+        {editingId === null && (
+          <div className="bg-white border border-dashed border-slate-300 rounded-lg p-8 text-center text-sm text-slate-500">
+            {t('admin.msgSelectTeam')}
+          </div>
+        )}
+        {editingId !== null && (
+          <form onSubmit={save} className="bg-white border border-slate-200 rounded-lg p-4 space-y-3">
+            <div className="grid sm:grid-cols-2 gap-3">
+              <label className="block text-sm">
+                <span className="font-medium text-slate-700">{t('admin.msgTeamName')}</span>
+                <input type="text" value={name} onChange={e => setName(e.target.value)}
+                  placeholder="U10 Boys"
+                  className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+              </label>
+              <label className="block text-sm">
+                <span className="font-medium text-slate-700">{t('admin.msgTeamGroup')}</span>
+                <select value={messageGroupId}
+                  onChange={e => setMessageGroupId(e.target.value === '' ? '' : Number(e.target.value))}
+                  className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm">
+                  <option value="">— {t('admin.msgTeamGroupNone')} —</option>
+                  {curated.map(g => (
+                    <option key={g.id} value={g.id}>{g.name} ({g.memberCount})</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <label className="block text-sm">
+              <span className="font-medium text-slate-700">{t('admin.msgTeamScheduleUrl')}</span>
+              <input type="url" value={scheduleUrl} onChange={e => setScheduleUrl(e.target.value)}
+                placeholder="https://system.gotsport.com/org_event/events/48082/schedules?team=3764244"
+                className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm font-mono" />
+              <span className="block text-xs text-slate-500 mt-1">{t('admin.msgTeamScheduleUrlHelp')}</span>
+            </label>
+
+            <div className="flex items-center gap-3 pt-2 border-t border-slate-100">
+              <button type="submit"
+                className="bg-emerald-700 text-white text-sm font-semibold px-4 py-2 rounded-md hover:bg-emerald-800">
+                {editingId === 'new' ? t('admin.msgCreateTeam') : t('admin.msgSave')}
+              </button>
+              {typeof editingId === 'number' && (
+                <>
+                  <button type="button" onClick={sync} disabled={syncing}
+                    className="text-sm border border-emerald-300 text-emerald-700 rounded-md px-3 py-1.5 hover:bg-emerald-50 disabled:opacity-60">
+                    {syncing ? t('admin.msgSyncing') : t('admin.msgSyncNow')}
+                  </button>
+                  <button type="button" onClick={remove}
+                    className="text-sm border border-rose-300 text-rose-700 rounded-md px-3 py-1.5 hover:bg-rose-50">
+                    {t('admin.delete')}
+                  </button>
+                </>
+              )}
+              <button type="button" onClick={() => { setEditingId(null); setDetail(null) }}
+                className="text-sm text-slate-600 hover:underline ml-auto">{t('admin.msgCancel')}</button>
+            </div>
+            {detail?.lastSyncedAt && (
+              <p className="text-xs text-slate-500">
+                {t('admin.msgLastSynced')}: {new Date(detail.lastSyncedAt).toLocaleString()} — {detail.lastSyncMessage}
+              </p>
+            )}
+          </form>
+        )}
+
+        {detail && detail.upcomingGames.length > 0 && (
+          <div className="bg-white border border-slate-200 rounded-lg p-4">
+            <h3 className="font-medium text-slate-700 mb-2">{t('admin.msgUpcoming')}</h3>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-slate-500 border-b">
+                  <th className="py-1 pr-4">{t('admin.msgWhen')}</th>
+                  <th className="py-1 pr-4">{t('admin.msgSummary')}</th>
+                  <th className="py-1 pr-4">{t('admin.msgLocation')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {detail.upcomingGames.map(g => (
+                  <tr key={g.id} className="border-b last:border-0">
+                    <td className="py-1 pr-4 whitespace-nowrap">{new Date(g.startsAt).toLocaleString()}</td>
+                    <td className="py-1 pr-4">{g.summary ?? '—'}</td>
+                    <td className="py-1 pr-4">{g.location ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    </div>
+  )
 }
 
 function extractError(e: any): string {

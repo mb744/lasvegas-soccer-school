@@ -356,6 +356,66 @@ export interface SaveWhatsAppTemplateRequest {
   variables: SaveTemplateVariable[]
 }
 
+// --- Schedules (GotSport iCal sync) ---
+
+export interface SaveTeamRequest {
+  name: string
+  /** Either set these directly, or paste scheduleUrl and the backend parses them out. */
+  gotSportEventId?: number | null
+  gotSportTeamId?: number | null
+  scheduleUrl?: string | null
+  messageGroupId?: number | null
+}
+
+export interface TeamSummary {
+  id: number
+  name: string
+  gotSportEventId: number
+  gotSportTeamId: number
+  messageGroupId: number | null
+  messageGroupName: string | null
+  lastSyncedAt: string | null
+  lastSyncMessage: string | null
+  upcomingGameCount: number
+  createdAt: string
+}
+
+export interface ScheduledGame {
+  id: number
+  teamId: number
+  teamName: string
+  messageGroupId: number | null
+  messageGroupName: string | null
+  startsAt: string
+  endsAt: string | null
+  summary: string | null
+  location: string | null
+  description: string | null
+  opponentName: string | null
+  /** true = we're home, false = away, null = unknown (practice/training). Drives wear text. */
+  isHome: boolean | null
+}
+
+export interface TeamDetail {
+  id: number
+  name: string
+  gotSportEventId: number
+  gotSportTeamId: number
+  messageGroupId: number | null
+  messageGroupName: string | null
+  lastSyncedAt: string | null
+  lastSyncMessage: string | null
+  createdAt: string
+  upcomingGames: ScheduledGame[]
+}
+
+export interface ScheduleSyncResult {
+  success: boolean
+  added: number
+  updated: number
+  message: string
+}
+
 export const MESSAGE_CHANNEL_LABELS: Record<MessageChannel, string> = {
   0: 'SMS',
   1: 'WhatsApp',
