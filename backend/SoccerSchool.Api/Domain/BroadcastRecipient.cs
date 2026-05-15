@@ -15,6 +15,10 @@ public class BroadcastRecipient
     [MaxLength(32)]
     public string Phone { get; set; } = string.Empty;
 
+    /// <summary>Which language body was sent to this recipient. Defaults to English; populated
+    /// at send time from the recipient's group / parent preference / broadcast default.</summary>
+    public Language Language { get; set; } = Language.English;
+
     public MessageDeliveryStatus Status { get; set; } = MessageDeliveryStatus.Pending;
 
     /// <summary>Twilio Message SID once accepted, used to correlate the status-callback webhook

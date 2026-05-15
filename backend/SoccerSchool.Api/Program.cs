@@ -113,6 +113,7 @@ builder.Services.AddScoped<IMessageSender, MessageSender>();
 builder.Services.AddScoped<IRecipientResolver, RecipientResolver>();
 builder.Services.AddScoped<IConversationService, ConversationService>();
 builder.Services.AddScoped<IScheduleSyncService, ScheduleSyncService>();
+builder.Services.AddScoped<IPhraseTranslator, PhraseTranslator>();
 builder.Services.AddHttpClient();
 builder.Services.AddSingleton<IWaiverPdfGenerator, WaiverPdfGenerator>();
 

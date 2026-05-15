@@ -19,7 +19,9 @@ import type {
   PlayerSummary,
   RegistrationDetail,
   RegistrationSummary,
+  PhraseTranslation,
   SaveMessageGroupRequest,
+  SavePhraseTranslationRequest,
   SavePlayerRequest,
   SaveTeamRequest,
   SaveWhatsAppTemplateRequest,
@@ -29,6 +31,8 @@ import type {
   SubmitRegistrationRequest,
   TeamDetail,
   TeamSummary,
+  TranslateRequest,
+  TranslateResponse,
   UserSummary,
   WhatsAppTemplate,
 } from './types'
@@ -271,6 +275,27 @@ export const Api = {
   },
   async listUpcomingGames(days = 14) {
     const r = await api.get<ScheduledGame[]>('/schedule/games', { params: { days } })
+    return r.data
+  },
+
+  // --- Phrase translation dictionary ---
+  async listPhraseTranslations() {
+    const r = await api.get<PhraseTranslation[]>('/messaging/translations')
+    return r.data
+  },
+  async createPhraseTranslation(payload: SavePhraseTranslationRequest) {
+    const r = await api.post<PhraseTranslation>('/messaging/translations', payload)
+    return r.data
+  },
+  async updatePhraseTranslation(id: number, payload: SavePhraseTranslationRequest) {
+    const r = await api.put<PhraseTranslation>(`/messaging/translations/${id}`, payload)
+    return r.data
+  },
+  async deletePhraseTranslation(id: number) {
+    await api.delete(`/messaging/translations/${id}`)
+  },
+  async translate(payload: TranslateRequest) {
+    const r = await api.post<TranslateResponse>('/messaging/translate', payload)
     return r.data
   },
 }

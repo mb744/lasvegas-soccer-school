@@ -16,12 +16,16 @@ public record SaveMessageGroupRequest
 
     [MaxLength(512)]
     public string? Description { get; init; }
+
+    /// <summary>Which language version of a broadcast goes to this group's members. Defaults to English.</summary>
+    public Language Language { get; init; } = Language.English;
 }
 
 public record MessageGroupSummary(
     int Id,
     string Name,
     string? Description,
+    Language Language,
     int MemberCount,
     DateTime CreatedAt);
 
@@ -29,6 +33,7 @@ public record MessageGroupDetail(
     int Id,
     string Name,
     string? Description,
+    Language Language,
     DateTime CreatedAt,
     IReadOnlyList<MessageGroupMemberDto> Members);
 
@@ -83,10 +88,19 @@ public record CreateBroadcastRequest
 {
     public MessageChannel Channel { get; init; } = MessageChannel.Sms;
 
-    /// <summary>Free-form message body. Required when WhatsAppTemplateId is null. For WhatsApp
-    /// outside the 24h customer-service window, use the template path instead.</summary>
+    /// <summary>English version of the free-form body. At least one of BodyEn/BodyEs is required
+    /// when WhatsAppTemplateId is null. Each recipient gets the version matching their language;
+    /// if their language is missing, falls back to whichever is set.</summary>
     [MaxLength(2000)]
-    public string? Body { get; init; }
+    public string? BodyEn { get; init; }
+
+    /// <summary>Spanish version of the free-form body.</summary>
+    [MaxLength(2000)]
+    public string? BodyEs { get; init; }
+
+    /// <summary>Language to use for recipients that didn't come with one attached
+    /// (ad-hoc list, individual phone, dynamic group). Default English per admin spec.</summary>
+    public Language DefaultLanguage { get; init; } = Language.English;
 
     /// <summary>Use an approved WhatsApp Content template instead of free-form Body. Channel must
     /// be WhatsApp when this is set, and TemplateVariables must cover every variable on the template.</summary>
@@ -102,7 +116,8 @@ public record CreateBroadcastRequest
 public record BroadcastSummary(
     int Id,
     MessageChannel Channel,
-    string Body,
+    string? BodyEn,
+    string? BodyEs,
     string? TargetLabel,
     DateTime CreatedAt,
     int Total,
@@ -114,6 +129,7 @@ public record BroadcastRecipientDto(
     int Id,
     string? Name,
     string Phone,
+    Language Language,
     MessageDeliveryStatus Status,
     string? StatusMessage,
     string? TwilioSid);
@@ -121,7 +137,8 @@ public record BroadcastRecipientDto(
 public record BroadcastDetail(
     int Id,
     MessageChannel Channel,
-    string Body,
+    string? BodyEn,
+    string? BodyEs,
     string? TargetLabel,
     DateTime CreatedAt,
     IReadOnlyList<BroadcastRecipientDto> Recipients);
@@ -215,3 +232,27 @@ public record SaveWhatsAppTemplateRequest
 
     public List<SaveTemplateVariableDto> Variables { get; init; } = new();
 }
+
+// --- Phrase translation dictionary ---
+
+public record PhraseTranslationDto(int Id, string English, string Spanish, DateTime CreatedAt, DateTime UpdatedAt);
+
+public record SavePhraseTranslationRequest
+{
+    [Required, MaxLength(256)]
+    public string English { get; init; } = string.Empty;
+
+    [Required, MaxLength(256)]
+    public string Spanish { get; init; } = string.Empty;
+}
+
+public record TranslateRequest
+{
+    [Required, MaxLength(2000)]
+    public string Text { get; init; } = string.Empty;
+
+    public Language From { get; init; } = Language.English;
+    public Language To { get; init; } = Language.Spanish;
+}
+
+public record TranslateResponse(string Translated, IReadOnlyList<string> MatchedPhrases, bool FullyTranslated);

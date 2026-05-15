@@ -56,6 +56,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<WhatsAppTemplateVariable> WhatsAppTemplateVariables => Set<WhatsAppTemplateVariable>();
     public DbSet<Team> Teams => Set<Team>();
     public DbSet<ScheduledGame> ScheduledGames => Set<ScheduledGame>();
+    public DbSet<PhraseTranslation> PhraseTranslations => Set<PhraseTranslation>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -201,6 +202,14 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             // Upsert key on re-sync: (team, ICS UID) must be unique.
             b.HasIndex(g => new { g.TeamId, g.ExternalUid }).IsUnique();
             b.HasIndex(g => g.StartsAt);
+        });
+
+        modelBuilder.Entity<PhraseTranslation>(b =>
+        {
+            // Indexed for the longest-match-first lookup the translator does. Not unique on the
+            // SQL side because admins might enter case-variant duplicates we'll dedupe in app code.
+            b.HasIndex(p => p.English);
+            b.HasIndex(p => p.Spanish);
         });
     }
 }

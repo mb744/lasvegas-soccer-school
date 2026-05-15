@@ -13,8 +13,15 @@ public class Broadcast
 
     public MessageChannel Channel { get; set; } = MessageChannel.Sms;
 
+    /// <summary>English version of the message body. At least one of BodyEn/BodyEs must be set
+    /// per broadcast; recipients receive whichever matches their language preference.</summary>
     [MaxLength(2000)]
-    public string Body { get; set; } = string.Empty;
+    public string? BodyEn { get; set; }
+
+    /// <summary>Spanish version of the message body. Optional when the broadcast only targets
+    /// English recipients; required (via validation) when any recipient is Spanish.</summary>
+    [MaxLength(2000)]
+    public string? BodyEs { get; set; }
 
     /// <summary>Human-readable description of who this was sent to, e.g. "Individual",
     /// "Group: U10 parents", "All active-season parents". Used for the admin log.</summary>

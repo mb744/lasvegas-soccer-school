@@ -25,6 +25,7 @@ public class MessagingController : ControllerBase
     private readonly IMessageSender _sender;
     private readonly IRecipientResolver _resolver;
     private readonly IConversationService _conversations;
+    private readonly IPhraseTranslator _translator;
     private readonly TwilioOptions _twilio;
 
     public MessagingController(
@@ -32,12 +33,14 @@ public class MessagingController : ControllerBase
         IMessageSender sender,
         IRecipientResolver resolver,
         IConversationService conversations,
+        IPhraseTranslator translator,
         IOptions<TwilioOptions> twilio)
     {
         _db = db;
         _sender = sender;
         _resolver = resolver;
         _conversations = conversations;
+        _translator = translator;
         _twilio = twilio.Value;
     }
 
@@ -58,7 +61,7 @@ public class MessagingController : ControllerBase
         var curated = await _db.MessageGroups
             .OrderBy(g => g.Name)
             .Select(g => new MessageGroupSummary(
-                g.Id, g.Name, g.Description, g.Members.Count, g.CreatedAt))
+                g.Id, g.Name, g.Description, g.Language, g.Members.Count, g.CreatedAt))
             .ToListAsync(ct);
         var dynamicGroups = (await _resolver.ListDynamicGroupsAsync(ct))
             .Select(d => new DynamicGroupDto(d.Key, d.Label, d.Count))
@@ -74,7 +77,7 @@ public class MessagingController : ControllerBase
             .FirstOrDefaultAsync(x => x.Id == id, ct);
         if (g is null) return NotFound();
         return Ok(new MessageGroupDetail(
-            g.Id, g.Name, g.Description, g.CreatedAt,
+            g.Id, g.Name, g.Description, g.Language, g.CreatedAt,
             g.Members.Select(m => new MessageGroupMemberDto(m.Id, m.Name, m.Phone, m.ParentAccountId)).ToList()));
     }
 
@@ -86,10 +89,15 @@ public class MessagingController : ControllerBase
         if (string.IsNullOrWhiteSpace(name)) return BadRequest("Name is required.");
         if (await _db.MessageGroups.AnyAsync(g => g.Name == name, ct))
             return Conflict($"A group named '{name}' already exists.");
-        var g = new MessageGroup { Name = name, Description = request.Description?.Trim() };
+        var g = new MessageGroup
+        {
+            Name = name,
+            Description = request.Description?.Trim(),
+            Language = request.Language
+        };
         _db.MessageGroups.Add(g);
         await _db.SaveChangesAsync(ct);
-        return Ok(new MessageGroupSummary(g.Id, g.Name, g.Description, 0, g.CreatedAt));
+        return Ok(new MessageGroupSummary(g.Id, g.Name, g.Description, g.Language, 0, g.CreatedAt));
     }
 
     [HttpPut("groups/{id:int}")]
@@ -104,8 +112,9 @@ public class MessagingController : ControllerBase
             return Conflict($"A group named '{name}' already exists.");
         g.Name = name;
         g.Description = request.Description?.Trim();
+        g.Language = request.Language;
         await _db.SaveChangesAsync(ct);
-        return Ok(new MessageGroupSummary(g.Id, g.Name, g.Description, g.Members.Count, g.CreatedAt));
+        return Ok(new MessageGroupSummary(g.Id, g.Name, g.Description, g.Language, g.Members.Count, g.CreatedAt));
     }
 
     [HttpDelete("groups/{id:int}")]
@@ -180,7 +189,7 @@ public class MessagingController : ControllerBase
         await _db.SaveChangesAsync(ct);
 
         return Ok(new MessageGroupDetail(
-            g.Id, g.Name, g.Description, g.CreatedAt,
+            g.Id, g.Name, g.Description, g.Language, g.CreatedAt,
             g.Members.Select(m => new MessageGroupMemberDto(m.Id, m.Name, m.Phone, m.ParentAccountId)).ToList()));
     }
 
@@ -193,12 +202,13 @@ public class MessagingController : ControllerBase
         if (!_sender.IsAvailable(request.Channel))
             return BadRequest($"{request.Channel} not configured on this server.");
 
-        // Two send modes: free-form body, or WhatsApp Content template (ContentSid + variables).
-        // Exactly one must be specified; template path is WhatsApp-only.
+        // Two send modes: free-form (with optional bilingual bodies) or WhatsApp Content template.
         var isTemplate = request.WhatsAppTemplateId.HasValue;
         WhatsAppTemplate? template = null;
         Dictionary<string, string> templateVars = new();
-        string bodyForLog;
+        var bodyEn = request.BodyEn?.Trim();
+        var bodyEs = request.BodyEs?.Trim();
+
         if (isTemplate)
         {
             if (request.Channel != MessageChannel.WhatsApp)
@@ -210,21 +220,17 @@ public class MessagingController : ControllerBase
             templateVars = (request.TemplateVariables ?? new())
                 .Where(kv => !string.IsNullOrEmpty(kv.Key))
                 .ToDictionary(kv => kv.Key, kv => kv.Value ?? string.Empty);
-            // Verify every template placeholder got a value — otherwise Twilio rejects the send.
             var missing = template.Variables
                 .Select(v => v.Position.ToString())
                 .Where(pos => !templateVars.ContainsKey(pos) || string.IsNullOrWhiteSpace(templateVars[pos]))
                 .ToList();
             if (missing.Count > 0)
                 return BadRequest($"Template variables missing: {string.Join(", ", missing)}.");
-            // Humanized log line for the admin history view — actual send uses ContentSid + variables.
-            bodyForLog = $"[Template {template.Name}] " + RenderPreview(template.PreviewText, templateVars);
         }
         else
         {
-            if (string.IsNullOrWhiteSpace(request.Body))
-                return BadRequest("Either Body or WhatsAppTemplateId is required.");
-            bodyForLog = request.Body.Trim();
+            if (string.IsNullOrWhiteSpace(bodyEn) && string.IsNullOrWhiteSpace(bodyEs))
+                return BadRequest("Either BodyEn, BodyEs, or WhatsAppTemplateId is required.");
         }
 
         var target = MapTarget(request.Target);
@@ -235,30 +241,42 @@ public class MessagingController : ControllerBase
         var broadcast = new Broadcast
         {
             Channel = request.Channel,
-            Body = bodyForLog,
+            BodyEn = bodyEn,
+            BodyEs = bodyEs,
             TargetLabel = resolved.Label,
             WhatsAppTemplateId = template?.Id,
             TemplateVariablesJson = isTemplate ? JsonSerializer.Serialize(templateVars) : null
         };
         foreach (var r in resolved.Recipients)
         {
+            // Recipient language: from the source (curated group) if present, else from the
+            // broadcast's default (per admin spec: English unless overridden).
+            var lang = r.Language ?? request.DefaultLanguage;
             broadcast.Recipients.Add(new BroadcastRecipient
             {
                 Name = r.Name,
                 Phone = r.Phone,
+                Language = lang,
                 Status = MessageDeliveryStatus.Pending
             });
         }
         _db.Broadcasts.Add(broadcast);
         await _db.SaveChangesAsync(ct);
 
-        // Synchronous fan-out: fine for a single-school audience (tens-to-low-hundreds).
-        // If volume grows, move this to a background queue.
+        // Synchronous fan-out. Each recipient gets the body matching their resolved language;
+        // if that body is empty we fall back to whichever is set so we don't silently skip them.
         foreach (var recipient in broadcast.Recipients)
         {
-            var send = isTemplate
-                ? await _sender.SendTemplateAsync(recipient.Phone, template!.ContentSid, templateVars, ct)
-                : await _sender.SendAsync(request.Channel, recipient.Phone, broadcast.Body, ct);
+            MessageSendResult send;
+            if (isTemplate)
+            {
+                send = await _sender.SendTemplateAsync(recipient.Phone, template!.ContentSid, templateVars, ct);
+            }
+            else
+            {
+                var body = recipient.Language == Language.Spanish ? (bodyEs ?? bodyEn) : (bodyEn ?? bodyEs);
+                send = await _sender.SendAsync(request.Channel, recipient.Phone, body ?? string.Empty, ct);
+            }
             recipient.TwilioSid = send.TwilioSid;
             recipient.Status = send.Status;
             recipient.StatusMessage = send.Message;
@@ -268,17 +286,6 @@ public class MessagingController : ControllerBase
         return Ok(ToDetail(broadcast));
     }
 
-    /// <summary>Substitutes "{{1}}", "{{2}}", ... in the template preview text with the provided
-    /// values. Used only for the admin history view — Twilio does the real substitution server-side
-    /// from the approved template body.</summary>
-    private static string RenderPreview(string? preview, IReadOnlyDictionary<string, string> vars)
-    {
-        if (string.IsNullOrEmpty(preview)) return string.Join(", ", vars.Select(kv => $"{kv.Key}={kv.Value}"));
-        var result = preview;
-        foreach (var kv in vars)
-            result = result.Replace($"{{{{{kv.Key}}}}}", kv.Value);
-        return result;
-    }
 
     [HttpGet("broadcasts")]
     public async Task<ActionResult<IEnumerable<BroadcastSummary>>> ListBroadcasts(CancellationToken ct)
@@ -289,7 +296,8 @@ public class MessagingController : ControllerBase
             .Select(b => new BroadcastSummary(
                 b.Id,
                 b.Channel,
-                b.Body,
+                b.BodyEn,
+                b.BodyEs,
                 b.TargetLabel,
                 b.CreatedAt,
                 b.Recipients.Count,
@@ -508,6 +516,75 @@ public class MessagingController : ControllerBase
         return NoContent();
     }
 
+    // --- Phrase translation dictionary ---
+
+    [HttpGet("translations")]
+    public async Task<ActionResult<IEnumerable<PhraseTranslationDto>>> ListTranslations(CancellationToken ct)
+    {
+        var items = await _db.PhraseTranslations
+            .OrderBy(p => p.English)
+            .Select(p => new PhraseTranslationDto(p.Id, p.English, p.Spanish, p.CreatedAt, p.UpdatedAt))
+            .ToListAsync(ct);
+        return Ok(items);
+    }
+
+    [HttpPost("translations")]
+    public async Task<ActionResult<PhraseTranslationDto>> CreateTranslation(
+        [FromBody] SavePhraseTranslationRequest request, CancellationToken ct)
+    {
+        var en = request.English.Trim();
+        var es = request.Spanish.Trim();
+        if (string.IsNullOrWhiteSpace(en) || string.IsNullOrWhiteSpace(es))
+            return BadRequest("Both English and Spanish phrases are required.");
+        if (await _db.PhraseTranslations.AnyAsync(p => p.English == en, ct))
+            return Conflict($"A translation for '{en}' already exists.");
+        var p = new PhraseTranslation { English = en, Spanish = es };
+        _db.PhraseTranslations.Add(p);
+        await _db.SaveChangesAsync(ct);
+        return Ok(new PhraseTranslationDto(p.Id, p.English, p.Spanish, p.CreatedAt, p.UpdatedAt));
+    }
+
+    [HttpPut("translations/{id:int}")]
+    public async Task<ActionResult<PhraseTranslationDto>> UpdateTranslation(
+        int id, [FromBody] SavePhraseTranslationRequest request, CancellationToken ct)
+    {
+        var p = await _db.PhraseTranslations.FindAsync(new object?[] { id }, ct);
+        if (p is null) return NotFound();
+        var en = request.English.Trim();
+        var es = request.Spanish.Trim();
+        if (string.IsNullOrWhiteSpace(en) || string.IsNullOrWhiteSpace(es))
+            return BadRequest("Both English and Spanish phrases are required.");
+        if (await _db.PhraseTranslations.AnyAsync(x => x.English == en && x.Id != id, ct))
+            return Conflict($"A translation for '{en}' already exists.");
+        p.English = en;
+        p.Spanish = es;
+        p.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        return Ok(new PhraseTranslationDto(p.Id, p.English, p.Spanish, p.CreatedAt, p.UpdatedAt));
+    }
+
+    [HttpDelete("translations/{id:int}")]
+    public async Task<IActionResult> DeleteTranslation(int id, CancellationToken ct)
+    {
+        var p = await _db.PhraseTranslations.FindAsync(new object?[] { id }, ct);
+        if (p is null) return NotFound();
+        _db.PhraseTranslations.Remove(p);
+        await _db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
+    /// <summary>Best-effort dictionary translation. Anything not in the dictionary stays in the
+    /// source language; admin edits in the side-by-side preview.</summary>
+    [HttpPost("translate")]
+    public async Task<ActionResult<TranslateResponse>> Translate(
+        [FromBody] TranslateRequest request, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.Text))
+            return Ok(new TranslateResponse(string.Empty, Array.Empty<string>(), true));
+        var outcome = await _translator.TranslateAsync(request.Text, request.From, request.To, ct);
+        return Ok(new TranslateResponse(outcome.Translated, outcome.MatchedPhrases, outcome.FullyTranslated));
+    }
+
     // --- Helpers ---
 
     private static RecipientTarget MapTarget(BroadcastTargetDto dto) =>
@@ -523,9 +600,9 @@ public class MessagingController : ControllerBase
                 .ToList());
 
     private static BroadcastDetail ToDetail(Broadcast b) => new(
-        b.Id, b.Channel, b.Body, b.TargetLabel, b.CreatedAt,
+        b.Id, b.Channel, b.BodyEn, b.BodyEs, b.TargetLabel, b.CreatedAt,
         b.Recipients.Select(r => new BroadcastRecipientDto(
-            r.Id, r.Name, r.Phone, r.Status, r.StatusMessage, r.TwilioSid)).ToList());
+            r.Id, r.Name, r.Phone, r.Language, r.Status, r.StatusMessage, r.TwilioSid)).ToList());
 
     private static GroupConversationDetail ToDetail(GroupConversation c) => new(
         c.Id, c.Title, c.Channel, c.TwilioConversationSid, c.CreatedAt,

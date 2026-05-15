@@ -15,6 +15,7 @@ import type {
   MessageGroupDetail,
   MessageGroupSummary,
   MessagingConfig,
+  PhraseTranslation,
   SaveTemplateVariable,
   ScheduledGame,
   TeamDetail,
@@ -40,7 +41,7 @@ import {
   MESSAGE_DELIVERY_LABELS,
 } from '../../api/types'
 
-type Tab = 'compose' | 'groups' | 'conversations' | 'templates' | 'teams' | 'history'
+type Tab = 'compose' | 'groups' | 'conversations' | 'templates' | 'teams' | 'dictionary' | 'history'
 type RecipientMode = 'individual' | 'curated' | 'dynamic' | 'list'
 type SendMode = 'broadcast' | 'group-chat'
 type ComposeBodyMode = 'free-form' | 'template'
@@ -136,6 +137,7 @@ export function AdminMessagingPage() {
           {tabBtn('conversations', t('admin.msgTabConversations'))}
           {tabBtn('templates', t('admin.msgTabTemplates'))}
           {tabBtn('teams', t('admin.msgTabTeams'))}
+          {tabBtn('dictionary', t('admin.msgTabDictionary'))}
           {tabBtn('history', t('admin.msgTabHistory'))}
         </div>
 
@@ -202,6 +204,13 @@ export function AdminMessagingPage() {
           />
         )}
 
+        {tab === 'dictionary' && (
+          <DictionaryTab
+            onError={(e) => setError(e)}
+            onNotice={(n) => setNotice(n)}
+          />
+        )}
+
         {tab === 'history' && (
           <HistoryTab
             broadcasts={broadcasts}
@@ -251,7 +260,10 @@ function ComposeTab({
   const [listRaw, setListRaw] = useState('')
   const parsedList = useMemo(() => parseRecipientList(listRaw), [listRaw])
   const [title, setTitle] = useState('')
-  const [body, setBody] = useState('')
+  const [bodyEn, setBodyEn] = useState('')
+  const [bodyEs, setBodyEs] = useState('')
+  const [defaultLang, setDefaultLang] = useState<Language>(0)
+  const [previewStep, setPreviewStep] = useState<'edit' | 'confirm' | null>(null)
   const [sending, setSending] = useState(false)
 
   const selectedTemplate = useMemo(
@@ -296,14 +308,21 @@ function ComposeTab({
     return { kind: 2 as const, dynamicGroupKey: dynamicKey }
   }
 
-  const send = async (e: React.FormEvent) => {
+  /** Final validation that's shared between the "send straight" paths and the bilingual modal. */
+  const validate = (): string | null => {
+    if (!channelAvailable(channel)) return `${MESSAGE_CHANNEL_LABELS[channel]} is not configured on this server.`
+    if (recipientMode === 'individual' && !phone.trim()) return 'Enter a phone number.'
+    if (recipientMode === 'curated' && customGroupId === '') return 'Pick a group.'
+    if (recipientMode === 'dynamic' && !dynamicKey) return 'Pick a group.'
+    if (recipientMode === 'list' && parsedList.length === 0) return 'Paste at least one phone number.'
+    if (mode === 'group-chat' && !title.trim()) return 'Group chat title is required.'
+    return null
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!channelAvailable(channel)) { onError(`${MESSAGE_CHANNEL_LABELS[channel]} is not configured on this server.`); return }
-    if (recipientMode === 'individual' && !phone.trim()) { onError('Enter a phone number.'); return }
-    if (recipientMode === 'curated' && customGroupId === '') { onError('Pick a group.'); return }
-    if (recipientMode === 'dynamic' && !dynamicKey) { onError('Pick a group.'); return }
-    if (recipientMode === 'list' && parsedList.length === 0) { onError('Paste at least one phone number.'); return }
-    if (mode === 'group-chat' && !title.trim()) { onError('Group chat title is required.'); return }
+    const err = validate()
+    if (err) { onError(err); return }
 
     const usingTemplate = mode === 'broadcast' && channel === 1 && bodyMode === 'template'
     if (usingTemplate) {
@@ -312,24 +331,42 @@ function ComposeTab({
         .filter(v => !templateValues[v.position.toString()]?.trim())
         .map(v => v.label)
       if (missing.length) { onError(`Fill in: ${missing.join(', ')}.`); return }
-    } else if (!body.trim()) {
-      onError('Message body is required.'); return
+      // Templates have their own per-language Twilio content; no bilingual preview needed.
+      await sendNow({ usingTemplate: true })
+      return
     }
 
+    // Free-form: require at least the EN side, then open the bilingual preview gate. Group-chat
+    // skips the preview because Conversations only sends one body anyway.
+    if (!bodyEn.trim() && !bodyEs.trim()) { onError('Message body is required.'); return }
+    if (mode === 'group-chat') {
+      await sendNow({ usingTemplate: false })
+      return
+    }
+    setPreviewStep('edit')
+  }
+
+  const sendNow = async (args: { usingTemplate: boolean }) => {
     setSending(true)
     try {
       if (mode === 'broadcast') {
-        const payload = usingTemplate
+        const payload = args.usingTemplate
           ? {
               channel,
               whatsAppTemplateId: selectedTemplate!.id,
               templateVariables: templateValues,
               target: target(),
             }
-          : { channel, body: body.trim(), target: target() }
+          : {
+              channel,
+              bodyEn: bodyEn.trim() || null,
+              bodyEs: bodyEs.trim() || null,
+              defaultLanguage: defaultLang,
+              target: target(),
+            }
         const r = await Api.createBroadcast(payload)
         const ok = r.recipients.filter(x => x.status !== 4 && x.status !== 5).length
-        const via = usingTemplate
+        const via = args.usingTemplate
           ? `${MESSAGE_CHANNEL_LABELS[channel]} template "${selectedTemplate!.name}"`
           : MESSAGE_CHANNEL_LABELS[channel]
         await onSent(`Sent to ${ok}/${r.recipients.length} via ${via}.`)
@@ -340,12 +377,14 @@ function ComposeTab({
           participants: [],
           target: target(),
         })
-        // After creating, send the first message into the conversation.
-        if (body.trim()) await Api.sendToConversation(r.id, body.trim())
+        // After creating, send the first message into the conversation (English side wins for
+        // group chats since Conversations is single-thread).
+        const initial = bodyEn.trim() || bodyEs.trim()
+        if (initial) await Api.sendToConversation(r.id, initial)
         await onSent(`Group chat "${r.title}" created with ${r.participants.length} participants.`)
       }
-      setBody('')
-      if (usingTemplate) setTemplateValues({})
+      setBodyEn(''); setBodyEs(''); setPreviewStep(null)
+      if (args.usingTemplate) setTemplateValues({})
     } catch (e: any) {
       onError(extractError(e))
     } finally {
@@ -358,7 +397,8 @@ function ComposeTab({
   const showTemplateMode = isWhatsApp && mode === 'broadcast'
 
   return (
-    <form onSubmit={send} className="bg-white border border-slate-200 rounded-lg p-6 space-y-4">
+    <>
+    <form onSubmit={handleSubmit} className="bg-white border border-slate-200 rounded-lg p-6 space-y-4">
       <div className="grid sm:grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">{t('admin.msgChannel')}</label>
@@ -548,20 +588,43 @@ function ComposeTab({
       ) : (
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">{t('admin.msgBody')}</label>
-          <textarea rows={4} value={body} onChange={e => setBody(e.target.value)}
+          <textarea rows={4} value={bodyEn} onChange={e => setBodyEn(e.target.value)}
             maxLength={2000}
+            placeholder={t('admin.msgBodyPlaceholder')}
             className="border border-slate-300 rounded-md px-3 py-2 text-sm w-full" />
-          <p className="mt-1 text-xs text-slate-500">{body.length} / 2000</p>
+          <p className="mt-1 text-xs text-slate-500">{bodyEn.length} / 2000 · {t('admin.msgBodyHint')}</p>
         </div>
       )}
 
       <div>
         <button type="submit" disabled={sending}
           className="bg-emerald-700 text-white font-semibold px-5 py-2 rounded-md hover:bg-emerald-800 disabled:opacity-60">
-          {sending ? t('admin.sending') : (mode === 'group-chat' ? t('admin.msgCreateAndSend') : t('admin.msgSend'))}
+          {sending
+            ? t('admin.sending')
+            : (mode === 'group-chat'
+                ? t('admin.msgCreateAndSend')
+                : (bodyMode === 'free-form' ? t('admin.msgPreviewSend') : t('admin.msgSend')))}
         </button>
       </div>
     </form>
+    {previewStep !== null && (
+      <BilingualPreviewModal
+        step={previewStep}
+        bodyEn={bodyEn}
+        bodyEs={bodyEs}
+        defaultLang={defaultLang}
+        sending={sending}
+        showDefaultLangPicker={recipientMode !== 'curated'}
+        onBodyEnChange={setBodyEn}
+        onBodyEsChange={setBodyEs}
+        onDefaultLangChange={setDefaultLang}
+        onContinue={() => setPreviewStep('confirm')}
+        onBack={() => setPreviewStep('edit')}
+        onCancel={() => setPreviewStep(null)}
+        onConfirm={() => sendNow({ usingTemplate: false })}
+      />
+    )}
+    </>
   )
 }
 
@@ -579,6 +642,7 @@ function GroupsTab({
   const [selected, setSelected] = useState<MessageGroupDetail | null>(null)
   const [newName, setNewName] = useState('')
   const [newDescription, setNewDescription] = useState('')
+  const [newLanguage, setNewLanguage] = useState<Language>(0)
   const [memberName, setMemberName] = useState('')
   const [memberPhone, setMemberPhone] = useState('')
 
@@ -591,11 +655,29 @@ function GroupsTab({
     e.preventDefault()
     if (!newName.trim()) { onError('Name is required.'); return }
     try {
-      const g = await Api.createMessagingGroup({ name: newName.trim(), description: newDescription.trim() || null })
-      setNewName(''); setNewDescription('')
+      const g = await Api.createMessagingGroup({
+        name: newName.trim(),
+        description: newDescription.trim() || null,
+        language: newLanguage,
+      })
+      setNewName(''); setNewDescription(''); setNewLanguage(0)
       await onChanged()
       await loadGroup(g.id)
       onNotice(`Created group "${g.name}".`)
+    } catch (e: any) { onError(extractError(e)) }
+  }
+
+  const updateLanguage = async (lang: Language) => {
+    if (!selected) return
+    try {
+      await Api.updateMessagingGroup(selected.id, {
+        name: selected.name,
+        description: selected.description,
+        language: lang,
+      })
+      await loadGroup(selected.id)
+      await onChanged()
+      onNotice(`Group language set to ${lang === 1 ? 'Español' : 'English'}.`)
     } catch (e: any) { onError(extractError(e)) }
   }
 
@@ -668,6 +750,11 @@ function GroupsTab({
           <input type="text" value={newDescription} onChange={e => setNewDescription(e.target.value)}
             placeholder={t('admin.msgGroupDescOptional')}
             className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+          <select value={newLanguage} onChange={e => setNewLanguage(Number(e.target.value) as Language)}
+            className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm">
+            <option value={0}>{t('admin.msgGroupLangEn')}</option>
+            <option value={1}>{t('admin.msgGroupLangEs')}</option>
+          </select>
           <button type="submit"
             className="bg-emerald-700 text-white text-sm font-semibold px-3 py-1.5 rounded-md hover:bg-emerald-800">
             {t('admin.msgCreateGroup')}
@@ -689,7 +776,14 @@ function GroupsTab({
                 {selected.description && <p className="text-sm text-slate-600">{selected.description}</p>}
                 <p className="text-xs text-slate-500 mt-1">{selected.members.length} {t('admin.msgMembers')}</p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 items-center">
+                <select value={selected.language}
+                  onChange={e => updateLanguage(Number(e.target.value) as Language)}
+                  className="text-sm border border-slate-300 rounded-md px-2 py-1"
+                  title={t('admin.msgGroupLangSelectHelp')}>
+                  <option value={0}>{t('admin.msgGroupLangEn')}</option>
+                  <option value={1}>{t('admin.msgGroupLangEs')}</option>
+                </select>
                 <button onClick={importSeason}
                   className="text-sm border border-slate-300 rounded-md px-2 py-1 hover:bg-slate-50">
                   {t('admin.msgImportSeason')}
@@ -934,7 +1028,10 @@ function HistoryTab({
                   <span className="text-rose-700">✕{b.failed}</span>{' '}
                   <span className="text-slate-400">/{b.total}</span>
                 </td>
-                <td className="py-2 pr-4 max-w-md truncate" title={b.body}>{b.body}</td>
+                <td className="py-2 pr-4 max-w-md">
+                  {b.bodyEn && <div className="truncate" title={b.bodyEn}><span className="text-xs text-slate-400">EN:</span> {b.bodyEn}</div>}
+                  {b.bodyEs && <div className="truncate" title={b.bodyEs}><span className="text-xs text-slate-400">ES:</span> {b.bodyEs}</div>}
+                </td>
                 <td className="py-2 pr-4">
                   <button onClick={() => toggle(b.id)} className="text-emerald-700 hover:underline">
                     {expandedId === b.id ? t('admin.hide') : t('admin.details')}
@@ -1460,6 +1557,263 @@ function TeamsTab({
         )}
       </section>
     </div>
+  )
+}
+
+// --- Bilingual preview modal ---------------------------------------------
+
+function BilingualPreviewModal({
+  step, bodyEn, bodyEs, defaultLang, sending, showDefaultLangPicker,
+  onBodyEnChange, onBodyEsChange, onDefaultLangChange,
+  onContinue, onBack, onCancel, onConfirm,
+}: {
+  step: 'edit' | 'confirm'
+  bodyEn: string
+  bodyEs: string
+  defaultLang: Language
+  sending: boolean
+  showDefaultLangPicker: boolean
+  onBodyEnChange: (v: string) => void
+  onBodyEsChange: (v: string) => void
+  onDefaultLangChange: (v: Language) => void
+  onContinue: () => void
+  onBack: () => void
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  const { t } = useTranslation()
+  const [translating, setTranslating] = useState<'enToEs' | 'esToEn' | null>(null)
+  const [translationNote, setTranslationNote] = useState<string | null>(null)
+
+  const runTranslate = async (direction: 'enToEs' | 'esToEn') => {
+    const text = direction === 'enToEs' ? bodyEn : bodyEs
+    if (!text.trim()) return
+    setTranslating(direction); setTranslationNote(null)
+    try {
+      const r = await Api.translate({
+        text: text.trim(),
+        from: direction === 'enToEs' ? 0 : 1,
+        to: direction === 'enToEs' ? 1 : 0,
+      })
+      if (direction === 'enToEs') onBodyEsChange(r.translated); else onBodyEnChange(r.translated)
+      setTranslationNote(r.fullyTranslated
+        ? t('admin.msgTranslateNoteFull', { count: r.matchedPhrases.length })
+        : (r.matchedPhrases.length > 0
+            ? t('admin.msgTranslateNotePartial', { count: r.matchedPhrases.length })
+            : t('admin.msgTranslateNoteNone')))
+    } catch (e: any) {
+      setTranslationNote(extractError(e))
+    } finally {
+      setTranslating(null)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-start justify-center p-4 overflow-y-auto">
+      <div className="bg-white rounded-lg shadow-xl max-w-5xl w-full mt-10 p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-bold text-emerald-800">
+            {step === 'edit' ? t('admin.msgPreviewStep1Title') : t('admin.msgPreviewStep2Title')}
+          </h2>
+          <button onClick={onCancel} className="text-sm text-slate-500 hover:text-slate-700">✕</button>
+        </div>
+        <p className="text-sm text-slate-600">
+          {step === 'edit' ? t('admin.msgPreviewStep1Help') : t('admin.msgPreviewStep2Help')}
+        </p>
+
+        <div className="grid md:grid-cols-2 gap-4">
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-sm font-medium text-slate-700">{t('admin.msgPreviewEn')}</label>
+              {step === 'edit' && (
+                <button type="button" onClick={() => runTranslate('esToEn')}
+                  disabled={translating !== null || !bodyEs.trim()}
+                  className="text-xs text-emerald-700 hover:underline disabled:opacity-40 disabled:no-underline">
+                  {translating === 'esToEn' ? t('admin.msgTranslating') : t('admin.msgTranslateFromEs')}
+                </button>
+              )}
+            </div>
+            {step === 'edit' ? (
+              <textarea rows={8} value={bodyEn} onChange={e => onBodyEnChange(e.target.value)}
+                maxLength={2000}
+                className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+            ) : (
+              <pre className="w-full border border-slate-200 bg-slate-50 rounded-md px-3 py-2 text-sm whitespace-pre-wrap min-h-[8rem]">{bodyEn || '—'}</pre>
+            )}
+          </div>
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-sm font-medium text-slate-700">{t('admin.msgPreviewEs')}</label>
+              {step === 'edit' && (
+                <button type="button" onClick={() => runTranslate('enToEs')}
+                  disabled={translating !== null || !bodyEn.trim()}
+                  className="text-xs text-emerald-700 hover:underline disabled:opacity-40 disabled:no-underline">
+                  {translating === 'enToEs' ? t('admin.msgTranslating') : t('admin.msgTranslateFromEn')}
+                </button>
+              )}
+            </div>
+            {step === 'edit' ? (
+              <textarea rows={8} value={bodyEs} onChange={e => onBodyEsChange(e.target.value)}
+                maxLength={2000}
+                className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+            ) : (
+              <pre className="w-full border border-slate-200 bg-slate-50 rounded-md px-3 py-2 text-sm whitespace-pre-wrap min-h-[8rem]">{bodyEs || '—'}</pre>
+            )}
+          </div>
+        </div>
+
+        {translationNote && step === 'edit' && (
+          <div className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded p-2">{translationNote}</div>
+        )}
+
+        {showDefaultLangPicker && (
+          <div className="text-sm">
+            <label className="font-medium text-slate-700 mr-3">{t('admin.msgDefaultLang')}</label>
+            {step === 'edit' ? (
+              <select value={defaultLang} onChange={e => onDefaultLangChange(Number(e.target.value) as Language)}
+                className="border border-slate-300 rounded-md px-2 py-1 text-sm">
+                <option value={0}>English</option>
+                <option value={1}>Español</option>
+              </select>
+            ) : (
+              <span className="text-slate-700">{defaultLang === 1 ? 'Español' : 'English'}</span>
+            )}
+            <span className="ml-2 text-xs text-slate-500">{t('admin.msgDefaultLangHelp')}</span>
+          </div>
+        )}
+
+        <div className="flex items-center gap-3 pt-3 border-t border-slate-100">
+          {step === 'edit' ? (
+            <>
+              <button onClick={onContinue}
+                className="bg-emerald-700 text-white text-sm font-semibold px-4 py-2 rounded-md hover:bg-emerald-800">
+                {t('admin.msgPreviewContinue')}
+              </button>
+              <button onClick={onCancel}
+                className="text-sm text-slate-600 hover:underline">{t('admin.msgCancel')}</button>
+            </>
+          ) : (
+            <>
+              <button onClick={onConfirm} disabled={sending}
+                className="bg-emerald-700 text-white text-sm font-semibold px-4 py-2 rounded-md hover:bg-emerald-800 disabled:opacity-60">
+                {sending ? t('admin.sending') : t('admin.msgPreviewConfirmSend')}
+              </button>
+              <button onClick={onBack} disabled={sending}
+                className="text-sm border border-slate-300 rounded-md px-3 py-1.5 hover:bg-slate-50">
+                {t('admin.msgPreviewBack')}
+              </button>
+              <button onClick={onCancel} disabled={sending}
+                className="text-sm text-slate-600 hover:underline ml-auto">{t('admin.msgCancel')}</button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// --- Dictionary tab ------------------------------------------------------
+
+function DictionaryTab({
+  onError, onNotice,
+}: {
+  onError: (e: string) => void
+  onNotice: (n: string) => void
+}) {
+  const { t } = useTranslation()
+  const [entries, setEntries] = useState<PhraseTranslation[]>([])
+  const [editingId, setEditingId] = useState<number | 'new' | null>(null)
+  const [english, setEnglish] = useState('')
+  const [spanish, setSpanish] = useState('')
+
+  const load = async () => {
+    try { setEntries(await Api.listPhraseTranslations()) }
+    catch (e: any) { onError(extractError(e)) }
+  }
+  useEffect(() => { load() }, [])
+
+  const startNew = () => { setEditingId('new'); setEnglish(''); setSpanish('') }
+  const startEdit = (p: PhraseTranslation) => { setEditingId(p.id); setEnglish(p.english); setSpanish(p.spanish) }
+  const cancel = () => { setEditingId(null) }
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!english.trim() || !spanish.trim()) { onError('Both English and Spanish required.'); return }
+    try {
+      const payload = { english: english.trim(), spanish: spanish.trim() }
+      if (editingId === 'new') await Api.createPhraseTranslation(payload)
+      else if (typeof editingId === 'number') await Api.updatePhraseTranslation(editingId, payload)
+      setEditingId(null)
+      await load()
+      onNotice(t('admin.msgDictionarySaved'))
+    } catch (e: any) { onError(extractError(e)) }
+  }
+  const remove = async (id: number) => {
+    if (!confirm('Delete this translation?')) return
+    try { await Api.deletePhraseTranslation(id); await load() }
+    catch (e: any) { onError(extractError(e)) }
+  }
+
+  return (
+    <section className="bg-white border border-slate-200 rounded-lg p-6 space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="font-bold text-emerald-800">{t('admin.msgDictionaryHeader')}</h2>
+          <p className="text-xs text-slate-500 mt-1">{t('admin.msgDictionaryHint')}</p>
+        </div>
+        <button onClick={startNew}
+          className="bg-emerald-700 text-white text-sm font-semibold px-3 py-1.5 rounded-md hover:bg-emerald-800">
+          + {t('admin.msgDictionaryAdd')}
+        </button>
+      </div>
+
+      {editingId !== null && (
+        <form onSubmit={save} className="border border-slate-200 rounded p-3 grid sm:grid-cols-[1fr_1fr_auto] gap-2 items-start">
+          <input type="text" value={english} onChange={e => setEnglish(e.target.value)}
+            placeholder="English phrase"
+            className="border border-slate-300 rounded-md px-3 py-2 text-sm" autoFocus />
+          <input type="text" value={spanish} onChange={e => setSpanish(e.target.value)}
+            placeholder="Spanish phrase"
+            className="border border-slate-300 rounded-md px-3 py-2 text-sm" />
+          <div className="flex gap-2">
+            <button type="submit"
+              className="bg-emerald-700 text-white text-sm font-semibold px-3 py-2 rounded-md hover:bg-emerald-800">
+              {editingId === 'new' ? t('admin.msgCreateGroup') : t('admin.msgSave')}
+            </button>
+            <button type="button" onClick={cancel}
+              className="text-sm text-slate-600 hover:underline">{t('admin.msgCancel')}</button>
+          </div>
+        </form>
+      )}
+
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-left text-slate-500 border-b">
+            <th className="py-2 pr-4">{t('admin.msgDictEn')}</th>
+            <th className="py-2 pr-4">{t('admin.msgDictEs')}</th>
+            <th className="py-2 pr-4"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {entries.map(p => (
+            <tr key={p.id} className="border-b last:border-0">
+              <td className="py-2 pr-4">{p.english}</td>
+              <td className="py-2 pr-4">{p.spanish}</td>
+              <td className="py-2 pr-4 text-right whitespace-nowrap">
+                <button onClick={() => startEdit(p)}
+                  className="text-emerald-700 hover:underline">{t('admin.details')}</button>
+                <span className="mx-2 text-slate-300">|</span>
+                <button onClick={() => remove(p.id)}
+                  className="text-rose-700 hover:underline">{t('admin.delete')}</button>
+              </td>
+            </tr>
+          ))}
+          {entries.length === 0 && (
+            <tr><td colSpan={3} className="py-4 text-center text-slate-400">{t('admin.msgDictionaryEmpty')}</td></tr>
+          )}
+        </tbody>
+      </table>
+    </section>
   )
 }
 

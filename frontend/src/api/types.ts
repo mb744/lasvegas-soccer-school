@@ -194,6 +194,7 @@ export interface MessageGroupSummary {
   id: number
   name: string
   description: string | null
+  language: Language
   memberCount: number
   createdAt: string
 }
@@ -211,6 +212,8 @@ export interface DynamicGroup {
 export interface SaveMessageGroupRequest {
   name: string
   description?: string | null
+  /** 0 = English, 1 = Spanish. Drives which body recipients of this group receive. */
+  language: Language
 }
 
 export interface AddMessageGroupMemberRequest {
@@ -243,8 +246,12 @@ export interface BroadcastTarget {
 
 export interface CreateBroadcastRequest {
   channel: MessageChannel
-  /** Free-form body. Required when whatsAppTemplateId is null. */
-  body?: string | null
+  /** English body. At least one of bodyEn/bodyEs required when not using a template. */
+  bodyEn?: string | null
+  /** Spanish body. */
+  bodyEs?: string | null
+  /** Language to use for recipients without one attached (ad-hoc/individual/dynamic). Default English. */
+  defaultLanguage?: Language
   /** Use an approved WhatsApp Content template instead of free-form body. WhatsApp channel only. */
   whatsAppTemplateId?: number | null
   /** Values for the template's positional variables, keyed by position as string. */
@@ -255,7 +262,8 @@ export interface CreateBroadcastRequest {
 export interface BroadcastSummary {
   id: number
   channel: MessageChannel
-  body: string
+  bodyEn: string | null
+  bodyEs: string | null
   targetLabel: string | null
   createdAt: string
   total: number
@@ -268,6 +276,7 @@ export interface BroadcastRecipientRow {
   id: number
   name: string | null
   phone: string
+  language: Language
   status: MessageDeliveryStatus
   statusMessage: string | null
   twilioSid: string | null
@@ -276,7 +285,8 @@ export interface BroadcastRecipientRow {
 export interface BroadcastDetail {
   id: number
   channel: MessageChannel
-  body: string
+  bodyEn: string | null
+  bodyEs: string | null
   targetLabel: string | null
   createdAt: string
   recipients: BroadcastRecipientRow[]
@@ -414,6 +424,33 @@ export interface ScheduleSyncResult {
   added: number
   updated: number
   message: string
+}
+
+// --- Phrase translation dictionary ---
+
+export interface PhraseTranslation {
+  id: number
+  english: string
+  spanish: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface SavePhraseTranslationRequest {
+  english: string
+  spanish: string
+}
+
+export interface TranslateRequest {
+  text: string
+  from: Language
+  to: Language
+}
+
+export interface TranslateResponse {
+  translated: string
+  matchedPhrases: string[]
+  fullyTranslated: boolean
 }
 
 export const MESSAGE_CHANNEL_LABELS: Record<MessageChannel, string> = {

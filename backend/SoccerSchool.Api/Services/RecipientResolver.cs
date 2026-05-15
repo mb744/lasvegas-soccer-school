@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using SoccerSchool.Api.Data;
+using SoccerSchool.Api.Domain;
 using SoccerSchool.Api.Options;
 
 namespace SoccerSchool.Api.Services;
@@ -16,7 +17,11 @@ public interface IRecipientResolver
     Task<IReadOnlyList<DynamicGroupSummary>> ListDynamicGroupsAsync(CancellationToken ct);
 }
 
-public record ResolvedRecipient(string Phone, string? Name, int? ParentAccountId);
+/// <summary>One concrete recipient row produced by the resolver. <see cref="Language"/> is
+/// <c>null</c> when the recipient came from a context that doesn't carry a language preference
+/// (ad-hoc paste list, individual phone, dynamic group). The broadcast layer fills nulls with
+/// the request's default language at send time.</summary>
+public record ResolvedRecipient(string Phone, string? Name, int? ParentAccountId, Language? Language = null);
 
 public record RecipientList(string Label, IReadOnlyList<ResolvedRecipient> Recipients);
 
@@ -93,9 +98,11 @@ public class RecipientResolver : IRecipientResolver
                     .Include(g => g.Members)
                     .FirstOrDefaultAsync(g => g.Id == target.CustomGroupId, ct);
                 if (group is null) return new RecipientList("Group", Array.Empty<ResolvedRecipient>());
+                // All members of a curated group share the group's language — the whole point of
+                // the per-group Language field is to drive routing without per-member overrides.
                 var members = group.Members
                     .Where(m => !string.IsNullOrWhiteSpace(m.Phone))
-                    .Select(m => new ResolvedRecipient(m.Phone, m.Name, m.ParentAccountId))
+                    .Select(m => new ResolvedRecipient(m.Phone, m.Name, m.ParentAccountId, group.Language))
                     .ToList();
                 return new RecipientList($"Group: {group.Name}", members);
 

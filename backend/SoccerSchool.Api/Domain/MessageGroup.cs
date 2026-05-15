@@ -17,6 +17,10 @@ public class MessageGroup
     [MaxLength(512)]
     public string? Description { get; set; }
 
+    /// <summary>Send language for this group. When a broadcast targets the group, every recipient
+    /// gets the body in this language regardless of the admin's UI language. Default English.</summary>
+    public Language Language { get; set; } = Language.English;
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public List<MessageGroupMember> Members { get; set; } = new();
