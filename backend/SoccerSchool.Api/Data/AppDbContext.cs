@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using SoccerSchool.Api.Domain;
 
 namespace SoccerSchool.Api.Data;
@@ -8,6 +9,37 @@ namespace SoccerSchool.Api.Data;
 public class AppDbContext : IdentityDbContext<ApplicationUser>
 {
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
+
+    /// <summary>
+    /// SQL Server <c>datetime2</c> has no time-zone info, so EF Core materializes columns as
+    /// <see cref="DateTimeKind.Unspecified"/>. The default JSON serializer then writes them
+    /// without a "Z" suffix, and browsers treat the strings as local time even though we
+    /// wrote UTC. Stamping <c>Kind = Utc</c> on read makes the API surface round-trip-safe
+    /// without changing storage. The "to-DB" leg defends against accidental Local kinds.
+    /// </summary>
+    protected override void ConfigureConventions(ModelConfigurationBuilder builder)
+    {
+        builder.Properties<DateTime>()
+            .HaveConversion<UtcDateTimeConverter>();
+        builder.Properties<DateTime?>()
+            .HaveConversion<NullableUtcDateTimeConverter>();
+    }
+
+    private sealed class UtcDateTimeConverter : ValueConverter<DateTime, DateTime>
+    {
+        public UtcDateTimeConverter() : base(
+            v => v.Kind == DateTimeKind.Local ? v.ToUniversalTime() : DateTime.SpecifyKind(v, DateTimeKind.Utc),
+            v => DateTime.SpecifyKind(v, DateTimeKind.Utc))
+        { }
+    }
+
+    private sealed class NullableUtcDateTimeConverter : ValueConverter<DateTime?, DateTime?>
+    {
+        public NullableUtcDateTimeConverter() : base(
+            v => !v.HasValue ? v : (v.Value.Kind == DateTimeKind.Local ? v.Value.ToUniversalTime() : DateTime.SpecifyKind(v.Value, DateTimeKind.Utc)),
+            v => v.HasValue ? DateTime.SpecifyKind(v.Value, DateTimeKind.Utc) : v)
+        { }
+    }
 
     public DbSet<ParentAccount> ParentAccounts => Set<ParentAccount>();
     public DbSet<Player> Players => Set<Player>();

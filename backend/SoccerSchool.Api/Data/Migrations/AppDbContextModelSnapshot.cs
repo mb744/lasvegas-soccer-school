@@ -259,7 +259,7 @@ namespace SoccerSchool.Api.Data.Migrations
 
                     b.HasIndex("WhatsAppTemplateId");
 
-                    b.ToTable("Broadcasts");
+                    b.ToTable("Broadcasts", (string)null);
                 });
 
             modelBuilder.Entity("SoccerSchool.Api.Domain.BroadcastRecipient", b =>
@@ -299,7 +299,7 @@ namespace SoccerSchool.Api.Data.Migrations
 
                     b.HasIndex("TwilioSid");
 
-                    b.ToTable("BroadcastRecipients");
+                    b.ToTable("BroadcastRecipients", (string)null);
                 });
 
             modelBuilder.Entity("SoccerSchool.Api.Domain.GroupConversation", b =>
@@ -331,7 +331,7 @@ namespace SoccerSchool.Api.Data.Migrations
                     b.HasIndex("TwilioConversationSid")
                         .IsUnique();
 
-                    b.ToTable("GroupConversations");
+                    b.ToTable("GroupConversations", (string)null);
                 });
 
             modelBuilder.Entity("SoccerSchool.Api.Domain.GroupConversationParticipant", b =>
@@ -364,7 +364,7 @@ namespace SoccerSchool.Api.Data.Migrations
 
                     b.HasIndex("TwilioParticipantSid");
 
-                    b.ToTable("GroupConversationParticipants");
+                    b.ToTable("GroupConversationParticipants", (string)null);
                 });
 
             modelBuilder.Entity("SoccerSchool.Api.Domain.MessageGroup", b =>
@@ -392,7 +392,7 @@ namespace SoccerSchool.Api.Data.Migrations
                     b.HasIndex("Name")
                         .IsUnique();
 
-                    b.ToTable("MessageGroups");
+                    b.ToTable("MessageGroups", (string)null);
                 });
 
             modelBuilder.Entity("SoccerSchool.Api.Domain.MessageGroupMember", b =>
@@ -425,7 +425,7 @@ namespace SoccerSchool.Api.Data.Migrations
                     b.HasIndex("MessageGroupId", "Phone")
                         .IsUnique();
 
-                    b.ToTable("MessageGroupMembers");
+                    b.ToTable("MessageGroupMembers", (string)null);
                 });
 
             modelBuilder.Entity("SoccerSchool.Api.Domain.Outreach", b =>
@@ -477,7 +477,7 @@ namespace SoccerSchool.Api.Data.Migrations
 
                     b.HasIndex("Phone");
 
-                    b.ToTable("Outreaches");
+                    b.ToTable("Outreaches", (string)null);
                 });
 
             modelBuilder.Entity("SoccerSchool.Api.Domain.ParentAccount", b =>
@@ -538,7 +538,7 @@ namespace SoccerSchool.Api.Data.Migrations
                     b.HasIndex("UserId")
                         .IsUnique();
 
-                    b.ToTable("ParentAccounts");
+                    b.ToTable("ParentAccounts", (string)null);
                 });
 
             modelBuilder.Entity("SoccerSchool.Api.Domain.Player", b =>
@@ -572,7 +572,7 @@ namespace SoccerSchool.Api.Data.Migrations
 
                     b.HasIndex("ParentAccountId");
 
-                    b.ToTable("Players");
+                    b.ToTable("Players", (string)null);
                 });
 
             modelBuilder.Entity("SoccerSchool.Api.Domain.Registration", b =>
@@ -651,7 +651,7 @@ namespace SoccerSchool.Api.Data.Migrations
 
                     b.HasIndex("ParentAccountId", "Season");
 
-                    b.ToTable("Registrations");
+                    b.ToTable("Registrations", (string)null);
                 });
 
             modelBuilder.Entity("SoccerSchool.Api.Domain.RegistrationPlayer", b =>
@@ -720,7 +720,7 @@ namespace SoccerSchool.Api.Data.Migrations
                     b.HasIndex("RegistrationId", "PlayerId")
                         .IsUnique();
 
-                    b.ToTable("RegistrationPlayers");
+                    b.ToTable("RegistrationPlayers", (string)null);
                 });
 
             modelBuilder.Entity("SoccerSchool.Api.Domain.ScheduledGame", b =>
@@ -777,7 +777,7 @@ namespace SoccerSchool.Api.Data.Migrations
                     b.HasIndex("TeamId", "ExternalUid")
                         .IsUnique();
 
-                    b.ToTable("ScheduledGames");
+                    b.ToTable("ScheduledGames", (string)null);
                 });
 
             modelBuilder.Entity("SoccerSchool.Api.Domain.Team", b =>
@@ -819,7 +819,7 @@ namespace SoccerSchool.Api.Data.Migrations
                     b.HasIndex("Name")
                         .IsUnique();
 
-                    b.ToTable("Teams");
+                    b.ToTable("Teams", (string)null);
                 });
 
             modelBuilder.Entity("SoccerSchool.Api.Domain.WhatsAppTemplate", b =>
@@ -861,7 +861,7 @@ namespace SoccerSchool.Api.Data.Migrations
                     b.HasIndex("Name")
                         .IsUnique();
 
-                    b.ToTable("WhatsAppTemplates");
+                    b.ToTable("WhatsAppTemplates", (string)null);
                 });
 
             modelBuilder.Entity("SoccerSchool.Api.Domain.WhatsAppTemplateVariable", b =>
@@ -892,7 +892,7 @@ namespace SoccerSchool.Api.Data.Migrations
                     b.HasIndex("WhatsAppTemplateId", "Position")
                         .IsUnique();
 
-                    b.ToTable("WhatsAppTemplateVariables");
+                    b.ToTable("WhatsAppTemplateVariables", (string)null);
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>
