@@ -343,6 +343,15 @@ export interface WhatsAppTemplateVariable {
   example: string | null
 }
 
+export interface TemplatePair {
+  id: number
+  name: string
+  contentSid: string
+  language: Language
+  previewText: string | null
+  variables: WhatsAppTemplateVariable[]
+}
+
 export interface WhatsAppTemplate {
   id: number
   name: string
@@ -352,6 +361,8 @@ export interface WhatsAppTemplate {
   previewText: string | null
   createdAt: string
   variables: WhatsAppTemplateVariable[]
+  /** Opposite-language counterpart auto-detected by base name (e.g. `practice_or_game` ↔ `practice_or_game_es`). */
+  paired: TemplatePair | null
 }
 
 export interface SaveTemplateVariable {

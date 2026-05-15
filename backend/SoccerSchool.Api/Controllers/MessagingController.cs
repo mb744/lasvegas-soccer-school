@@ -266,9 +266,16 @@ public class MessagingController : ControllerBase
         if (resolved.Recipients.Count == 0)
             return BadRequest("No recipients matched the selected target.");
 
-        // For template sends, persist a human-readable rendering of the message in BodyEn so
-        // the history log shows what actually went out (Twilio does the real substitution server-
-        // side; this is purely admin-display). Pre-trims to the column max.
+        // For template sends, look up the language pair so we can route each recipient to the
+        // template matching their language. Pair lookup is by base name (e.g. `practice_or_game`
+        // ↔ `practice_or_game_es`) with opposite Language. If no pair exists, every recipient
+        // gets the primary template and the log notes the language mismatch.
+        WhatsAppTemplate? pairedTemplate = null;
+        if (isTemplate)
+            pairedTemplate = await FindPairAsync(template!, ct);
+
+        // Persist a human-readable rendering of the message in BodyEn so the history log shows
+        // what went out (Twilio does the real substitution server-side; this is admin-display).
         var renderedTemplate = isTemplate
             ? RenderTemplatePreview(template!.PreviewText, template.Name, templateVars)
             : null;
@@ -305,7 +312,16 @@ public class MessagingController : ControllerBase
             MessageSendResult send;
             if (isTemplate)
             {
-                send = await _sender.SendTemplateAsync(recipient.Phone, template!.ContentSid, templateVars, ct);
+                // Pick the template matching recipient.Language. Fall back to the primary (with a
+                // log note) if no opposite-language pair exists.
+                var sendTemplate = recipient.Language == template!.Language ? template
+                    : (pairedTemplate?.Language == recipient.Language ? pairedTemplate : template);
+                var languageMismatch = sendTemplate.Language != recipient.Language;
+                send = await _sender.SendTemplateAsync(recipient.Phone, sendTemplate.ContentSid, templateVars, ct);
+                if (languageMismatch)
+                {
+                    send = send with { Message = $"[No {recipient.Language} template; sent {sendTemplate.Language}] {send.Message}" };
+                }
             }
             else
             {
@@ -483,7 +499,9 @@ public class MessagingController : ControllerBase
             .Include(t => t.Variables)
             .OrderBy(t => t.Name)
             .ToListAsync(ct);
-        return Ok(items.Select(ToDto));
+        // Group siblings by base name so each template can surface its opposite-language pair.
+        var byBase = items.GroupBy(t => BaseName(t.Name)).ToDictionary(g => g.Key, g => g.ToList());
+        return Ok(items.Select(t => ToDto(t, FindPairFromGroup(t, byBase))));
     }
 
     [HttpPost("whatsapp-templates")]
@@ -509,7 +527,7 @@ public class MessagingController : ControllerBase
         };
         _db.WhatsAppTemplates.Add(template);
         await _db.SaveChangesAsync(ct);
-        return Ok(ToDto(template));
+        return Ok(ToDto(template, await FindPairAsync(template, ct)));
     }
 
     [HttpPut("whatsapp-templates/{id:int}")]
@@ -538,7 +556,7 @@ public class MessagingController : ControllerBase
         _db.WhatsAppTemplateVariables.RemoveRange(template.Variables);
         template.Variables = MapVariables(request.Variables);
         await _db.SaveChangesAsync(ct);
-        return Ok(ToDto(template));
+        return Ok(ToDto(template, await FindPairAsync(template, ct)));
     }
 
     [HttpDelete("whatsapp-templates/{id:int}")]
@@ -658,10 +676,46 @@ public class MessagingController : ControllerBase
         c.Participants.Select(p => new GroupConversationParticipantDto(
             p.Id, p.Name, p.Phone, p.TwilioParticipantSid)).ToList());
 
-    private static WhatsAppTemplateDto ToDto(WhatsAppTemplate t) => new(
+    private static WhatsAppTemplateDto ToDto(WhatsAppTemplate t, WhatsAppTemplate? pair = null) => new(
         t.Id, t.Name, t.ContentSid, t.Language, t.Description, t.PreviewText, t.CreatedAt,
         t.Variables.OrderBy(v => v.Position).Select(v => new WhatsAppTemplateVariableDto(
-            v.Id, v.Position, v.Label, v.Example)).ToList());
+            v.Id, v.Position, v.Label, v.Example)).ToList(),
+        pair is null ? null : new TemplatePairDto(
+            pair.Id, pair.Name, pair.ContentSid, pair.Language, pair.PreviewText,
+            pair.Variables.OrderBy(v => v.Position).Select(v => new WhatsAppTemplateVariableDto(
+                v.Id, v.Position, v.Label, v.Example)).ToList()));
+
+    /// <summary>Strips a trailing _en or _es language suffix from a template name so pairs share
+    /// a base name. <c>practice_or_game</c> and <c>practice_or_game_es</c> both reduce to
+    /// <c>practice_or_game</c>.</summary>
+    private static string BaseName(string name)
+    {
+        if (name.EndsWith("_en", StringComparison.OrdinalIgnoreCase) ||
+            name.EndsWith("_es", StringComparison.OrdinalIgnoreCase))
+            return name[..^3];
+        return name;
+    }
+
+    private static WhatsAppTemplate? FindPairFromGroup(
+        WhatsAppTemplate t,
+        IReadOnlyDictionary<string, List<WhatsAppTemplate>> byBaseName)
+    {
+        if (!byBaseName.TryGetValue(BaseName(t.Name), out var siblings)) return null;
+        return siblings.FirstOrDefault(s => s.Id != t.Id && s.Language != t.Language);
+    }
+
+    private async Task<WhatsAppTemplate?> FindPairAsync(WhatsAppTemplate t, CancellationToken ct)
+    {
+        var baseName = BaseName(t.Name);
+        // Match either `name`, `name_en`, or `name_es` so a pair can use any suffix style.
+        return await _db.WhatsAppTemplates
+            .Include(x => x.Variables)
+            .FirstOrDefaultAsync(x =>
+                x.Id != t.Id &&
+                x.Language != t.Language &&
+                (x.Name == baseName || x.Name == baseName + "_en" || x.Name == baseName + "_es"),
+                ct);
+    }
 
     private static List<WhatsAppTemplateVariable> MapVariables(IEnumerable<SaveTemplateVariableDto> input) =>
         input

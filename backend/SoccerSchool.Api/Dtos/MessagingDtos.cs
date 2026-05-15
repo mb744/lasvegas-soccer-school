@@ -201,6 +201,17 @@ public record GroupConversationDetail(
 
 public record WhatsAppTemplateVariableDto(int Id, int Position, string Label, string? Example);
 
+/// <summary>Lightweight reference to a template's opposite-language counterpart. WhatsApp templates
+/// are language-locked at approval time, so a bilingual broadcast needs two separate templates;
+/// we auto-pair them by base name (e.g. <c>practice_or_game</c> ↔ <c>practice_or_game_es</c>).</summary>
+public record TemplatePairDto(
+    int Id,
+    string Name,
+    string ContentSid,
+    Language Language,
+    string? PreviewText,
+    IReadOnlyList<WhatsAppTemplateVariableDto> Variables);
+
 public record WhatsAppTemplateDto(
     int Id,
     string Name,
@@ -209,7 +220,8 @@ public record WhatsAppTemplateDto(
     string? Description,
     string? PreviewText,
     DateTime CreatedAt,
-    IReadOnlyList<WhatsAppTemplateVariableDto> Variables);
+    IReadOnlyList<WhatsAppTemplateVariableDto> Variables,
+    TemplatePairDto? Paired);
 
 public record SaveTemplateVariableDto
 {

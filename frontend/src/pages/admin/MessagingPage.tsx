@@ -1767,23 +1767,32 @@ function TemplatePreviewModal({
 }) {
   const { t } = useTranslation()
 
-  // Render the admin's PreviewText with values substituted. Falls back to a key=value summary if
-  // no PreviewText is set on the template. This is display-only; Twilio does the actual server-
-  // side substitution against the approved template body when it delivers the message.
-  const rendered = useMemo(() => {
-    if (!template.previewText) {
-      return template.variables.map(v => `${v.label}: ${values[v.label] ?? ''}`).join('\n')
-    }
-    let text = template.previewText
-    for (const v of template.variables) {
-      text = text.split(`{{${v.label}}}`).join(values[v.label] ?? '')
-    }
-    return text
+  // Two render sources: the primary template the admin picked, and (when it exists) the auto-paired
+  // opposite-language template. WhatsApp templates are language-locked at approval time, so the
+  // ES recipient flow needs a separate approved Spanish template — that's what `paired` represents.
+  const renderWith = (text: string | null, vars: { label: string }[]): string => {
+    if (!text) return vars.map(v => `${v.label}: ${values[v.label] ?? ''}`).join('\n')
+    let out = text
+    for (const v of vars) out = out.split(`{{${v.label}}}`).join(values[v.label] ?? '')
+    return out
+  }
+  const primary = useMemo(() => renderWith(template.previewText, template.variables),
+    [template, values])
+  const pairRendered = useMemo(() => {
+    if (!template.paired) return null
+    // Pair uses the same labels by convention — fall back to primary variables if the pair didn't
+    // explicitly define any (e.g. user hasn't populated them yet via the Templates tab).
+    const vars = template.paired.variables.length > 0 ? template.paired.variables : template.variables
+    return renderWith(template.paired.previewText, vars)
   }, [template, values])
+
+  const langLabel = (lang: Language) => lang === 1 ? 'Español' : 'English'
+  const hasPair = template.paired != null
+  const modalWidth = hasPair ? 'max-w-5xl' : 'max-w-2xl'
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-start justify-center p-4 overflow-y-auto">
-      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mt-10 p-6 space-y-4">
+      <div className={`bg-white rounded-lg shadow-xl ${modalWidth} w-full mt-10 p-6 space-y-4`}>
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-bold text-emerald-800">{t('admin.msgTemplateSendPreviewTitle')}</h2>
           <button onClick={onCancel} className="text-sm text-slate-500 hover:text-slate-700">✕</button>
@@ -1791,13 +1800,36 @@ function TemplatePreviewModal({
         <p className="text-sm text-slate-600">{t('admin.msgTemplateSendPreviewHelp')}</p>
 
         <div className="text-xs text-slate-500 flex flex-wrap gap-x-4">
-          <span><strong className="text-slate-700">{t('admin.msgPreviewTemplateLabel')}:</strong> {template.name} ({template.language === 1 ? 'ES' : 'EN'})</span>
+          <span><strong className="text-slate-700">{t('admin.msgPreviewTemplateLabel')}:</strong> {template.name} ({langLabel(template.language)})</span>
+          {template.paired && (
+            <span><strong className="text-slate-700">{t('admin.msgPreviewPairedLabel')}:</strong> {template.paired.name} ({langLabel(template.paired.language)})</span>
+          )}
           <span><strong className="text-slate-700">{t('admin.msgPreviewRecipientLabel')}:</strong> {recipientLabel}</span>
         </div>
 
-        <div>
-          <div className="text-xs font-medium text-slate-700 mb-1">{t('admin.msgPreviewMessage')}</div>
-          <pre className="w-full border border-slate-200 bg-slate-50 rounded-md px-3 py-2 text-sm whitespace-pre-wrap min-h-[6rem]">{rendered}</pre>
+        {!hasPair && (
+          <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded p-2">
+            {template.language === 0
+              ? t('admin.msgTemplateNoSpanishPair', { name: `${template.name}_es` })
+              : t('admin.msgTemplateNoEnglishPair', { name: `${template.name}_en` })}
+          </div>
+        )}
+
+        <div className={hasPair ? 'grid md:grid-cols-2 gap-4' : ''}>
+          <div>
+            <div className="text-xs font-medium text-slate-700 mb-1">
+              {langLabel(template.language)} <span className="text-slate-400">— {template.name}</span>
+            </div>
+            <pre className="w-full border border-slate-200 bg-slate-50 rounded-md px-3 py-2 text-sm whitespace-pre-wrap min-h-[6rem]">{primary}</pre>
+          </div>
+          {template.paired && pairRendered !== null && (
+            <div>
+              <div className="text-xs font-medium text-slate-700 mb-1">
+                {langLabel(template.paired.language)} <span className="text-slate-400">— {template.paired.name}</span>
+              </div>
+              <pre className="w-full border border-slate-200 bg-slate-50 rounded-md px-3 py-2 text-sm whitespace-pre-wrap min-h-[6rem]">{pairRendered}</pre>
+            </div>
+          )}
         </div>
 
         <div>
