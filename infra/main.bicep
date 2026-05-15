@@ -50,6 +50,15 @@ param twilioAuthToken string = ''
 @description('Twilio sender phone number in E.164 format (e.g. +18005551212). Must be a Twilio-owned number.')
 param twilioSmsFromNumber string = ''
 
+@description('Twilio WhatsApp-enabled sender in E.164 (no "whatsapp:" prefix). Enables the WhatsApp channel in the admin messaging feature; empty disables WhatsApp.')
+param twilioWhatsAppFromNumber string = ''
+
+@description('Optional approved WhatsApp template Content SID (HX...) for business-initiated WhatsApp messages.')
+param twilioWhatsAppTemplateSid string = ''
+
+@description('Optional Twilio Conversations Service SID (IS...) for true group chat. Empty uses the account default service.')
+param twilioConversationsServiceSid string = ''
+
 @description('Email of the bootstrap admin Identity user. Created (with Admin role) on first start. Leave empty to skip bootstrap.')
 param adminBootstrapEmail string = ''
 
@@ -163,6 +172,9 @@ module containerApp 'modules/container-app.bicep' = {
     twilioAccountSid: twilioAccountSid
     twilioAuthToken: twilioAuthToken
     twilioSmsFromNumber: twilioSmsFromNumber
+    twilioWhatsAppFromNumber: twilioWhatsAppFromNumber
+    twilioWhatsAppTemplateSid: twilioWhatsAppTemplateSid
+    twilioConversationsServiceSid: twilioConversationsServiceSid
   }
 }
 

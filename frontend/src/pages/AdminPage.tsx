@@ -7,6 +7,7 @@ export function AdminPage() {
 
   const cards = [
     { to: '/admin/outreach',      title: t('admin.hubOutreach'),       blurb: t('admin.hubOutreachBlurb'),       icon: '📨' },
+    { to: '/admin/messaging',     title: t('admin.hubMessaging'),      blurb: t('admin.hubMessagingBlurb'),      icon: '💬' },
     { to: '/admin/registrations', title: t('admin.hubRegistrations'),  blurb: t('admin.hubRegistrationsBlurb'),  icon: '📋' },
     { to: '/admin/users',         title: t('admin.hubUsers'),          blurb: t('admin.hubUsersBlurb'),          icon: '👥' },
   ] as const

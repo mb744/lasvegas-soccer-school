@@ -109,6 +109,9 @@ jobs:
             twilioAccountSid=${{ vars.TWILIO_ACCOUNT_SID }}
             twilioAuthToken=${{ secrets.TWILIO_AUTH_TOKEN }}
             twilioSmsFromNumber=${{ vars.TWILIO_SMS_FROM_NUMBER }}
+            twilioWhatsAppFromNumber=${{ vars.TWILIO_WHATSAPP_FROM_NUMBER }}
+            twilioWhatsAppTemplateSid=${{ vars.TWILIO_WHATSAPP_TEMPLATE_SID }}
+            twilioConversationsServiceSid=${{ vars.TWILIO_CONVERSATIONS_SERVICE_SID }}
           deploymentName: lvss-${{ github.run_id }}
           failOnStdErr: false
 

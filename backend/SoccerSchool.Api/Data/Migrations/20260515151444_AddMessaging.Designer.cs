@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using SoccerSchool.Api.Data;
 
@@ -11,9 +12,11 @@ using SoccerSchool.Api.Data;
 namespace SoccerSchool.Api.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260515151444_AddMessaging")]
+    partial class AddMessaging
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -246,18 +249,9 @@ namespace SoccerSchool.Api.Data.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
-                    b.Property<string>("TemplateVariablesJson")
-                        .HasMaxLength(4000)
-                        .HasColumnType("nvarchar(4000)");
-
-                    b.Property<int?>("WhatsAppTemplateId")
-                        .HasColumnType("int");
-
                     b.HasKey("Id");
 
                     b.HasIndex("CreatedAt");
-
-                    b.HasIndex("WhatsAppTemplateId");
 
                     b.ToTable("Broadcasts");
                 });
@@ -723,79 +717,6 @@ namespace SoccerSchool.Api.Data.Migrations
                     b.ToTable("RegistrationPlayers");
                 });
 
-            modelBuilder.Entity("SoccerSchool.Api.Domain.WhatsAppTemplate", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("ContentSid")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("Description")
-                        .HasMaxLength(512)
-                        .HasColumnType("nvarchar(512)");
-
-                    b.Property<int>("Language")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<string>("PreviewText")
-                        .HasMaxLength(2000)
-                        .HasColumnType("nvarchar(2000)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ContentSid");
-
-                    b.HasIndex("Name")
-                        .IsUnique();
-
-                    b.ToTable("WhatsAppTemplates");
-                });
-
-            modelBuilder.Entity("SoccerSchool.Api.Domain.WhatsAppTemplateVariable", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("Example")
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
-
-                    b.Property<string>("Label")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<int>("Position")
-                        .HasColumnType("int");
-
-                    b.Property<int>("WhatsAppTemplateId")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("WhatsAppTemplateId", "Position")
-                        .IsUnique();
-
-                    b.ToTable("WhatsAppTemplateVariables");
-                });
-
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>
                 {
                     b.HasOne("Microsoft.AspNetCore.Identity.IdentityRole", null)
@@ -845,16 +766,6 @@ namespace SoccerSchool.Api.Data.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-                });
-
-            modelBuilder.Entity("SoccerSchool.Api.Domain.Broadcast", b =>
-                {
-                    b.HasOne("SoccerSchool.Api.Domain.WhatsAppTemplate", "WhatsAppTemplate")
-                        .WithMany()
-                        .HasForeignKey("WhatsAppTemplateId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("WhatsAppTemplate");
                 });
 
             modelBuilder.Entity("SoccerSchool.Api.Domain.BroadcastRecipient", b =>
@@ -959,17 +870,6 @@ namespace SoccerSchool.Api.Data.Migrations
                     b.Navigation("Registration");
                 });
 
-            modelBuilder.Entity("SoccerSchool.Api.Domain.WhatsAppTemplateVariable", b =>
-                {
-                    b.HasOne("SoccerSchool.Api.Domain.WhatsAppTemplate", "Template")
-                        .WithMany("Variables")
-                        .HasForeignKey("WhatsAppTemplateId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Template");
-                });
-
             modelBuilder.Entity("SoccerSchool.Api.Domain.ApplicationUser", b =>
                 {
                     b.Navigation("ParentAccount");
@@ -1000,11 +900,6 @@ namespace SoccerSchool.Api.Data.Migrations
             modelBuilder.Entity("SoccerSchool.Api.Domain.Registration", b =>
                 {
                     b.Navigation("Players");
-                });
-
-            modelBuilder.Entity("SoccerSchool.Api.Domain.WhatsAppTemplate", b =>
-                {
-                    b.Navigation("Variables");
                 });
 #pragma warning restore 612, 618
         }

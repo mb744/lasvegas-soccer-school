@@ -109,6 +109,9 @@ if (oauth.Facebook.IsConfigured)
 builder.Services.AddAuthorization();
 
 builder.Services.AddScoped<IOutreachSender, OutreachSender>();
+builder.Services.AddScoped<IMessageSender, MessageSender>();
+builder.Services.AddScoped<IRecipientResolver, RecipientResolver>();
+builder.Services.AddScoped<IConversationService, ConversationService>();
 builder.Services.AddSingleton<IWaiverPdfGenerator, WaiverPdfGenerator>();
 
 builder.Services.AddControllers();
@@ -134,6 +137,7 @@ using (var scope = app.Services.CreateScope())
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     await MigrateWithRetryAsync(db, app.Logger);
     await SeedAdminAsync(scope.ServiceProvider, app.Logger);
+    await SeedWhatsAppTemplatesAsync(db, app.Logger);
 }
 
 // Must run before UseAuthentication so the Google/Facebook handlers see Request.Scheme=https
@@ -179,6 +183,34 @@ static async Task MigrateWithRetryAsync(AppDbContext db, ILogger logger)
             await Task.Delay(delay);
         }
     }
+}
+
+// Ensures the canonical WhatsApp Content template exists. Idempotent on ContentSid: only
+// inserts when the SID is missing, so admin edits to labels / preview made via the UI
+// survive subsequent boots. If you ever cycle the template in Twilio with a new SID, remove
+// the old row through the UI first or it will accumulate orphans.
+static async Task SeedWhatsAppTemplatesAsync(AppDbContext db, ILogger logger)
+{
+    const string contentSid = "HX75106c2d166e9b0e87dbb8ecdc325116";
+    if (await db.WhatsAppTemplates.AnyAsync(t => t.ContentSid == contentSid))
+        return;
+    db.WhatsAppTemplates.Add(new WhatsAppTemplate
+    {
+        Name = "practice_or_game",
+        ContentSid = contentSid,
+        Language = Language.English,
+        Description = "Canonical practice/game reminder (replaces practice_today, practice_tomorrow_es, practice_mw).",
+        PreviewText = "{{1}} on {{2}} at {{3}}. Wear: {{4}}.",
+        Variables = new List<WhatsAppTemplateVariable>
+        {
+            new() { Position = 1, Label = "What",  Example = "Practice" },
+            new() { Position = 2, Label = "When",  Example = "Wed 5/20 at 5pm" },
+            new() { Position = 3, Label = "Where", Example = "Sunset Park, field 3" },
+            new() { Position = 4, Label = "wear",  Example = "white jersey" }
+        }
+    });
+    await db.SaveChangesAsync();
+    logger.LogInformation("Seeded WhatsApp template practice_or_game ({Sid}).", contentSid);
 }
 
 static async Task SeedAdminAsync(IServiceProvider services, ILogger logger)

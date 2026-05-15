@@ -75,9 +75,33 @@ public class TwilioOptions
     public string AuthToken { get; set; } = string.Empty;
     public string SmsFromNumber { get; set; } = string.Empty;
 
+    /// <summary>WhatsApp-enabled sender in E.164, e.g. "+14155551234". The "whatsapp:" channel
+    /// prefix is added by the sender code, so store the bare number here.</summary>
+    public string WhatsAppFromNumber { get; set; } = string.Empty;
+
+    /// <summary>Content SID (HX...) of the approved WhatsApp template used for business-initiated
+    /// messages. WhatsApp requires a pre-approved template outside the 24h customer-service window.</summary>
+    public string WhatsAppTemplateSid { get; set; } = string.Empty;
+
+    /// <summary>Conversations Service SID (IS...) for true group chats via the Twilio
+    /// Conversations API. Optional; only needed for the group-chat feature.</summary>
+    public string ConversationsServiceSid { get; set; } = string.Empty;
+
     /// <summary>True when AccountSid + AuthToken + SmsFromNumber are all set; OutreachSender prefers Twilio over ACS for SMS in that case.</summary>
     public bool IsSmsConfigured =>
         !string.IsNullOrWhiteSpace(AccountSid) &&
         !string.IsNullOrWhiteSpace(AuthToken) &&
         !string.IsNullOrWhiteSpace(SmsFromNumber);
+
+    /// <summary>True when WhatsApp business messaging can be used (credentials + a WhatsApp sender).</summary>
+    public bool IsWhatsAppConfigured =>
+        !string.IsNullOrWhiteSpace(AccountSid) &&
+        !string.IsNullOrWhiteSpace(AuthToken) &&
+        !string.IsNullOrWhiteSpace(WhatsAppFromNumber);
+
+    /// <summary>True when the Conversations API (true group chat) can be used.</summary>
+    public bool IsConversationsConfigured =>
+        !string.IsNullOrWhiteSpace(AccountSid) &&
+        !string.IsNullOrWhiteSpace(AuthToken) &&
+        !string.IsNullOrWhiteSpace(ConversationsServiceSid);
 }

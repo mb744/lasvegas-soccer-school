@@ -14,6 +14,14 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<Registration> Registrations => Set<Registration>();
     public DbSet<RegistrationPlayer> RegistrationPlayers => Set<RegistrationPlayer>();
     public DbSet<Outreach> Outreaches => Set<Outreach>();
+    public DbSet<MessageGroup> MessageGroups => Set<MessageGroup>();
+    public DbSet<MessageGroupMember> MessageGroupMembers => Set<MessageGroupMember>();
+    public DbSet<Broadcast> Broadcasts => Set<Broadcast>();
+    public DbSet<BroadcastRecipient> BroadcastRecipients => Set<BroadcastRecipient>();
+    public DbSet<GroupConversation> GroupConversations => Set<GroupConversation>();
+    public DbSet<GroupConversationParticipant> GroupConversationParticipants => Set<GroupConversationParticipant>();
+    public DbSet<WhatsAppTemplate> WhatsAppTemplates => Set<WhatsAppTemplate>();
+    public DbSet<WhatsAppTemplateVariable> WhatsAppTemplateVariables => Set<WhatsAppTemplateVariable>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -73,5 +81,72 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             b.HasIndex(o => o.Email);
             b.HasIndex(o => o.Phone);
         });
+
+        modelBuilder.Entity<MessageGroup>(b =>
+        {
+            b.HasIndex(g => g.Name).IsUnique();
+        });
+
+        modelBuilder.Entity<MessageGroupMember>(b =>
+        {
+            b.HasOne(m => m.Group)
+                .WithMany(g => g.Members)
+                .HasForeignKey(m => m.MessageGroupId)
+                .OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(m => m.ParentAccount)
+                .WithMany()
+                .HasForeignKey(m => m.ParentAccountId)
+                .OnDelete(DeleteBehavior.SetNull);
+            b.HasIndex(m => new { m.MessageGroupId, m.Phone }).IsUnique();
+        });
+
+        modelBuilder.Entity<Broadcast>(b =>
+        {
+            b.HasIndex(x => x.CreatedAt);
+        });
+
+        modelBuilder.Entity<BroadcastRecipient>(b =>
+        {
+            b.HasOne(r => r.Broadcast)
+                .WithMany(x => x.Recipients)
+                .HasForeignKey(r => r.BroadcastId)
+                .OnDelete(DeleteBehavior.Cascade);
+            // Twilio status callback uses MessageSid to find the row to update.
+            b.HasIndex(r => r.TwilioSid);
+        });
+
+        modelBuilder.Entity<GroupConversation>(b =>
+        {
+            b.HasIndex(c => c.TwilioConversationSid).IsUnique();
+        });
+
+        modelBuilder.Entity<GroupConversationParticipant>(b =>
+        {
+            b.HasOne(p => p.Conversation)
+                .WithMany(c => c.Participants)
+                .HasForeignKey(p => p.GroupConversationId)
+                .OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(p => p.TwilioParticipantSid);
+        });
+
+        modelBuilder.Entity<WhatsAppTemplate>(b =>
+        {
+            b.HasIndex(t => t.Name).IsUnique();
+            b.HasIndex(t => t.ContentSid);
+        });
+
+        modelBuilder.Entity<WhatsAppTemplateVariable>(b =>
+        {
+            b.HasOne(v => v.Template)
+                .WithMany(t => t.Variables)
+                .HasForeignKey(v => v.WhatsAppTemplateId)
+                .OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(v => new { v.WhatsAppTemplateId, v.Position }).IsUnique();
+        });
+
+        modelBuilder.Entity<Broadcast>().HasOne(b => b.WhatsAppTemplate)
+            .WithMany()
+            .HasForeignKey(b => b.WhatsAppTemplateId)
+            .OnDelete(DeleteBehavior.SetNull);
     }
 }

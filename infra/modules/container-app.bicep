@@ -51,6 +51,15 @@ param twilioAuthToken string = ''
 @description('Twilio sender phone number in E.164 format (e.g. +18005551212). Must be a Twilio-owned, fully verified number.')
 param twilioSmsFromNumber string = ''
 
+@description('Twilio WhatsApp-enabled sender in E.164 (no "whatsapp:" prefix, e.g. +18005551212). Required for the WhatsApp channel in the admin messaging feature; empty disables WhatsApp.')
+param twilioWhatsAppFromNumber string = ''
+
+@description('Optional approved WhatsApp template Content SID (HX...) for business-initiated WhatsApp messages outside the 24h customer-service window. Empty = free-form only.')
+param twilioWhatsAppTemplateSid string = ''
+
+@description('Optional Twilio Conversations Service SID (IS...) for true group chat. Empty uses the account default service.')
+param twilioConversationsServiceSid string = ''
+
 @description('Optional custom domain (e.g. registration.lasvegassoccerschool.org). When set, PublicBaseUrl + OAuth redirect URIs use it instead of the auto-generated Container Apps FQDN. The actual hostname binding (managed cert + ingress.customDomains) is done by a post-Bicep step in deploy.yml because cert provisioning requires the hostname to be already registered on the container app, which Bicep cannot do in a single pass.')
 param customDomain string = ''
 
@@ -128,7 +137,18 @@ var twilioEnv = hasTwilio ? [
   { name: 'Twilio__AuthToken', secretRef: 'twilio-auth-token' }
   { name: 'Twilio__SmsFromNumber', value: twilioSmsFromNumber }
 ] : []
-var allEnv = concat(baseEnv, googleEnv, facebookEnv, adminEnv, acsEnvCore, acsEnvEmail, acsEnvSms, twilioEnv)
+// WhatsApp + Conversations are independently optional once Twilio creds exist, so they
+// each get their own conditional block instead of being lumped into the SMS gate.
+var twilioWhatsAppEnv = hasTwilio && !empty(twilioWhatsAppFromNumber) ? [
+  { name: 'Twilio__WhatsAppFromNumber', value: twilioWhatsAppFromNumber }
+] : []
+var twilioWhatsAppTemplateEnv = hasTwilio && !empty(twilioWhatsAppTemplateSid) ? [
+  { name: 'Twilio__WhatsAppTemplateSid', value: twilioWhatsAppTemplateSid }
+] : []
+var twilioConversationsEnv = hasTwilio && !empty(twilioConversationsServiceSid) ? [
+  { name: 'Twilio__ConversationsServiceSid', value: twilioConversationsServiceSid }
+] : []
+var allEnv = concat(baseEnv, googleEnv, facebookEnv, adminEnv, acsEnvCore, acsEnvEmail, acsEnvSms, twilioEnv, twilioWhatsAppEnv, twilioWhatsAppTemplateEnv, twilioConversationsEnv)
 
 resource app 'Microsoft.App/containerApps@2024-03-01' = {
   name: name

@@ -1,16 +1,31 @@
 import axios from 'axios'
 import type {
+  AddMessageGroupMemberRequest,
+  BroadcastDetail,
+  BroadcastSummary,
+  CreateBroadcastRequest,
+  CreateGroupConversationRequest,
   CreateOutreachRequest,
+  GroupConversationDetail,
+  GroupConversationSummary,
+  ListGroupsResponse,
   LoginRequest,
   Me,
+  MessageGroupDetail,
+  MessageGroupMember,
+  MessageGroupSummary,
+  MessagingConfig,
   OutreachResponse,
   PlayerSummary,
   RegistrationDetail,
   RegistrationSummary,
+  SaveMessageGroupRequest,
   SavePlayerRequest,
+  SaveWhatsAppTemplateRequest,
   SignupRequest,
   SubmitRegistrationRequest,
   UserSummary,
+  WhatsAppTemplate,
 } from './types'
 
 const api = axios.create({
@@ -139,6 +154,90 @@ export const Api = {
   },
   async unbanUser(id: string) {
     await api.post(`/admin/users/${id}/unban`, {})
+  },
+
+  // --- Messaging (admin chat/broadcast) ---
+  async messagingConfig() {
+    const r = await api.get<MessagingConfig>('/messaging/config')
+    return r.data
+  },
+  async listMessagingGroups() {
+    const r = await api.get<ListGroupsResponse>('/messaging/groups')
+    return r.data
+  },
+  async getMessagingGroup(id: number) {
+    const r = await api.get<MessageGroupDetail>(`/messaging/groups/${id}`)
+    return r.data
+  },
+  async createMessagingGroup(payload: SaveMessageGroupRequest) {
+    const r = await api.post<MessageGroupSummary>('/messaging/groups', payload)
+    return r.data
+  },
+  async updateMessagingGroup(id: number, payload: SaveMessageGroupRequest) {
+    const r = await api.put<MessageGroupSummary>(`/messaging/groups/${id}`, payload)
+    return r.data
+  },
+  async deleteMessagingGroup(id: number) {
+    await api.delete(`/messaging/groups/${id}`)
+  },
+  async addMessagingGroupMember(id: number, payload: AddMessageGroupMemberRequest) {
+    const r = await api.post<MessageGroupMember>(`/messaging/groups/${id}/members`, payload)
+    return r.data
+  },
+  async removeMessagingGroupMember(id: number, memberId: number) {
+    await api.delete(`/messaging/groups/${id}/members/${memberId}`)
+  },
+  async importActiveSeasonIntoGroup(id: number) {
+    const r = await api.post<MessageGroupDetail>(`/messaging/groups/${id}/import-active-season`, {})
+    return r.data
+  },
+  async createBroadcast(payload: CreateBroadcastRequest) {
+    const r = await api.post<BroadcastDetail>('/messaging/broadcasts', payload)
+    return r.data
+  },
+  async listBroadcasts() {
+    const r = await api.get<BroadcastSummary[]>('/messaging/broadcasts')
+    return r.data
+  },
+  async getBroadcast(id: number) {
+    const r = await api.get<BroadcastDetail>(`/messaging/broadcasts/${id}`)
+    return r.data
+  },
+  async createConversation(payload: CreateGroupConversationRequest) {
+    const r = await api.post<GroupConversationDetail>('/messaging/conversations', payload)
+    return r.data
+  },
+  async listConversations() {
+    const r = await api.get<GroupConversationSummary[]>('/messaging/conversations')
+    return r.data
+  },
+  async getConversation(id: number) {
+    const r = await api.get<GroupConversationDetail>(`/messaging/conversations/${id}`)
+    return r.data
+  },
+  async sendToConversation(id: number, body: string) {
+    await api.post(`/messaging/conversations/${id}/messages`, { body })
+  },
+  async removeConversationParticipant(id: number, participantId: number) {
+    await api.delete(`/messaging/conversations/${id}/participants/${participantId}`)
+  },
+  async deleteConversation(id: number) {
+    await api.delete(`/messaging/conversations/${id}`)
+  },
+  async listWhatsAppTemplates() {
+    const r = await api.get<WhatsAppTemplate[]>('/messaging/whatsapp-templates')
+    return r.data
+  },
+  async createWhatsAppTemplate(payload: SaveWhatsAppTemplateRequest) {
+    const r = await api.post<WhatsAppTemplate>('/messaging/whatsapp-templates', payload)
+    return r.data
+  },
+  async updateWhatsAppTemplate(id: number, payload: SaveWhatsAppTemplateRequest) {
+    const r = await api.put<WhatsAppTemplate>(`/messaging/whatsapp-templates/${id}`, payload)
+    return r.data
+  },
+  async deleteWhatsAppTemplate(id: number) {
+    await api.delete(`/messaging/whatsapp-templates/${id}`)
   },
 }
 

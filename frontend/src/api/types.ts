@@ -170,3 +170,195 @@ export const OUTREACH_STATUS_LABELS: Record<OutreachStatus, string> = {
   3: 'Registered',
   4: 'Failed',
 }
+
+// --- Messaging (chat/broadcast) ---
+
+export type MessageChannel = 0 | 1 // 0 = SMS, 1 = WhatsApp
+export type MessageDeliveryStatus = 0 | 1 | 2 | 3 | 4 | 5
+// Pending Queued Sent Delivered Failed Undelivered
+
+export interface MessagingConfig {
+  sms: boolean
+  whatsApp: boolean
+  conversations: boolean
+}
+
+export interface MessageGroupMember {
+  id: number
+  name: string | null
+  phone: string
+  parentAccountId: number | null
+}
+
+export interface MessageGroupSummary {
+  id: number
+  name: string
+  description: string | null
+  memberCount: number
+  createdAt: string
+}
+
+export interface MessageGroupDetail extends MessageGroupSummary {
+  members: MessageGroupMember[]
+}
+
+export interface DynamicGroup {
+  key: string
+  label: string
+  count: number
+}
+
+export interface SaveMessageGroupRequest {
+  name: string
+  description?: string | null
+}
+
+export interface AddMessageGroupMemberRequest {
+  name?: string | null
+  phone: string
+  parentAccountId?: number | null
+}
+
+export interface ListGroupsResponse {
+  curated: MessageGroupSummary[]
+  dynamic: DynamicGroup[]
+}
+
+export type RecipientTargetKind = 0 | 1 | 2 // Individual CustomGroup DynamicGroup
+
+export interface BroadcastTarget {
+  kind: RecipientTargetKind
+  phone?: string | null
+  name?: string | null
+  customGroupId?: number | null
+  dynamicGroupKey?: string | null
+}
+
+export interface CreateBroadcastRequest {
+  channel: MessageChannel
+  /** Free-form body. Required when whatsAppTemplateId is null. */
+  body?: string | null
+  /** Use an approved WhatsApp Content template instead of free-form body. WhatsApp channel only. */
+  whatsAppTemplateId?: number | null
+  /** Values for the template's positional variables, keyed by position as string. */
+  templateVariables?: Record<string, string> | null
+  target: BroadcastTarget
+}
+
+export interface BroadcastSummary {
+  id: number
+  channel: MessageChannel
+  body: string
+  targetLabel: string | null
+  createdAt: string
+  total: number
+  queued: number
+  delivered: number
+  failed: number
+}
+
+export interface BroadcastRecipientRow {
+  id: number
+  name: string | null
+  phone: string
+  status: MessageDeliveryStatus
+  statusMessage: string | null
+  twilioSid: string | null
+}
+
+export interface BroadcastDetail {
+  id: number
+  channel: MessageChannel
+  body: string
+  targetLabel: string | null
+  createdAt: string
+  recipients: BroadcastRecipientRow[]
+}
+
+export interface ConversationParticipant {
+  phone: string
+  name?: string | null
+}
+
+export interface CreateGroupConversationRequest {
+  title: string
+  channel: MessageChannel
+  participants: ConversationParticipant[]
+  target?: BroadcastTarget | null
+}
+
+export interface SendGroupConversationRequest {
+  body: string
+}
+
+export interface GroupConversationParticipantRow {
+  id: number
+  name: string | null
+  phone: string
+  twilioParticipantSid: string | null
+}
+
+export interface GroupConversationSummary {
+  id: number
+  title: string
+  channel: MessageChannel
+  twilioConversationSid: string
+  participantCount: number
+  createdAt: string
+}
+
+export interface GroupConversationDetail {
+  id: number
+  title: string
+  channel: MessageChannel
+  twilioConversationSid: string
+  createdAt: string
+  participants: GroupConversationParticipantRow[]
+}
+
+export interface WhatsAppTemplateVariable {
+  id: number
+  position: number
+  label: string
+  example: string | null
+}
+
+export interface WhatsAppTemplate {
+  id: number
+  name: string
+  contentSid: string
+  language: Language
+  description: string | null
+  previewText: string | null
+  createdAt: string
+  variables: WhatsAppTemplateVariable[]
+}
+
+export interface SaveTemplateVariable {
+  position: number
+  label: string
+  example?: string | null
+}
+
+export interface SaveWhatsAppTemplateRequest {
+  name: string
+  contentSid: string
+  language: Language
+  description?: string | null
+  previewText?: string | null
+  variables: SaveTemplateVariable[]
+}
+
+export const MESSAGE_CHANNEL_LABELS: Record<MessageChannel, string> = {
+  0: 'SMS',
+  1: 'WhatsApp',
+}
+
+export const MESSAGE_DELIVERY_LABELS: Record<MessageDeliveryStatus, string> = {
+  0: 'Pending',
+  1: 'Queued',
+  2: 'Sent',
+  3: 'Delivered',
+  4: 'Failed',
+  5: 'Undelivered',
+}
