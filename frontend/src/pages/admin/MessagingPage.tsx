@@ -7,7 +7,6 @@ import type {
   AdHocRecipient,
   BroadcastDetail,
   BroadcastSummary,
-  ConversationParticipant,
   DynamicGroup,
   GroupConversationDetail,
   GroupConversationSummary,
