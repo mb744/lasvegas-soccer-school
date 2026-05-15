@@ -187,6 +187,7 @@ export interface MessageGroupMember {
   id: number
   name: string | null
   phone: string
+  language: Language
   parentAccountId: number | null
 }
 
@@ -219,6 +220,8 @@ export interface SaveMessageGroupRequest {
 export interface AddMessageGroupMemberRequest {
   name?: string | null
   phone: string
+  /** When omitted, the new member inherits the group's default language. */
+  language?: Language | null
   parentAccountId?: number | null
 }
 

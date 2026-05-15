@@ -645,6 +645,7 @@ function GroupsTab({
   const [newLanguage, setNewLanguage] = useState<Language>(0)
   const [memberName, setMemberName] = useState('')
   const [memberPhone, setMemberPhone] = useState('')
+  const [memberLanguage, setMemberLanguage] = useState<Language | ''>('') // '' = inherit group default
 
   const loadGroup = async (id: number) => {
     try { setSelected(await Api.getMessagingGroup(id)) }
@@ -689,10 +690,19 @@ function GroupsTab({
       await Api.addMessagingGroupMember(selected.id, {
         name: memberName.trim() || null,
         phone: memberPhone.trim(),
+        language: memberLanguage === '' ? null : memberLanguage,
       })
-      setMemberName(''); setMemberPhone('')
+      setMemberName(''); setMemberPhone(''); setMemberLanguage('')
       await loadGroup(selected.id)
       await onChanged()
+    } catch (e: any) { onError(extractError(e)) }
+  }
+
+  const setMemberLang = async (memberId: number, lang: Language) => {
+    if (!selected) return
+    try {
+      await Api.updateMessagingGroupMemberLanguage(selected.id, memberId, lang)
+      await loadGroup(selected.id)
     } catch (e: any) { onError(extractError(e)) }
   }
 
@@ -794,13 +804,20 @@ function GroupsTab({
                 </button>
               </div>
             </div>
-            <form onSubmit={addMember} className="grid sm:grid-cols-[1fr_1fr_auto] gap-2">
+            <form onSubmit={addMember} className="grid sm:grid-cols-[1fr_1fr_auto_auto] gap-2">
               <input type="text" value={memberName} onChange={e => setMemberName(e.target.value)}
                 placeholder={t('admin.msgNameOptional')}
                 className="border border-slate-300 rounded-md px-3 py-2 text-sm" />
               <input type="tel" value={memberPhone} onChange={e => setMemberPhone(e.target.value)}
                 placeholder="+17025551212"
                 className="border border-slate-300 rounded-md px-3 py-2 text-sm" />
+              <select value={memberLanguage}
+                onChange={e => setMemberLanguage(e.target.value === '' ? '' : Number(e.target.value) as Language)}
+                className="border border-slate-300 rounded-md px-2 py-2 text-sm">
+                <option value="">{t('admin.msgMemberLangDefault')}</option>
+                <option value={0}>EN</option>
+                <option value={1}>ES</option>
+              </select>
               <button type="submit"
                 className="bg-emerald-700 text-white text-sm font-semibold px-3 py-2 rounded-md hover:bg-emerald-800">
                 {t('admin.msgAddMember')}
@@ -811,6 +828,7 @@ function GroupsTab({
                 <tr className="text-left text-slate-500 border-b">
                   <th className="py-2 pr-4">{t('admin.msgMember')}</th>
                   <th className="py-2 pr-4">{t('admin.phone')}</th>
+                  <th className="py-2 pr-4">{t('admin.msgMemberLang')}</th>
                   <th className="py-2 pr-4"></th>
                 </tr>
               </thead>
@@ -819,6 +837,14 @@ function GroupsTab({
                   <tr key={m.id} className="border-b last:border-0">
                     <td className="py-2 pr-4">{m.name ?? '—'}</td>
                     <td className="py-2 pr-4">{m.phone}</td>
+                    <td className="py-2 pr-4">
+                      <select value={m.language}
+                        onChange={e => setMemberLang(m.id, Number(e.target.value) as Language)}
+                        className="border border-slate-300 rounded-md px-2 py-1 text-xs">
+                        <option value={0}>EN</option>
+                        <option value={1}>ES</option>
+                      </select>
+                    </td>
                     <td className="py-2 pr-4 text-right">
                       <button onClick={() => removeMember(m.id)}
                         className="text-rose-700 hover:underline">{t('admin.delete')}</button>
@@ -826,7 +852,7 @@ function GroupsTab({
                   </tr>
                 ))}
                 {selected.members.length === 0 && (
-                  <tr><td colSpan={3} className="py-4 text-center text-slate-400">—</td></tr>
+                  <tr><td colSpan={4} className="py-4 text-center text-slate-400">—</td></tr>
                 )}
               </tbody>
             </table>

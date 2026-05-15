@@ -98,11 +98,11 @@ public class RecipientResolver : IRecipientResolver
                     .Include(g => g.Members)
                     .FirstOrDefaultAsync(g => g.Id == target.CustomGroupId, ct);
                 if (group is null) return new RecipientList("Group", Array.Empty<ResolvedRecipient>());
-                // All members of a curated group share the group's language — the whole point of
-                // the per-group Language field is to drive routing without per-member overrides.
+                // Language is per-member (a group can mix EN and ES parents). The group's
+                // own Language field is just the default we apply when adding new members.
                 var members = group.Members
                     .Where(m => !string.IsNullOrWhiteSpace(m.Phone))
-                    .Select(m => new ResolvedRecipient(m.Phone, m.Name, m.ParentAccountId, group.Language))
+                    .Select(m => new ResolvedRecipient(m.Phone, m.Name, m.ParentAccountId, m.Language))
                     .ToList();
                 return new RecipientList($"Group: {group.Name}", members);
 

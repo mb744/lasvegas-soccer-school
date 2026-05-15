@@ -78,7 +78,7 @@ public class MessagingController : ControllerBase
         if (g is null) return NotFound();
         return Ok(new MessageGroupDetail(
             g.Id, g.Name, g.Description, g.Language, g.CreatedAt,
-            g.Members.Select(m => new MessageGroupMemberDto(m.Id, m.Name, m.Phone, m.ParentAccountId)).ToList()));
+            g.Members.Select(m => new MessageGroupMemberDto(m.Id, m.Name, m.Phone, m.Language, m.ParentAccountId)).ToList()));
     }
 
     [HttpPost("groups")]
@@ -142,11 +142,24 @@ public class MessagingController : ControllerBase
             MessageGroupId = id,
             Name = request.Name?.Trim(),
             Phone = phone,
+            Language = request.Language ?? g.Language,
             ParentAccountId = request.ParentAccountId
         };
         _db.MessageGroupMembers.Add(m);
         await _db.SaveChangesAsync(ct);
-        return Ok(new MessageGroupMemberDto(m.Id, m.Name, m.Phone, m.ParentAccountId));
+        return Ok(new MessageGroupMemberDto(m.Id, m.Name, m.Phone, m.Language, m.ParentAccountId));
+    }
+
+    [HttpPatch("groups/{id:int}/members/{memberId:int}/language")]
+    public async Task<ActionResult<MessageGroupMemberDto>> UpdateMemberLanguage(
+        int id, int memberId, [FromBody] UpdateMessageGroupMemberLanguageRequest request, CancellationToken ct)
+    {
+        var m = await _db.MessageGroupMembers
+            .FirstOrDefaultAsync(x => x.MessageGroupId == id && x.Id == memberId, ct);
+        if (m is null) return NotFound();
+        m.Language = request.Language;
+        await _db.SaveChangesAsync(ct);
+        return Ok(new MessageGroupMemberDto(m.Id, m.Name, m.Phone, m.Language, m.ParentAccountId));
     }
 
     [HttpDelete("groups/{id:int}/members/{memberId:int}")]
@@ -162,7 +175,9 @@ public class MessagingController : ControllerBase
 
     /// <summary>
     /// Bulk-add parents from the active season into the group. Skips parents already in the group
-    /// and parents missing a phone number. Useful for quickly building a team/season-specific list.
+    /// and parents missing a phone number. Per-member language defaults to each parent's stored
+    /// preference (<see cref="ParentAccount.Language"/>) so the bulk import gets bilingual routing
+    /// right out of the box.
     /// </summary>
     [HttpPost("groups/{id:int}/import-active-season")]
     public async Task<ActionResult<MessageGroupDetail>> ImportActiveSeason(int id, CancellationToken ct)
@@ -173,15 +188,25 @@ public class MessagingController : ControllerBase
         var resolved = await _resolver.ResolveAsync(
             new RecipientTarget(RecipientTargetKind.DynamicGroup, DynamicGroupKey: RecipientResolver.DynamicActiveSeasonParents),
             ct);
+        // Look up parent language preferences in one query so the import knows EN vs ES per member.
+        var parentIds = resolved.Recipients.Select(r => r.ParentAccountId).Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToList();
+        var parentLangs = await _db.ParentAccounts
+            .Where(p => parentIds.Contains(p.Id))
+            .ToDictionaryAsync(p => p.Id, p => p.Language, ct);
+
         var existing = g.Members.Select(m => m.Phone).ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var r in resolved.Recipients)
         {
             if (existing.Contains(r.Phone)) continue;
+            var memberLang = r.ParentAccountId is int pid && parentLangs.TryGetValue(pid, out var lang)
+                ? lang
+                : g.Language;
             g.Members.Add(new MessageGroupMember
             {
                 MessageGroupId = g.Id,
                 Name = r.Name,
                 Phone = r.Phone,
+                Language = memberLang,
                 ParentAccountId = r.ParentAccountId
             });
             existing.Add(r.Phone);
@@ -190,7 +215,7 @@ public class MessagingController : ControllerBase
 
         return Ok(new MessageGroupDetail(
             g.Id, g.Name, g.Description, g.Language, g.CreatedAt,
-            g.Members.Select(m => new MessageGroupMemberDto(m.Id, m.Name, m.Phone, m.ParentAccountId)).ToList()));
+            g.Members.Select(m => new MessageGroupMemberDto(m.Id, m.Name, m.Phone, m.Language, m.ParentAccountId)).ToList()));
     }
 
     // --- Broadcasts (fan-out) ---

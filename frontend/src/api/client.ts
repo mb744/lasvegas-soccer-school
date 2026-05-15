@@ -196,6 +196,10 @@ export const Api = {
   async removeMessagingGroupMember(id: number, memberId: number) {
     await api.delete(`/messaging/groups/${id}/members/${memberId}`)
   },
+  async updateMessagingGroupMemberLanguage(id: number, memberId: number, language: 0 | 1) {
+    const r = await api.patch<MessageGroupMember>(`/messaging/groups/${id}/members/${memberId}/language`, { language })
+    return r.data
+  },
   async importActiveSeasonIntoGroup(id: number) {
     const r = await api.post<MessageGroupDetail>(`/messaging/groups/${id}/import-active-season`, {})
     return r.data

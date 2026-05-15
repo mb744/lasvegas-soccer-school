@@ -37,7 +37,7 @@ public record MessageGroupDetail(
     DateTime CreatedAt,
     IReadOnlyList<MessageGroupMemberDto> Members);
 
-public record MessageGroupMemberDto(int Id, string? Name, string Phone, int? ParentAccountId);
+public record MessageGroupMemberDto(int Id, string? Name, string Phone, Language Language, int? ParentAccountId);
 
 public record AddMessageGroupMemberRequest
 {
@@ -47,7 +47,15 @@ public record AddMessageGroupMemberRequest
     [Required, MaxLength(32)]
     public string Phone { get; init; } = string.Empty;
 
+    /// <summary>Optional. If omitted, the new member inherits the group's default language.</summary>
+    public Language? Language { get; init; }
+
     public int? ParentAccountId { get; init; }
+}
+
+public record UpdateMessageGroupMemberLanguageRequest
+{
+    public Language Language { get; init; } = SoccerSchool.Api.Domain.Language.English;
 }
 
 public record DynamicGroupDto(string Key, string Label, int Count);
