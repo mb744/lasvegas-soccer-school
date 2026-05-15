@@ -276,3 +276,30 @@ public record TranslateRequest
 }
 
 public record TranslateResponse(string Translated, IReadOnlyList<string> MatchedPhrases, bool FullyTranslated);
+
+// --- Template preview (renders both EN and ES sides for the bilingual confirm modal) ---
+
+public record TemplatePreviewRequest
+{
+    public int TemplateId { get; init; }
+    public Dictionary<string, string> Values { get; init; } = new();
+}
+
+public enum TemplatePreviewSource
+{
+    /// <summary>Rendered from the language-matching approved template.</summary>
+    ApprovedTemplate = 0,
+    /// <summary>Rendered from the opposite-language approved template with values translated via the dictionary.</summary>
+    TranslatedValues = 1,
+    /// <summary>The opposite-language template doesn't exist and there's no way to render this side.</summary>
+    Unavailable = 2
+}
+
+public record TemplatePreviewSide(
+    Language Language,
+    string TemplateName,
+    string? Rendered,
+    TemplatePreviewSource Source,
+    IReadOnlyDictionary<string, string>? Values);
+
+public record TemplatePreviewResponse(TemplatePreviewSide English, TemplatePreviewSide Spanish);

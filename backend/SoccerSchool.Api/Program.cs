@@ -141,6 +141,7 @@ using (var scope = app.Services.CreateScope())
     await MigrateWithRetryAsync(db, app.Logger);
     await SeedAdminAsync(scope.ServiceProvider, app.Logger);
     await SeedWhatsAppTemplatesAsync(db, app.Logger);
+    await SeedPhraseTranslationsAsync(db, app.Logger);
 }
 
 // Must run before UseAuthentication so the Google/Facebook handlers see Request.Scheme=https
@@ -232,6 +233,39 @@ static async Task SeedWhatsAppTemplatesAsync(AppDbContext db, ILogger logger)
     });
     await db.SaveChangesAsync();
     logger.LogInformation("Seeded WhatsApp template practice_or_game ({Sid}).", contentSid);
+}
+
+// Default phrase-dictionary entries used by the bilingual preview/send fallback when a Spanish
+// template doesn't exist for a Spanish recipient. Idempotent on English text (skipped if the
+// admin already added an entry for the same English source). Admin can edit/extend via the
+// Dictionary tab in /admin/messaging.
+static async Task SeedPhraseTranslationsAsync(AppDbContext db, ILogger logger)
+{
+    (string En, string Es)[] defaults =
+    {
+        ("Game vs", "Juego vs"),
+        ("Practice", "Práctica"),
+        ("white jersey, blue shorts, blue socks", "camiseta blanca, shorts y calcetas azules"),
+        ("all blue", "todo azul"),
+        ("Home", "Local"),
+        ("Away", "Visitante"),
+    };
+    var existing = await db.PhraseTranslations
+        .Select(p => p.English)
+        .ToListAsync();
+    var existingSet = new HashSet<string>(existing, StringComparer.OrdinalIgnoreCase);
+    var added = 0;
+    foreach (var (en, es) in defaults)
+    {
+        if (existingSet.Contains(en)) continue;
+        db.PhraseTranslations.Add(new PhraseTranslation { English = en, Spanish = es });
+        added++;
+    }
+    if (added > 0)
+    {
+        await db.SaveChangesAsync();
+        logger.LogInformation("Seeded {Count} phrase dictionary entries.", added);
+    }
 }
 
 static async Task SeedAdminAsync(IServiceProvider services, ILogger logger)

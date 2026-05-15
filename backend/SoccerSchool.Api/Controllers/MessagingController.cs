@@ -317,10 +317,29 @@ public class MessagingController : ControllerBase
                 var sendTemplate = recipient.Language == template!.Language ? template
                     : (pairedTemplate?.Language == recipient.Language ? pairedTemplate : template);
                 var languageMismatch = sendTemplate.Language != recipient.Language;
-                send = await _sender.SendTemplateAsync(recipient.Phone, sendTemplate.ContentSid, templateVars, ct);
+
+                // If we're falling back to a mismatched template, run each variable value through
+                // the admin's phrase dictionary so at least the dynamic content speaks the
+                // recipient's language. The template body itself stays in the approved language
+                // (Meta locks template bodies; we can't translate them at send time), but the
+                // values that fill {{What}}, {{wear}}, etc. become bilingual.
+                var varsToSend = templateVars;
                 if (languageMismatch)
                 {
-                    send = send with { Message = $"[No {recipient.Language} template; sent {sendTemplate.Language}] {send.Message}" };
+                    var translated = new Dictionary<string, string>();
+                    foreach (var kv in templateVars)
+                    {
+                        var outcome = await _translator.TranslateAsync(
+                            kv.Value, sendTemplate.Language, recipient.Language, ct);
+                        translated[kv.Key] = outcome.Translated;
+                    }
+                    varsToSend = translated;
+                }
+
+                send = await _sender.SendTemplateAsync(recipient.Phone, sendTemplate.ContentSid, varsToSend, ct);
+                if (languageMismatch)
+                {
+                    send = send with { Message = $"[No {recipient.Language} template; sent {sendTemplate.Language} body with dictionary-translated values] {send.Message}" };
                 }
             }
             else
@@ -624,6 +643,78 @@ public class MessagingController : ControllerBase
         _db.PhraseTranslations.Remove(p);
         await _db.SaveChangesAsync(ct);
         return NoContent();
+    }
+
+    /// <summary>Renders the bilingual side-by-side preview for the template Compose modal.
+    /// Returns each language's rendered text, marking which side comes from an approved template
+    /// vs. dictionary-translated values vs. unavailable.</summary>
+    [HttpPost("template-preview")]
+    public async Task<ActionResult<TemplatePreviewResponse>> TemplatePreview(
+        [FromBody] TemplatePreviewRequest request, CancellationToken ct)
+    {
+        var template = await _db.WhatsAppTemplates
+            .Include(t => t.Variables)
+            .FirstOrDefaultAsync(t => t.Id == request.TemplateId, ct);
+        if (template is null) return NotFound();
+        var pair = await FindPairAsync(template, ct);
+
+        var values = request.Values ?? new();
+
+        TemplatePreviewSide BuildSide(Language target)
+        {
+            // Pick which approved template's body to use for this side.
+            var pickedTemplate = template.Language == target ? template
+                : (pair?.Language == target ? pair : null);
+
+            if (pickedTemplate is not null)
+            {
+                // Same-language template exists — render against its preview text with original values.
+                var rendered = RenderTemplatePreviewBody(pickedTemplate.PreviewText, pickedTemplate.Variables, values);
+                return new TemplatePreviewSide(target, pickedTemplate.Name, rendered,
+                    TemplatePreviewSource.ApprovedTemplate, values);
+            }
+
+            // No template in the target language — fall back to the primary template's body and
+            // translate the values via the dictionary. Mirrors what the send loop will actually do.
+            return new TemplatePreviewSide(target, template.Name, null,
+                TemplatePreviewSource.TranslatedValues, null);
+        }
+
+        // For the translated-values side, we need to await the translation, so do that out-of-line.
+        async Task<TemplatePreviewSide> BuildSideAsync(Language target)
+        {
+            var side = BuildSide(target);
+            if (side.Source != TemplatePreviewSource.TranslatedValues) return side;
+            var translated = new Dictionary<string, string>();
+            foreach (var kv in values)
+            {
+                var outcome = await _translator.TranslateAsync(kv.Value ?? string.Empty,
+                    template.Language, target, ct);
+                translated[kv.Key] = outcome.Translated;
+            }
+            var rendered = RenderTemplatePreviewBody(template.PreviewText, template.Variables, translated);
+            return side with { Rendered = rendered, Values = translated };
+        }
+
+        var en = await BuildSideAsync(Language.English);
+        var es = await BuildSideAsync(Language.Spanish);
+        return Ok(new TemplatePreviewResponse(en, es));
+    }
+
+    private static string RenderTemplatePreviewBody(
+        string? previewText,
+        IEnumerable<WhatsAppTemplateVariable> templateVars,
+        IReadOnlyDictionary<string, string> values)
+    {
+        if (string.IsNullOrEmpty(previewText))
+            return string.Join("\n", templateVars.Select(v => $"{v.Label}: {(values.TryGetValue(v.Label, out var x) ? x : "")}"));
+        var result = previewText;
+        foreach (var v in templateVars)
+        {
+            var val = values.TryGetValue(v.Label, out var x) ? x : "";
+            result = result.Replace($"{{{{{v.Label}}}}}", val);
+        }
+        return result;
     }
 
     /// <summary>Best-effort dictionary translation. Anything not in the dictionary stays in the

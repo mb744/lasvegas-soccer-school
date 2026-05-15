@@ -20,6 +20,8 @@ import type {
   ScheduledGame,
   TeamDetail,
   TeamSummary,
+  TemplatePreviewResponse,
+  TemplatePreviewSide,
   WhatsAppTemplate,
 } from '../../api/types'
 
@@ -1766,33 +1768,60 @@ function TemplatePreviewModal({
   onConfirm: () => void
 }) {
   const { t } = useTranslation()
+  const [preview, setPreview] = useState<TemplatePreviewResponse | null>(null)
+  const [previewError, setPreviewError] = useState<string | null>(null)
 
-  // Two render sources: the primary template the admin picked, and (when it exists) the auto-paired
-  // opposite-language template. WhatsApp templates are language-locked at approval time, so the
-  // ES recipient flow needs a separate approved Spanish template — that's what `paired` represents.
-  const renderWith = (text: string | null, vars: { label: string }[]): string => {
-    if (!text) return vars.map(v => `${v.label}: ${values[v.label] ?? ''}`).join('\n')
-    let out = text
-    for (const v of vars) out = out.split(`{{${v.label}}}`).join(values[v.label] ?? '')
-    return out
-  }
-  const primary = useMemo(() => renderWith(template.previewText, template.variables),
-    [template, values])
-  const pairRendered = useMemo(() => {
-    if (!template.paired) return null
-    // Pair uses the same labels by convention — fall back to primary variables if the pair didn't
-    // explicitly define any (e.g. user hasn't populated them yet via the Templates tab).
-    const vars = template.paired.variables.length > 0 ? template.paired.variables : template.variables
-    return renderWith(template.paired.previewText, vars)
-  }, [template, values])
+  // Backend renders both sides so the "Spanish recipient gets English template with translated
+  // values" fallback shows what will actually deliver. Single source of truth for what the
+  // recipient sees — no client-side guessing.
+  useEffect(() => {
+    let cancelled = false
+    Api.templatePreview({ templateId: template.id, values })
+      .then(r => { if (!cancelled) setPreview(r) })
+      .catch(e => { if (!cancelled) setPreviewError(extractError(e)) })
+    return () => { cancelled = true }
+  }, [template.id, values])
 
   const langLabel = (lang: Language) => lang === 1 ? 'Español' : 'English'
-  const hasPair = template.paired != null
-  const modalWidth = hasPair ? 'max-w-5xl' : 'max-w-2xl'
+
+  const renderSide = (side: TemplatePreviewSide) => {
+    const sourceLabel =
+      side.source === 0 ? t('admin.msgPreviewSourceApproved') :
+      side.source === 1 ? t('admin.msgPreviewSourceTranslated') :
+      t('admin.msgPreviewSourceUnavailable')
+    const sourceClass =
+      side.source === 0 ? 'bg-emerald-50 text-emerald-800 border-emerald-200' :
+      side.source === 1 ? 'bg-amber-50 text-amber-800 border-amber-200' :
+      'bg-slate-50 text-slate-500 border-slate-200'
+
+    return (
+      <div>
+        <div className="flex items-center justify-between mb-1">
+          <div className="text-xs font-medium text-slate-700">
+            {langLabel(side.language)} <span className="text-slate-400">— {side.templateName}</span>
+          </div>
+          <span className={`text-[10px] uppercase tracking-wide px-2 py-0.5 rounded border ${sourceClass}`}>{sourceLabel}</span>
+        </div>
+        <pre className="w-full border border-slate-200 bg-slate-50 rounded-md px-3 py-2 text-sm whitespace-pre-wrap min-h-[6rem]">{side.rendered ?? '—'}</pre>
+        {side.source === 1 && side.values && (
+          <details className="mt-1 text-xs text-slate-500">
+            <summary className="cursor-pointer hover:underline">{t('admin.msgPreviewTranslatedValuesUsed')}</summary>
+            <table className="w-full mt-1">
+              <tbody>
+                {Object.entries(side.values).map(([k, v]) => (
+                  <tr key={k}><td className="pr-3 text-slate-400">{k}</td><td className="font-mono">{v}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          </details>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-start justify-center p-4 overflow-y-auto">
-      <div className={`bg-white rounded-lg shadow-xl ${modalWidth} w-full mt-10 p-6 space-y-4`}>
+      <div className="bg-white rounded-lg shadow-xl max-w-5xl w-full mt-10 p-6 space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-bold text-emerald-800">{t('admin.msgTemplateSendPreviewTitle')}</h2>
           <button onClick={onCancel} className="text-sm text-slate-500 hover:text-slate-700">✕</button>
@@ -1807,30 +1836,18 @@ function TemplatePreviewModal({
           <span><strong className="text-slate-700">{t('admin.msgPreviewRecipientLabel')}:</strong> {recipientLabel}</span>
         </div>
 
-        {!hasPair && (
-          <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded p-2">
-            {template.language === 0
-              ? t('admin.msgTemplateNoSpanishPair', { name: `${template.name}_es` })
-              : t('admin.msgTemplateNoEnglishPair', { name: `${template.name}_en` })}
+        {previewError && (
+          <div className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-md p-3">{previewError}</div>
+        )}
+        {!preview && !previewError && (
+          <div className="text-sm text-slate-500">{t('admin.msgPreviewLoading')}</div>
+        )}
+        {preview && (
+          <div className="grid md:grid-cols-2 gap-4">
+            {renderSide(preview.english)}
+            {renderSide(preview.spanish)}
           </div>
         )}
-
-        <div className={hasPair ? 'grid md:grid-cols-2 gap-4' : ''}>
-          <div>
-            <div className="text-xs font-medium text-slate-700 mb-1">
-              {langLabel(template.language)} <span className="text-slate-400">— {template.name}</span>
-            </div>
-            <pre className="w-full border border-slate-200 bg-slate-50 rounded-md px-3 py-2 text-sm whitespace-pre-wrap min-h-[6rem]">{primary}</pre>
-          </div>
-          {template.paired && pairRendered !== null && (
-            <div>
-              <div className="text-xs font-medium text-slate-700 mb-1">
-                {langLabel(template.paired.language)} <span className="text-slate-400">— {template.paired.name}</span>
-              </div>
-              <pre className="w-full border border-slate-200 bg-slate-50 rounded-md px-3 py-2 text-sm whitespace-pre-wrap min-h-[6rem]">{pairRendered}</pre>
-            </div>
-          )}
-        </div>
 
         <div>
           <div className="text-xs font-medium text-slate-700 mb-1">{t('admin.msgPreviewVariables')}</div>

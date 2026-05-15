@@ -31,6 +31,8 @@ import type {
   SubmitRegistrationRequest,
   TeamDetail,
   TeamSummary,
+  TemplatePreviewRequest,
+  TemplatePreviewResponse,
   TranslateRequest,
   TranslateResponse,
   UserSummary,
@@ -300,6 +302,10 @@ export const Api = {
   },
   async translate(payload: TranslateRequest) {
     const r = await api.post<TranslateResponse>('/messaging/translate', payload)
+    return r.data
+  },
+  async templatePreview(payload: TemplatePreviewRequest) {
+    const r = await api.post<TemplatePreviewResponse>('/messaging/template-preview', payload)
     return r.data
   },
 }

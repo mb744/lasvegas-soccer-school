@@ -467,6 +467,26 @@ export interface TranslateResponse {
   fullyTranslated: boolean
 }
 
+export type TemplatePreviewSource = 0 | 1 | 2 // ApprovedTemplate | TranslatedValues | Unavailable
+
+export interface TemplatePreviewSide {
+  language: Language
+  templateName: string
+  rendered: string | null
+  source: TemplatePreviewSource
+  values: Record<string, string> | null
+}
+
+export interface TemplatePreviewResponse {
+  english: TemplatePreviewSide
+  spanish: TemplatePreviewSide
+}
+
+export interface TemplatePreviewRequest {
+  templateId: number
+  values: Record<string, string>
+}
+
 export const MESSAGE_CHANNEL_LABELS: Record<MessageChannel, string> = {
   0: 'SMS',
   1: 'WhatsApp',
