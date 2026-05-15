@@ -245,9 +245,12 @@ public class MessagingController : ControllerBase
             templateVars = (request.TemplateVariables ?? new())
                 .Where(kv => !string.IsNullOrEmpty(kv.Key))
                 .ToDictionary(kv => kv.Key, kv => kv.Value ?? string.Empty);
+            // Validate by the variable's Label (which is the placeholder name in the approved
+            // Twilio template body, e.g. {{What}}). Twilio's Content API substitutes by these
+            // keys, so the dictionary we serialize as ContentVariables must use them.
             var missing = template.Variables
-                .Select(v => v.Position.ToString())
-                .Where(pos => !templateVars.ContainsKey(pos) || string.IsNullOrWhiteSpace(templateVars[pos]))
+                .Select(v => v.Label)
+                .Where(label => !templateVars.ContainsKey(label) || string.IsNullOrWhiteSpace(templateVars[label]))
                 .ToList();
             if (missing.Count > 0)
                 return BadRequest($"Template variables missing: {string.Join(", ", missing)}.");
@@ -263,10 +266,17 @@ public class MessagingController : ControllerBase
         if (resolved.Recipients.Count == 0)
             return BadRequest("No recipients matched the selected target.");
 
+        // For template sends, persist a human-readable rendering of the message in BodyEn so
+        // the history log shows what actually went out (Twilio does the real substitution server-
+        // side; this is purely admin-display). Pre-trims to the column max.
+        var renderedTemplate = isTemplate
+            ? RenderTemplatePreview(template!.PreviewText, template.Name, templateVars)
+            : null;
+
         var broadcast = new Broadcast
         {
             Channel = request.Channel,
-            BodyEn = bodyEn,
+            BodyEn = bodyEn ?? renderedTemplate,
             BodyEs = bodyEs,
             TargetLabel = resolved.Label,
             WhatsAppTemplateId = template?.Id,
@@ -608,6 +618,20 @@ public class MessagingController : ControllerBase
             return Ok(new TranslateResponse(string.Empty, Array.Empty<string>(), true));
         var outcome = await _translator.TranslateAsync(request.Text, request.From, request.To, ct);
         return Ok(new TranslateResponse(outcome.Translated, outcome.MatchedPhrases, outcome.FullyTranslated));
+    }
+
+    /// <summary>Substitutes "{{KEY}}" placeholders in the template's preview text with the
+    /// supplied values. Falls back to a "name(key=value, ...)" string if the admin hasn't set
+    /// a preview text on the template. Display-only — Twilio does the real substitution against
+    /// the approved template body when it actually delivers the message.</summary>
+    private static string RenderTemplatePreview(string? preview, string templateName, IReadOnlyDictionary<string, string> vars)
+    {
+        if (string.IsNullOrEmpty(preview))
+            return $"[Template {templateName}] {string.Join(", ", vars.Select(kv => $"{kv.Key}={kv.Value}"))}";
+        var result = preview;
+        foreach (var kv in vars)
+            result = result.Replace($"{{{{{kv.Key}}}}}", kv.Value);
+        return result.Length > 2000 ? result[..2000] : result;
     }
 
     // --- Helpers ---

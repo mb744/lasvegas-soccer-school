@@ -264,6 +264,7 @@ function ComposeTab({
   const [bodyEs, setBodyEs] = useState('')
   const [defaultLang, setDefaultLang] = useState<Language>(0)
   const [previewStep, setPreviewStep] = useState<'edit' | 'confirm' | null>(null)
+  const [templatePreviewOpen, setTemplatePreviewOpen] = useState(false)
   const [sending, setSending] = useState(false)
 
   const selectedTemplate = useMemo(
@@ -328,11 +329,12 @@ function ComposeTab({
     if (usingTemplate) {
       if (!selectedTemplate) { onError('Pick a template.'); return }
       const missing = selectedTemplate.variables
-        .filter(v => !templateValues[v.position.toString()]?.trim())
+        .filter(v => !templateValues[v.label]?.trim())
         .map(v => v.label)
       if (missing.length) { onError(`Fill in: ${missing.join(', ')}.`); return }
-      // Templates have their own per-language Twilio content; no bilingual preview needed.
-      await sendNow({ usingTemplate: true })
+      // Show the rendered template preview before firing the send so admin can verify the
+      // variable substitution one last time.
+      setTemplatePreviewOpen(true)
       return
     }
 
@@ -383,7 +385,7 @@ function ComposeTab({
         if (initial) await Api.sendToConversation(r.id, initial)
         await onSent(`Group chat "${r.title}" created with ${r.participants.length} participants.`)
       }
-      setBodyEn(''); setBodyEs(''); setPreviewStep(null)
+      setBodyEn(''); setBodyEs(''); setPreviewStep(null); setTemplatePreviewOpen(false)
       if (args.usingTemplate) setTemplateValues({})
     } catch (e: any) {
       onError(extractError(e))
@@ -570,10 +572,13 @@ function ComposeTab({
             <div className="space-y-2">
               <h3 className="text-sm font-medium text-slate-700">{t('admin.msgFillVariables')}</h3>
               {selectedTemplate.variables.map(v => {
-                const key = v.position.toString()
+                // Keying by Label matches the placeholder name in the approved Twilio template
+                // body ({{What}}, {{When}}, ...). Twilio's Content API substitutes ContentVariables
+                // by these names; positional keys would produce no substitution.
+                const key = v.label
                 return (
                   <div key={v.id} className="grid grid-cols-[8rem_1fr] items-center gap-2">
-                    <label className="text-sm text-slate-700">{v.label} <span className="text-slate-400">{`{{${v.position}}}`}</span></label>
+                    <label className="text-sm text-slate-700">{v.label} <span className="text-slate-400">{`{{${v.label}}}`}</span></label>
                     <input type="text"
                       value={templateValues[key] ?? ''}
                       placeholder={v.example ?? ''}
@@ -622,6 +627,16 @@ function ComposeTab({
         onBack={() => setPreviewStep('edit')}
         onCancel={() => setPreviewStep(null)}
         onConfirm={() => sendNow({ usingTemplate: false })}
+      />
+    )}
+    {templatePreviewOpen && selectedTemplate && (
+      <TemplatePreviewModal
+        template={selectedTemplate}
+        values={templateValues}
+        recipientLabel={recipientPreview}
+        sending={sending}
+        onCancel={() => setTemplatePreviewOpen(false)}
+        onConfirm={() => sendNow({ usingTemplate: true })}
       />
     )}
     </>
@@ -1373,7 +1388,7 @@ function applyGameToTemplate(
     const next = { ...prev }
     for (const v of template.variables) {
       const label = v.label.toLowerCase()
-      const key = v.position.toString()
+      const key = v.label
       if (label.includes('what')) {
         next[key] = game.opponentName
           ? `${GAME_VS_PREFIX[lang]} ${game.opponentName}`
@@ -1732,6 +1747,80 @@ function BilingualPreviewModal({
                 className="text-sm text-slate-600 hover:underline ml-auto">{t('admin.msgCancel')}</button>
             </>
           )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// --- Template preview modal ----------------------------------------------
+
+function TemplatePreviewModal({
+  template, values, recipientLabel, sending, onCancel, onConfirm,
+}: {
+  template: WhatsAppTemplate
+  values: Record<string, string>
+  recipientLabel: string
+  sending: boolean
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  const { t } = useTranslation()
+
+  // Render the admin's PreviewText with values substituted. Falls back to a key=value summary if
+  // no PreviewText is set on the template. This is display-only; Twilio does the actual server-
+  // side substitution against the approved template body when it delivers the message.
+  const rendered = useMemo(() => {
+    if (!template.previewText) {
+      return template.variables.map(v => `${v.label}: ${values[v.label] ?? ''}`).join('\n')
+    }
+    let text = template.previewText
+    for (const v of template.variables) {
+      text = text.split(`{{${v.label}}}`).join(values[v.label] ?? '')
+    }
+    return text
+  }, [template, values])
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-start justify-center p-4 overflow-y-auto">
+      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mt-10 p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-bold text-emerald-800">{t('admin.msgTemplateSendPreviewTitle')}</h2>
+          <button onClick={onCancel} className="text-sm text-slate-500 hover:text-slate-700">✕</button>
+        </div>
+        <p className="text-sm text-slate-600">{t('admin.msgTemplateSendPreviewHelp')}</p>
+
+        <div className="text-xs text-slate-500 flex flex-wrap gap-x-4">
+          <span><strong className="text-slate-700">{t('admin.msgPreviewTemplateLabel')}:</strong> {template.name} ({template.language === 1 ? 'ES' : 'EN'})</span>
+          <span><strong className="text-slate-700">{t('admin.msgPreviewRecipientLabel')}:</strong> {recipientLabel}</span>
+        </div>
+
+        <div>
+          <div className="text-xs font-medium text-slate-700 mb-1">{t('admin.msgPreviewMessage')}</div>
+          <pre className="w-full border border-slate-200 bg-slate-50 rounded-md px-3 py-2 text-sm whitespace-pre-wrap min-h-[6rem]">{rendered}</pre>
+        </div>
+
+        <div>
+          <div className="text-xs font-medium text-slate-700 mb-1">{t('admin.msgPreviewVariables')}</div>
+          <table className="w-full text-xs">
+            <tbody>
+              {template.variables.map(v => (
+                <tr key={v.id} className="border-b last:border-0">
+                  <td className="py-1 pr-3 text-slate-500">{v.label}</td>
+                  <td className="py-1 pr-3 font-mono">{values[v.label] ?? ''}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="flex items-center gap-3 pt-3 border-t border-slate-100">
+          <button onClick={onConfirm} disabled={sending}
+            className="bg-emerald-700 text-white text-sm font-semibold px-4 py-2 rounded-md hover:bg-emerald-800 disabled:opacity-60">
+            {sending ? t('admin.sending') : t('admin.msgPreviewConfirmSend')}
+          </button>
+          <button onClick={onCancel} disabled={sending}
+            className="text-sm text-slate-600 hover:underline ml-auto">{t('admin.msgCancel')}</button>
         </div>
       </div>
     </div>

@@ -195,15 +195,33 @@ static async Task MigrateWithRetryAsync(AppDbContext db, ILogger logger)
 static async Task SeedWhatsAppTemplatesAsync(AppDbContext db, ILogger logger)
 {
     const string contentSid = "HX75106c2d166e9b0e87dbb8ecdc325116";
-    if (await db.WhatsAppTemplates.AnyAsync(t => t.ContentSid == contentSid))
+    const string oldPreview = "{{1}} on {{2}} at {{3}}. Wear: {{4}}.";
+    const string newPreview = "{{What}} on {{When}} at {{Where}}. Wear: {{wear}}.";
+
+    var existing = await db.WhatsAppTemplates.FirstOrDefaultAsync(t => t.ContentSid == contentSid);
+    if (existing is not null)
+    {
+        // One-time migration: the original seed used positional preview placeholders before we
+        // learned the Twilio template uses named ones. Update only if the admin hasn't touched it.
+        if (existing.PreviewText == oldPreview)
+        {
+            existing.PreviewText = newPreview;
+            await db.SaveChangesAsync();
+            logger.LogInformation("Updated practice_or_game preview to named placeholders.");
+        }
         return;
+    }
+
     db.WhatsAppTemplates.Add(new WhatsAppTemplate
     {
         Name = "practice_or_game",
         ContentSid = contentSid,
         Language = Language.English,
         Description = "Canonical practice/game reminder (replaces practice_today, practice_tomorrow_es, practice_mw).",
-        PreviewText = "{{1}} on {{2}} at {{3}}. Wear: {{4}}.",
+        // PreviewText uses the same named placeholders the approved Twilio template body uses
+        // ({{What}}, {{When}}, etc.) so the admin's compose preview substitutes correctly when we
+        // render it client-side.
+        PreviewText = "{{What}} on {{When}} at {{Where}}. Wear: {{wear}}.",
         Variables = new List<WhatsAppTemplateVariable>
         {
             new() { Position = 1, Label = "What",  Example = "Practice" },
