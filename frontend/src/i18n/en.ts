@@ -295,6 +295,7 @@ const en = {
     msgPickGame: 'Pick a game (autofills variables)',
     msgPickGameHint: 'Pick from upcoming games',
     msgPickGameHelp: 'Picking a game fills What / When / Where from the synced schedule and, if the team has a linked message group, sets that group as the recipient.',
+    msgPickGameFreeFormHelp: 'Picking a game drafts both the English and Spanish body using the game info + your home/away wear policy. You can edit either side in the preview modal before sending.',
     msgTeamsHeader: 'Teams',
     msgNewTeam: 'New',
     msgNoTeams: 'No teams yet — add one with its iCal URL.',

@@ -297,6 +297,7 @@ const es: Translations = {
     msgPickGame: 'Elegir un partido (autocompleta variables)',
     msgPickGameHint: 'Elegir de los próximos partidos',
     msgPickGameHelp: 'Al elegir un partido se completan Qué / Cuándo / Dónde con la información sincronizada. Si el equipo tiene un grupo enlazado, se selecciona como destinatario.',
+    msgPickGameFreeFormHelp: 'Al elegir un partido se redactan ambos cuerpos (inglés y español) usando la info del partido y la política de vestimenta local/visitante. Puede editar cualquier lado en la vista previa antes de enviar.',
     msgTeamsHeader: 'Equipos',
     msgNewTeam: 'Nuevo',
     msgNoTeams: 'Aún no hay equipos — agregue uno con su URL iCal.',

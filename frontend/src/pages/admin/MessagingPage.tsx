@@ -593,13 +593,39 @@ function ComposeTab({
           )}
         </div>
       ) : (
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">{t('admin.msgBody')}</label>
-          <textarea rows={4} value={bodyEn} onChange={e => setBodyEn(e.target.value)}
-            maxLength={2000}
-            placeholder={t('admin.msgBodyPlaceholder')}
-            className="border border-slate-300 rounded-md px-3 py-2 text-sm w-full" />
-          <p className="mt-1 text-xs text-slate-500">{bodyEn.length} / 2000 · {t('admin.msgBodyHint')}</p>
+        <div className="space-y-3">
+          {upcomingGames.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">{t('admin.msgPickGame')}</label>
+              <select value=""
+                onChange={e => {
+                  const gameId = Number(e.target.value)
+                  if (!gameId) return
+                  const g = upcomingGames.find(x => x.id === gameId)
+                  if (!g) return
+                  applyGameToFreeForm(g, setBodyEn, setBodyEs)
+                  if (g.messageGroupId) {
+                    setRecipientMode('curated')
+                    setCustomGroupId(g.messageGroupId)
+                  }
+                }}
+                className="border border-slate-300 rounded-md px-3 py-2 text-sm w-full sm:w-96">
+                <option value="">— {t('admin.msgPickGameHint')} —</option>
+                {upcomingGames.map(g => (
+                  <option key={g.id} value={g.id}>{formatGameOption(g)}</option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-slate-500">{t('admin.msgPickGameFreeFormHelp')}</p>
+            </div>
+          )}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">{t('admin.msgBody')}</label>
+            <textarea rows={4} value={bodyEn} onChange={e => setBodyEn(e.target.value)}
+              maxLength={2000}
+              placeholder={t('admin.msgBodyPlaceholder')}
+              className="border border-slate-300 rounded-md px-3 py-2 text-sm w-full" />
+            <p className="mt-1 text-xs text-slate-500">{bodyEn.length} / 2000 · {t('admin.msgBodyHint')}</p>
+          </div>
         </div>
       )}
 
@@ -1365,6 +1391,45 @@ function formatGameOption(g: ScheduledGame): string {
   const homeAway = g.isHome === true ? ' (H)' : g.isHome === false ? ' (A)' : ''
   const label = g.opponentName ? `vs ${g.opponentName}` : (g.summary?.trim() || g.teamName)
   return `${date} ${time}${homeAway} — ${label}${g.location ? ` @ ${g.location}` : ''}`
+}
+
+/**
+ * Auto-fills both bodyEn and bodyEs with a full sentence derived from a picked game. Used by the
+ * free-form Compose path where there's no template to slot values into — admin gets a complete
+ * draft they can tweak in the bilingual preview modal. Mirrors the same EN/ES wording the
+ * canonical practice_or_game template uses so messages stay consistent across the two send modes.
+ */
+function applyGameToFreeForm(
+  game: ScheduledGame,
+  setBodyEn: (v: string) => void,
+  setBodyEs: (v: string) => void,
+) {
+  const d = new Date(game.startsAt)
+  const fmt = (locale: string) =>
+    `${d.toLocaleDateString(locale, { weekday: 'short', month: 'numeric', day: 'numeric' })} ${d.toLocaleTimeString(locale, { hour: 'numeric', minute: '2-digit' })}`
+
+  const buildLine = (lang: Language): string => {
+    const what = game.opponentName
+      ? `${GAME_VS_PREFIX[lang]} ${game.opponentName}`
+      : (game.summary?.trim() || PRACTICE_FALLBACK[lang])
+    const when = fmt(lang === 1 ? 'es-US' : 'en-US')
+    const where = game.location?.trim() || ''
+    const wear = game.isHome === true ? WEAR_HOME[lang]
+               : game.isHome === false ? WEAR_AWAY[lang]
+               : null
+
+    // Localized scaffolding ("on/at" → "el/en", "Wear:" → "Vestimenta:") so the free-form text
+    // reads naturally in the recipient's language.
+    if (lang === 1) {
+      const main = where ? `${what} el ${when} en ${where}.` : `${what} el ${when}.`
+      return wear ? `${main} Vestimenta: ${wear}.` : main
+    }
+    const enMain = where ? `${what} on ${when} at ${where}.` : `${what} on ${when}.`
+    return wear ? `${enMain} Wear: ${wear}.` : enMain
+  }
+
+  setBodyEn(buildLine(0))
+  setBodyEs(buildLine(1))
 }
 
 /**
