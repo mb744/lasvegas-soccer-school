@@ -189,50 +189,76 @@ static async Task MigrateWithRetryAsync(AppDbContext db, ILogger logger)
     }
 }
 
-// Ensures the canonical WhatsApp Content template exists. Idempotent on ContentSid: only
-// inserts when the SID is missing, so admin edits to labels / preview made via the UI
-// survive subsequent boots. If you ever cycle the template in Twilio with a new SID, remove
-// the old row through the UI first or it will accumulate orphans.
+// Ensures the canonical WhatsApp Content template exists. Idempotent on the current ContentSid.
+// When the Twilio template is rotated (new SID), we migrate the old DB row to the new SID/name/
+// variables instead of leaving an orphan — that way any past broadcasts that FK'd to the old row
+// keep their history link, and admins don't end up with two near-duplicate template entries.
 static async Task SeedWhatsAppTemplatesAsync(AppDbContext db, ILogger logger)
 {
-    const string contentSid = "HX75106c2d166e9b0e87dbb8ecdc325116";
-    const string oldPreview = "{{1}} on {{2}} at {{3}}. Wear: {{4}}.";
-    const string newPreview = "{{What}} on {{When}} at {{Where}}. Wear: {{wear}}.";
+    // 2026-05-15: rotated from `practice_or_game` (HX75106c2d166e9b0e87dbb8ecdc325116, 4 vars
+    // including `wear`) to `copy_of_practice_or_game` (HXcf898f435a72cb186a959ec2398f585e,
+    // 3 lowercase vars). Wear was dropped. Keep this `priorSids` list growing when the template
+    // rotates again so the migrator can keep absorbing old rows.
+    const string currentSid = "HXcf898f435a72cb186a959ec2398f585e";
+    const string currentName = "copy_of_practice_or_game";
+    const string currentPreview = "{{what}} on {{when}} at {{where}}.";
+    string[] priorSids = { "HX75106c2d166e9b0e87dbb8ecdc325116" };
+    // Any PreviewText we've previously seeded — safe to overwrite because admin hadn't customized.
+    string[] seededPreviews = {
+        "{{1}} on {{2}} at {{3}}. Wear: {{4}}.",
+        "{{What}} on {{When}} at {{Where}}. Wear: {{wear}}.",
+        currentPreview
+    };
 
-    var existing = await db.WhatsAppTemplates.FirstOrDefaultAsync(t => t.ContentSid == contentSid);
-    if (existing is not null)
+    var currentRow = await db.WhatsAppTemplates
+        .Include(t => t.Variables)
+        .FirstOrDefaultAsync(t => t.ContentSid == currentSid);
+    var oldRow = currentRow is null
+        ? await db.WhatsAppTemplates
+            .Include(t => t.Variables)
+            .FirstOrDefaultAsync(t => priorSids.Contains(t.ContentSid))
+        : null;
+
+    var row = currentRow ?? oldRow;
+    if (row is not null)
     {
-        // One-time migration: the original seed used positional preview placeholders before we
-        // learned the Twilio template uses named ones. Update only if the admin hasn't touched it.
-        if (existing.PreviewText == oldPreview)
+        var wasOld = oldRow is not null;
+        row.ContentSid = currentSid;
+        if (row.Name.StartsWith("practice_or_game") || row.Name == currentName)
+            row.Name = currentName;
+        if (string.IsNullOrEmpty(row.PreviewText) || seededPreviews.Contains(row.PreviewText))
+            row.PreviewText = currentPreview;
+
+        // Replace variables wholesale only when migrating from a prior SID. If the admin is on the
+        // current SID, leave their variable rows alone (they may have customized labels/examples).
+        if (wasOld)
         {
-            existing.PreviewText = newPreview;
-            await db.SaveChangesAsync();
-            logger.LogInformation("Updated practice_or_game preview to named placeholders.");
+            db.WhatsAppTemplateVariables.RemoveRange(row.Variables);
+            row.Variables = BuildCanonicalVariables();
+            logger.LogInformation("Migrated WhatsApp template {Old} → {New}.", oldRow!.ContentSid, currentSid);
         }
+        await db.SaveChangesAsync();
         return;
     }
 
     db.WhatsAppTemplates.Add(new WhatsAppTemplate
     {
-        Name = "practice_or_game",
-        ContentSid = contentSid,
+        Name = currentName,
+        ContentSid = currentSid,
         Language = Language.English,
-        Description = "Canonical practice/game reminder (replaces practice_today, practice_tomorrow_es, practice_mw).",
-        // PreviewText uses the same named placeholders the approved Twilio template body uses
-        // ({{What}}, {{When}}, etc.) so the admin's compose preview substitutes correctly when we
-        // render it client-side.
-        PreviewText = "{{What}} on {{When}} at {{Where}}. Wear: {{wear}}.",
-        Variables = new List<WhatsAppTemplateVariable>
-        {
-            new() { Position = 1, Label = "What",  Example = "Practice" },
-            new() { Position = 2, Label = "When",  Example = "Wed 5/20 at 5pm" },
-            new() { Position = 3, Label = "Where", Example = "Sunset Park, field 3" },
-            new() { Position = 4, Label = "wear",  Example = "white jersey" }
-        }
+        Description = "Canonical practice/game reminder.",
+        PreviewText = currentPreview,
+        Variables = BuildCanonicalVariables()
     });
     await db.SaveChangesAsync();
-    logger.LogInformation("Seeded WhatsApp template practice_or_game ({Sid}).", contentSid);
+    logger.LogInformation("Seeded WhatsApp template {Name} ({Sid}).", currentName, currentSid);
+
+    static List<WhatsAppTemplateVariable> BuildCanonicalVariables() => new()
+    {
+        new() { Position = 1, Label = "what",  Example = "Practice" },
+        new() { Position = 2, Label = "when",  Example = "Wed 5/20 at 5pm" },
+        new() { Position = 3, Label = "where", Example = "Sunset Park, field 3" }
+    };
 }
 
 // Default phrase-dictionary entries used by the bilingual preview/send fallback when a Spanish
