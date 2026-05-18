@@ -28,6 +28,9 @@ param activeSeason string = '2026/27'
 @description('Optional custom domain bound to the Container App (e.g. registration.lasvegassoccerschool.org). When set, the app generates outreach links and OAuth redirect URIs against this host instead of the auto-generated Container Apps FQDN. The hostname binding itself is one-time, done via `az containerapp hostname add/bind` after DNS is configured.')
 param customDomain string = ''
 
+@description('Optional bare/apex domain (e.g. lasvegassoccerschool.org). When set, the app 301-redirects requests on the apex to https://registration.<apex>. Needs DNS A record at apex + `az containerapp hostname add/bind` for the apex (parallel to customDomain).')
+param apexDomain string = ''
+
 @description('When true, provisions Azure Communication Services (ACS) + Email Communication Service + Azure-managed email domain. Wired into the container app for email outreach. SMS phone numbers must still be purchased separately and provided via acsSmsFromNumber.')
 param enableAcs bool = false
 
@@ -160,6 +163,7 @@ module containerApp 'modules/container-app.bicep' = {
     sqlConnectionString: sql.outputs.connectionString
     activeSeason: activeSeason
     customDomain: customDomain
+    apexDomain: apexDomain
     adminBootstrapEmail: adminBootstrapEmail
     adminBootstrapPassword: adminBootstrapPassword
     googleOAuthClientId: googleOAuthClientId

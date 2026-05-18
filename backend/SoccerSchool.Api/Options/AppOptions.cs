@@ -9,6 +9,12 @@ public class AppOptions
     /// <summary>Active season label, e.g. "2026/27". Stamped onto new Registrations.</summary>
     public string ActiveSeason { get; set; } = "2026/27";
 
+    /// <summary>Bare/apex domain (no subdomain) that should 301-redirect to the registration
+    /// subdomain. When set and the request's Host header matches, the middleware sends the
+    /// browser to <c>https://registration.{ApexDomain}{path}{query}</c>. Used so TFN reviewers
+    /// (and humans) who type the bare domain reach the live site instead of a parked page.</summary>
+    public string ApexDomain { get; set; } = string.Empty;
+
     public CorsOptions Cors { get; set; } = new();
     public AdminBootstrapOptions Admin { get; set; } = new();
     public OAuthOptions OAuth { get; set; } = new();

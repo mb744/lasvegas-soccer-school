@@ -148,6 +148,28 @@ using (var scope = app.Services.CreateScope())
 // when the Container Apps ingress forwards a TLS-terminated request as plain HTTP.
 app.UseForwardedHeaders();
 
+// If App:ApexDomain is set, redirect any request hitting the bare domain to the registration
+// subdomain. Needed because TFN reviewers (and humans) type "lasvegassoccerschool.org" and would
+// otherwise hit a domain-parking page; this gives them a 301 to the real site instead. Goes
+// AFTER UseForwardedHeaders so Request.Host reflects the original public hostname, and BEFORE
+// auth so anonymous redirects don't trip cookie/OAuth handlers.
+var apexDomain = app.Services
+    .GetRequiredService<Microsoft.Extensions.Options.IOptions<AppOptions>>().Value.ApexDomain;
+if (!string.IsNullOrWhiteSpace(apexDomain))
+{
+    app.Use(async (context, next) =>
+    {
+        if (string.Equals(context.Request.Host.Host, apexDomain, StringComparison.OrdinalIgnoreCase))
+        {
+            var target = $"https://registration.{apexDomain}{context.Request.Path}{context.Request.QueryString}";
+            context.Response.StatusCode = StatusCodes.Status301MovedPermanently;
+            context.Response.Headers.Location = target;
+            return;
+        }
+        await next();
+    });
+}
+
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
