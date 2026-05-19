@@ -404,12 +404,15 @@ export interface TeamSummary {
   createdAt: string
 }
 
+export type ScheduledEventKind = 0 | 1 // Game | Practice
+
 export interface ScheduledGame {
   id: number
   teamId: number
   teamName: string
   messageGroupId: number | null
   messageGroupName: string | null
+  kind: ScheduledEventKind
   startsAt: string
   endsAt: string | null
   summary: string | null
@@ -418,6 +421,13 @@ export interface ScheduledGame {
   opponentName: string | null
   /** true = we're home, false = away, null = unknown (practice/training). Drives wear text. */
   isHome: boolean | null
+}
+
+export interface SavePracticeRequest {
+  startsAt: string  // ISO 8601 in UTC
+  endsAt?: string | null
+  location?: string | null
+  summary?: string | null
 }
 
 export interface TeamDetail {

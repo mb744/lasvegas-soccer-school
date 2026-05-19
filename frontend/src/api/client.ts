@@ -23,6 +23,7 @@ import type {
   SaveMessageGroupRequest,
   SavePhraseTranslationRequest,
   SavePlayerRequest,
+  SavePracticeRequest,
   SaveTeamRequest,
   SaveWhatsAppTemplateRequest,
   ScheduleSyncResult,
@@ -282,6 +283,17 @@ export const Api = {
   async listUpcomingGames(days = 14) {
     const r = await api.get<ScheduledGame[]>('/schedule/games', { params: { days } })
     return r.data
+  },
+  async createPractice(teamId: number, payload: SavePracticeRequest) {
+    const r = await api.post<ScheduledGame>(`/schedule/teams/${teamId}/practices`, payload)
+    return r.data
+  },
+  async updatePractice(id: number, payload: SavePracticeRequest) {
+    const r = await api.put<ScheduledGame>(`/schedule/practices/${id}`, payload)
+    return r.data
+  },
+  async deletePractice(id: number) {
+    await api.delete(`/schedule/practices/${id}`)
   },
 
   // --- Phrase translation dictionary ---

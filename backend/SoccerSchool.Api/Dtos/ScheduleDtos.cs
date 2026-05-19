@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using SoccerSchool.Api.Domain;
 
 namespace SoccerSchool.Api.Dtos;
 
@@ -52,6 +53,7 @@ public record ScheduledGameDto(
     string TeamName,
     int? MessageGroupId,
     string? MessageGroupName,
+    ScheduledEventKind Kind,
     DateTime StartsAt,
     DateTime? EndsAt,
     string? Summary,
@@ -59,5 +61,18 @@ public record ScheduledGameDto(
     string? Description,
     string? OpponentName,
     bool? IsHome);
+
+public record SavePracticeRequest
+{
+    public DateTime StartsAt { get; init; }
+
+    public DateTime? EndsAt { get; init; }
+
+    [MaxLength(512)]
+    public string? Location { get; init; }
+
+    [MaxLength(512)]
+    public string? Summary { get; init; }
+}
 
 public record ScheduleSyncResultDto(bool Success, int Added, int Updated, string Message);

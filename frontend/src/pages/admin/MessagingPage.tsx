@@ -331,7 +331,7 @@ function ComposeTab({
     if (usingTemplate) {
       if (!selectedTemplate) { onError('Pick a template.'); return }
       const missing = selectedTemplate.variables
-        .filter(v => !templateValues[v.label]?.trim())
+        .filter(v => !templateValues[v.position.toString()]?.trim())
         .map(v => v.label)
       if (missing.length) { onError(`Fill in: ${missing.join(', ')}.`); return }
       // Show the rendered template preview before firing the send so admin can verify the
@@ -542,7 +542,7 @@ function ComposeTab({
               <p className="mt-1 text-xs text-rose-700">{t('admin.msgNoTemplates')}</p>
             )}
           </div>
-          {selectedTemplate && upcomingGames.length > 0 && (
+          {upcomingGames.length > 0 && (
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">{t('admin.msgPickGame')}</label>
               <select value=""
@@ -550,8 +550,22 @@ function ComposeTab({
                   const gameId = Number(e.target.value)
                   if (!gameId) return
                   const g = upcomingGames.find(x => x.id === gameId)
-                  if (!g || !selectedTemplate) return
-                  applyGameToTemplate(g, selectedTemplate, setTemplateValues)
+                  if (!g) return
+                  // Auto-select a template by Kind (Practice → practice_*, Game → game_*) if the
+                  // admin hasn't already picked one, so a single dropdown pick fills variables AND
+                  // wires the right template. Use the freshly-picked template for the autofill so
+                  // we don't race the React state update.
+                  let activeTemplate = selectedTemplate
+                  if (!activeTemplate || ((activeTemplate.name.toLowerCase().includes('game')) !== (g.kind === 0))) {
+                    const autoId = pickTemplateForEvent(g, templates)
+                    if (autoId !== '') {
+                      setTemplateId(autoId)
+                      activeTemplate = templates.find(x => x.id === autoId) ?? null
+                    }
+                  }
+                  if (activeTemplate) {
+                    applyGameToTemplate(g, activeTemplate, setTemplateValues)
+                  }
                   // Auto-target the team's linked group if there is one.
                   if (g.messageGroupId) {
                     setRecipientMode('curated')
@@ -574,13 +588,13 @@ function ComposeTab({
             <div className="space-y-2">
               <h3 className="text-sm font-medium text-slate-700">{t('admin.msgFillVariables')}</h3>
               {selectedTemplate.variables.map(v => {
-                // Keying by Label matches the placeholder name in the approved Twilio template
-                // body ({{What}}, {{When}}, ...). Twilio's Content API substitutes ContentVariables
-                // by these names; positional keys would produce no substitution.
-                const key = v.label
+                // Approved templates use positional placeholders ({{1}}, {{2}}, ...). Twilio's
+                // Content API substitutes ContentVariables by these numeric keys, so the values
+                // dict must be keyed by Position as a string.
+                const key = v.position.toString()
                 return (
                   <div key={v.id} className="grid grid-cols-[8rem_1fr] items-center gap-2">
-                    <label className="text-sm text-slate-700">{v.label} <span className="text-slate-400">{`{{${v.label}}}`}</span></label>
+                    <label className="text-sm text-slate-700">{v.label} <span className="text-slate-400">{`{{${v.position}}}`}</span></label>
                     <input type="text"
                       value={templateValues[key] ?? ''}
                       placeholder={v.example ?? ''}
@@ -1382,15 +1396,212 @@ function normalizePhone(input: string): string | null {
   return digits.length >= 11 ? `+${digits}` : null
 }
 
+// --- Practice schedule (admin-managed) ----------------------------------
+
+function PracticeScheduleSection({
+  teamId, games, onChanged, onError, onNotice,
+}: {
+  teamId: number
+  games: ScheduledGame[]
+  onChanged: () => Promise<void> | void
+  onError: (e: string) => void
+  onNotice: (n: string) => void
+}) {
+  const { t } = useTranslation()
+  const practices = useMemo(() => games.filter(g => g.kind === 1), [games])
+  const upcomingGames = useMemo(() => games.filter(g => g.kind === 0), [games])
+
+  const [editingId, setEditingId] = useState<number | 'new' | null>(null)
+  const [startsAt, setStartsAt] = useState('')      // datetime-local format (local time)
+  const [endsAt, setEndsAt] = useState('')
+  const [location, setLocation] = useState('')
+  const [summary, setSummary] = useState('')
+
+  const startNew = () => {
+    setEditingId('new'); setStartsAt(''); setEndsAt(''); setLocation(''); setSummary('')
+  }
+  const startEdit = (p: ScheduledGame) => {
+    setEditingId(p.id)
+    // datetime-local wants YYYY-MM-DDTHH:mm in local time (no timezone). Strip seconds/ms.
+    setStartsAt(toDateTimeLocal(p.startsAt))
+    setEndsAt(p.endsAt ? toDateTimeLocal(p.endsAt) : '')
+    setLocation(p.location ?? '')
+    setSummary(p.summary ?? '')
+  }
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!startsAt) { onError('Start date/time is required.'); return }
+    try {
+      const payload = {
+        startsAt: new Date(startsAt).toISOString(),
+        endsAt: endsAt ? new Date(endsAt).toISOString() : null,
+        location: location.trim() || null,
+        summary: summary.trim() || null,
+      }
+      if (editingId === 'new') await Api.createPractice(teamId, payload)
+      else if (typeof editingId === 'number') await Api.updatePractice(editingId, payload)
+      setEditingId(null)
+      await onChanged()
+      onNotice(t('admin.msgPracticeSaved'))
+    } catch (e: any) { onError(extractError(e)) }
+  }
+
+  const remove = async (p: ScheduledGame) => {
+    if (!confirm(`Delete this practice on ${new Date(p.startsAt).toLocaleString()}?`)) return
+    try {
+      await Api.deletePractice(p.id)
+      await onChanged()
+    } catch (e: any) { onError(extractError(e)) }
+  }
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-lg p-4 space-y-4">
+      {/* Games (read-only, from GotSport scrape) */}
+      {upcomingGames.length > 0 && (
+        <div>
+          <h3 className="font-medium text-slate-700 mb-2">{t('admin.msgUpcoming')}</h3>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-slate-500 border-b">
+                <th className="py-1 pr-4">{t('admin.msgWhen')}</th>
+                <th className="py-1 pr-4">{t('admin.msgSummary')}</th>
+                <th className="py-1 pr-4">{t('admin.msgLocation')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {upcomingGames.map(g => (
+                <tr key={g.id} className="border-b last:border-0">
+                  <td className="py-1 pr-4 whitespace-nowrap">{new Date(g.startsAt).toLocaleString()}</td>
+                  <td className="py-1 pr-4">{g.summary ?? '—'}</td>
+                  <td className="py-1 pr-4">{g.location ?? '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Practices (admin-managed) */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="font-medium text-slate-700">{t('admin.msgPracticeScheduleHeader')}</h3>
+          {editingId === null && (
+            <button onClick={startNew}
+              className="text-sm text-emerald-700 hover:underline">+ {t('admin.msgAddPractice')}</button>
+          )}
+        </div>
+
+        {editingId !== null && (
+          <form onSubmit={save} className="border border-slate-200 rounded p-3 grid sm:grid-cols-2 gap-2 mb-3">
+            <label className="block text-sm">
+              <span className="font-medium text-slate-700">{t('admin.msgPracticeStart')}</span>
+              <input type="datetime-local" value={startsAt} onChange={e => setStartsAt(e.target.value)}
+                className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+            </label>
+            <label className="block text-sm">
+              <span className="font-medium text-slate-700">{t('admin.msgPracticeEnd')}</span>
+              <input type="datetime-local" value={endsAt} onChange={e => setEndsAt(e.target.value)}
+                className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+            </label>
+            <label className="block text-sm sm:col-span-2">
+              <span className="font-medium text-slate-700">{t('admin.msgLocation')}</span>
+              <input type="text" value={location} onChange={e => setLocation(e.target.value)}
+                placeholder="Sunset Park, field 3"
+                className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+            </label>
+            <label className="block text-sm sm:col-span-2">
+              <span className="font-medium text-slate-700">{t('admin.msgPracticeLabel')}</span>
+              <input type="text" value={summary} onChange={e => setSummary(e.target.value)}
+                placeholder="Practice"
+                className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+            </label>
+            <div className="sm:col-span-2 flex items-center gap-3 pt-2">
+              <button type="submit"
+                className="bg-emerald-700 text-white text-sm font-semibold px-4 py-2 rounded-md hover:bg-emerald-800">
+                {editingId === 'new' ? t('admin.msgAddPractice') : t('admin.msgSave')}
+              </button>
+              <button type="button" onClick={() => setEditingId(null)}
+                className="text-sm text-slate-600 hover:underline">{t('admin.msgCancel')}</button>
+            </div>
+          </form>
+        )}
+
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-slate-500 border-b">
+              <th className="py-1 pr-4">{t('admin.msgWhen')}</th>
+              <th className="py-1 pr-4">{t('admin.msgLocation')}</th>
+              <th className="py-1 pr-4">{t('admin.msgSummary')}</th>
+              <th className="py-1 pr-4"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {practices.map(p => (
+              <tr key={p.id} className="border-b last:border-0">
+                <td className="py-1 pr-4 whitespace-nowrap">{new Date(p.startsAt).toLocaleString()}</td>
+                <td className="py-1 pr-4">{p.location ?? '—'}</td>
+                <td className="py-1 pr-4">{p.summary ?? '—'}</td>
+                <td className="py-1 pr-4 text-right whitespace-nowrap">
+                  <button onClick={() => startEdit(p)}
+                    className="text-emerald-700 hover:underline">{t('admin.details')}</button>
+                  <span className="mx-2 text-slate-300">|</span>
+                  <button onClick={() => remove(p)}
+                    className="text-rose-700 hover:underline">{t('admin.delete')}</button>
+                </td>
+              </tr>
+            ))}
+            {practices.length === 0 && (
+              <tr><td colSpan={4} className="py-3 text-center text-slate-400">{t('admin.msgPracticeEmpty')}</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+/** Format a UTC ISO string as a local-time value usable in &lt;input type="datetime-local"&gt;.
+ *  datetime-local has no timezone; this strips to local YYYY-MM-DDTHH:mm. */
+function toDateTimeLocal(iso: string): string {
+  const d = new Date(iso)
+  const pad = (n: number) => n.toString().padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 // --- Schedule helpers ----------------------------------------------------
 
 function formatGameOption(g: ScheduledGame): string {
   const d = new Date(g.startsAt)
   const date = d.toLocaleDateString(undefined, { weekday: 'short', month: 'numeric', day: 'numeric' })
   const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+  // Practice events get a clear prefix so admin doesn't confuse them with games. Games show
+  // home/away + opponent. The Compose picker uses the Kind to also auto-select the right template.
+  if (g.kind === 1) {
+    return `[Practice] ${date} ${time}${g.location ? ` @ ${g.location}` : ''}`
+  }
   const homeAway = g.isHome === true ? ' (H)' : g.isHome === false ? ' (A)' : ''
   const label = g.opponentName ? `vs ${g.opponentName}` : (g.summary?.trim() || g.teamName)
   return `${date} ${time}${homeAway} — ${label}${g.location ? ` @ ${g.location}` : ''}`
+}
+
+/**
+ * When the admin picks an event in Compose, pick the matching template automatically based on
+ * Kind: a Practice event needs a practice-flavored template; a Game event needs a game-flavored
+ * one. Within a kind we prefer English (the pair-routing layer picks ES at send time when
+ * recipients prefer it). Returns the template ID or '' if no kind-matching template exists.
+ */
+function pickTemplateForEvent(
+  event: ScheduledGame,
+  templates: WhatsAppTemplate[],
+): number | '' {
+  const kindMatch = (t: WhatsAppTemplate): boolean => {
+    const n = t.name.toLowerCase()
+    return event.kind === 1 ? n.includes('practice') : n.includes('game')
+  }
+  const englishFirst = (a: WhatsAppTemplate, b: WhatsAppTemplate) => a.language - b.language
+  const match = templates.filter(kindMatch).sort(englishFirst)[0]
+  return match?.id ?? ''
 }
 
 /**
@@ -1455,8 +1666,13 @@ function applyGameToTemplate(
     const next = { ...prev }
     for (const v of template.variables) {
       const label = v.label.toLowerCase()
-      const key = v.label
-      if (label.includes('what')) {
+      // Twilio expects positional keys ("1", "2", ...) so the values dict is keyed by Position.
+      const key = v.position.toString()
+      if (label.includes('opponent')) {
+        next[key] = game.opponentName ?? ''
+      } else if (label.includes('what')) {
+        // Legacy support for the older single-template (`practice_or_game`) that used a "what"
+        // variable combining opponent + practice/game distinction.
         next[key] = game.opponentName
           ? `${GAME_VS_PREFIX[lang]} ${game.opponentName}`
           : (game.summary?.trim() || PRACTICE_FALLBACK[lang])
@@ -1465,7 +1681,7 @@ function applyGameToTemplate(
         next[key] = `${d.toLocaleDateString(locale, { weekday: 'short', month: 'numeric', day: 'numeric' })} ${d.toLocaleTimeString(locale, { hour: 'numeric', minute: '2-digit' })}`
       } else if (label.includes('where') || label.includes('location')) {
         next[key] = game.location?.trim() || ''
-      } else if (label.includes('wear')) {
+      } else if (label.includes('uniform') || label.includes('wear')) {
         if (game.isHome === true) next[key] = WEAR_HOME[lang]
         else if (game.isHome === false) next[key] = WEAR_AWAY[lang]
         // game.isHome === null (practice/training): leave for admin to type.
@@ -1640,28 +1856,18 @@ function TeamsTab({
           </form>
         )}
 
-        {detail && detail.upcomingGames.length > 0 && (
-          <div className="bg-white border border-slate-200 rounded-lg p-4">
-            <h3 className="font-medium text-slate-700 mb-2">{t('admin.msgUpcoming')}</h3>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-slate-500 border-b">
-                  <th className="py-1 pr-4">{t('admin.msgWhen')}</th>
-                  <th className="py-1 pr-4">{t('admin.msgSummary')}</th>
-                  <th className="py-1 pr-4">{t('admin.msgLocation')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {detail.upcomingGames.map(g => (
-                  <tr key={g.id} className="border-b last:border-0">
-                    <td className="py-1 pr-4 whitespace-nowrap">{new Date(g.startsAt).toLocaleString()}</td>
-                    <td className="py-1 pr-4">{g.summary ?? '—'}</td>
-                    <td className="py-1 pr-4">{g.location ?? '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+        {detail && (
+          <PracticeScheduleSection
+            teamId={detail.id}
+            games={detail.upcomingGames}
+            onChanged={async () => {
+              // Reload the team detail so the upcoming list reflects the new/edited/deleted practice.
+              const d = await Api.getTeam(detail.id)
+              setDetail(d)
+            }}
+            onError={onError}
+            onNotice={onNotice}
+          />
         )}
       </section>
     </div>

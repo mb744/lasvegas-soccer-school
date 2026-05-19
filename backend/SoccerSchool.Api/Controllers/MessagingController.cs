@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -245,12 +246,12 @@ public class MessagingController : ControllerBase
             templateVars = (request.TemplateVariables ?? new())
                 .Where(kv => !string.IsNullOrEmpty(kv.Key))
                 .ToDictionary(kv => kv.Key, kv => kv.Value ?? string.Empty);
-            // Validate by the variable's Label (which is the placeholder name in the approved
-            // Twilio template body, e.g. {{What}}). Twilio's Content API substitutes by these
-            // keys, so the dictionary we serialize as ContentVariables must use them.
+            // Validate by the variable's Position rendered as a string. Approved templates use
+            // positional placeholders ({{1}}, {{2}}, ...); Twilio's Content API substitutes by
+            // these numeric keys, so the ContentVariables JSON we serialize must use them.
             var missing = template.Variables
-                .Select(v => v.Label)
-                .Where(label => !templateVars.ContainsKey(label) || string.IsNullOrWhiteSpace(templateVars[label]))
+                .Select(v => v.Position.ToString(CultureInfo.InvariantCulture))
+                .Where(key => !templateVars.ContainsKey(key) || string.IsNullOrWhiteSpace(templateVars[key]))
                 .ToList();
             if (missing.Count > 0)
                 return BadRequest($"Template variables missing: {string.Join(", ", missing)}.");
@@ -707,12 +708,18 @@ public class MessagingController : ControllerBase
         IReadOnlyDictionary<string, string> values)
     {
         if (string.IsNullOrEmpty(previewText))
-            return string.Join("\n", templateVars.Select(v => $"{v.Label}: {(values.TryGetValue(v.Label, out var x) ? x : "")}"));
+            return string.Join("\n", templateVars.Select(v =>
+            {
+                var key = v.Position.ToString(CultureInfo.InvariantCulture);
+                return $"{v.Label}: {(values.TryGetValue(key, out var x) ? x : "")}";
+            }));
         var result = previewText;
         foreach (var v in templateVars)
         {
-            var val = values.TryGetValue(v.Label, out var x) ? x : "";
-            result = result.Replace($"{{{{{v.Label}}}}}", val);
+            var key = v.Position.ToString(CultureInfo.InvariantCulture);
+            var val = values.TryGetValue(key, out var x) ? x : "";
+            // Approved templates use positional placeholders ({{1}}, {{2}}, ...). Match those.
+            result = result.Replace($"{{{{{key}}}}}", val);
         }
         return result;
     }
@@ -776,14 +783,18 @@ public class MessagingController : ControllerBase
             pair.Variables.OrderBy(v => v.Position).Select(v => new WhatsAppTemplateVariableDto(
                 v.Id, v.Position, v.Label, v.Example)).ToList()));
 
-    /// <summary>Strips a trailing _en or _es language suffix from a template name so pairs share
-    /// a base name. <c>practice_or_game</c> and <c>practice_or_game_es</c> both reduce to
-    /// <c>practice_or_game</c>.</summary>
+    /// <summary>Strips a trailing language suffix from a template name so pairs share a base
+    /// name. Recognizes <c>_en</c>, <c>_es</c>, <c>_english</c>, <c>_spanish</c>. So
+    /// <c>practice_english</c> ↔ <c>practice_spanish</c> both reduce to <c>practice</c>, and the
+    /// older <c>practice_or_game</c> ↔ <c>practice_or_game_es</c> pattern still works too.</summary>
     private static string BaseName(string name)
     {
-        if (name.EndsWith("_en", StringComparison.OrdinalIgnoreCase) ||
-            name.EndsWith("_es", StringComparison.OrdinalIgnoreCase))
-            return name[..^3];
+        string[] suffixes = { "_english", "_spanish", "_en", "_es" };
+        foreach (var s in suffixes)
+        {
+            if (name.EndsWith(s, StringComparison.OrdinalIgnoreCase))
+                return name[..^s.Length];
+        }
         return name;
     }
 
@@ -798,13 +809,19 @@ public class MessagingController : ControllerBase
     private async Task<WhatsAppTemplate?> FindPairAsync(WhatsAppTemplate t, CancellationToken ct)
     {
         var baseName = BaseName(t.Name);
-        // Match either `name`, `name_en`, or `name_es` so a pair can use any suffix style.
+        // Match any common suffix style — `_en/_es`, `_english/_spanish`, or no suffix at all.
+        string[] candidates =
+        {
+            baseName,
+            baseName + "_en", baseName + "_es",
+            baseName + "_english", baseName + "_spanish"
+        };
         return await _db.WhatsAppTemplates
             .Include(x => x.Variables)
             .FirstOrDefaultAsync(x =>
                 x.Id != t.Id &&
                 x.Language != t.Language &&
-                (x.Name == baseName || x.Name == baseName + "_en" || x.Name == baseName + "_es"),
+                candidates.Contains(x.Name),
                 ct);
     }
 

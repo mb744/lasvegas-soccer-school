@@ -60,7 +60,7 @@ public class ScheduleController : ControllerBase
             .OrderBy(g => g.StartsAt)
             .Select(g => new ScheduledGameDto(
                 g.Id, team.Id, team.Name, team.MessageGroupId, team.MessageGroup?.Name,
-                g.StartsAt, g.EndsAt, g.Summary, g.Location, g.Description,
+                g.Kind, g.StartsAt, g.EndsAt, g.Summary, g.Location, g.Description,
                 g.OpponentName, g.IsHome))
             .ToList();
 
@@ -156,6 +156,72 @@ public class ScheduleController : ControllerBase
         return Ok(new ScheduleSyncResultDto(true, result.Added, result.Updated, result.Message));
     }
 
+    // --- Manual practice CRUD ---
+    //
+    // Practices are admin-entered (date + location) rather than scraped — GotSport doesn't list
+    // practices. They live in the same ScheduledGames table as games with Kind=Practice and a
+    // synthesized ExternalUid (`practice-{guid}`) so the unique (team, uid) index doesn't trip.
+
+    [HttpPost("teams/{teamId:int}/practices")]
+    public async Task<ActionResult<ScheduledGameDto>> CreatePractice(
+        int teamId, [FromBody] SavePracticeRequest request, CancellationToken ct)
+    {
+        var team = await _db.Teams.Include(t => t.MessageGroup).FirstOrDefaultAsync(t => t.Id == teamId, ct);
+        if (team is null) return NotFound();
+        if (request.StartsAt == default) return BadRequest("Start time is required.");
+
+        var practice = new ScheduledGame
+        {
+            TeamId = team.Id,
+            Kind = ScheduledEventKind.Practice,
+            ExternalUid = $"practice-{Guid.NewGuid():N}",
+            StartsAt = DateTime.SpecifyKind(request.StartsAt, DateTimeKind.Utc),
+            EndsAt = request.EndsAt.HasValue ? DateTime.SpecifyKind(request.EndsAt.Value, DateTimeKind.Utc) : null,
+            Location = string.IsNullOrWhiteSpace(request.Location) ? null : request.Location.Trim(),
+            Summary = string.IsNullOrWhiteSpace(request.Summary) ? "Practice" : request.Summary.Trim(),
+            CreatedAt = DateTime.UtcNow,
+            LastSeenAt = DateTime.UtcNow
+        };
+        _db.ScheduledGames.Add(practice);
+        await _db.SaveChangesAsync(ct);
+        return Ok(ToDto(practice, team));
+    }
+
+    [HttpPut("practices/{id:int}")]
+    public async Task<ActionResult<ScheduledGameDto>> UpdatePractice(
+        int id, [FromBody] SavePracticeRequest request, CancellationToken ct)
+    {
+        var practice = await _db.ScheduledGames
+            .Include(g => g.Team).ThenInclude(t => t!.MessageGroup)
+            .FirstOrDefaultAsync(g => g.Id == id && g.Kind == ScheduledEventKind.Practice, ct);
+        if (practice is null) return NotFound();
+        if (request.StartsAt == default) return BadRequest("Start time is required.");
+
+        practice.StartsAt = DateTime.SpecifyKind(request.StartsAt, DateTimeKind.Utc);
+        practice.EndsAt = request.EndsAt.HasValue ? DateTime.SpecifyKind(request.EndsAt.Value, DateTimeKind.Utc) : null;
+        practice.Location = string.IsNullOrWhiteSpace(request.Location) ? null : request.Location.Trim();
+        practice.Summary = string.IsNullOrWhiteSpace(request.Summary) ? "Practice" : request.Summary.Trim();
+        practice.LastSeenAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        return Ok(ToDto(practice, practice.Team!));
+    }
+
+    [HttpDelete("practices/{id:int}")]
+    public async Task<IActionResult> DeletePractice(int id, CancellationToken ct)
+    {
+        var practice = await _db.ScheduledGames
+            .FirstOrDefaultAsync(g => g.Id == id && g.Kind == ScheduledEventKind.Practice, ct);
+        if (practice is null) return NotFound();
+        _db.ScheduledGames.Remove(practice);
+        await _db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
+    private static ScheduledGameDto ToDto(ScheduledGame g, Team team) => new(
+        g.Id, team.Id, team.Name, team.MessageGroupId, team.MessageGroup?.Name,
+        g.Kind, g.StartsAt, g.EndsAt, g.Summary, g.Location, g.Description,
+        g.OpponentName, g.IsHome);
+
     /// <summary>
     /// Upcoming games across all teams within the given window. Used by the Compose tab game
     /// picker to autofill template variables.
@@ -175,7 +241,7 @@ public class ScheduleController : ControllerBase
             .OrderBy(g => g.StartsAt)
             .Select(g => new ScheduledGameDto(
                 g.Id, g.TeamId, g.Team!.Name, g.Team.MessageGroupId, g.Team.MessageGroup != null ? g.Team.MessageGroup.Name : null,
-                g.StartsAt, g.EndsAt, g.Summary, g.Location, g.Description,
+                g.Kind, g.StartsAt, g.EndsAt, g.Summary, g.Location, g.Description,
                 g.OpponentName, g.IsHome))
             .ToListAsync(ct);
         return Ok(games);

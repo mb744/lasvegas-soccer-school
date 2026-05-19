@@ -363,6 +363,13 @@ const es: Translations = {
     msgUpcomingGames: 'próximos',
     msgSummary: 'Resumen',
     msgLocation: 'Ubicación',
+    msgPracticeScheduleHeader: 'Horario de prácticas',
+    msgAddPractice: 'Agregar práctica',
+    msgPracticeStart: 'Inicio (fecha y hora)',
+    msgPracticeEnd: 'Fin (opcional)',
+    msgPracticeLabel: 'Etiqueta (opcional)',
+    msgPracticeEmpty: 'No hay prácticas en el horario. Agregue una para empezar a enviar recordatorios.',
+    msgPracticeSaved: 'Práctica guardada.',
   },
 }
 

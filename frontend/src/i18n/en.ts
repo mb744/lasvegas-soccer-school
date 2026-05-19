@@ -361,6 +361,13 @@ const en = {
     msgUpcomingGames: 'upcoming',
     msgSummary: 'Summary',
     msgLocation: 'Location',
+    msgPracticeScheduleHeader: 'Practice schedule',
+    msgAddPractice: 'Add practice',
+    msgPracticeStart: 'Start (date & time)',
+    msgPracticeEnd: 'End (optional)',
+    msgPracticeLabel: 'Label (optional)',
+    msgPracticeEmpty: 'No practices on the schedule. Add one to start sending reminders.',
+    msgPracticeSaved: 'Practice saved.',
   },
 }
 

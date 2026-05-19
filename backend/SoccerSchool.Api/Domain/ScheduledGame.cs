@@ -14,8 +14,14 @@ public class ScheduledGame
     public int TeamId { get; set; }
     public Team? Team { get; set; }
 
+    /// <summary>Game (scraped from GotSport, has opponent + home/away) or Practice (admin-entered,
+    /// no opponent). Drives template-picker auto-selection in Compose.</summary>
+    public ScheduledEventKind Kind { get; set; } = ScheduledEventKind.Game;
+
     /// <summary>The ICS UID property — the calendar event's stable identifier. Used as the upsert
-    /// key so a re-sync updates the existing row rather than creating duplicates.</summary>
+    /// key so a re-sync updates the existing row rather than creating duplicates. For manually-
+    /// added practices, set to a generated value (e.g. <c>practice-{guid}</c>) so the unique
+    /// (team, ExternalUid) index doesn't collide.</summary>
     [Required, MaxLength(256)]
     public string ExternalUid { get; set; } = string.Empty;
 
