@@ -20,10 +20,12 @@ import type {
   RegistrationDetail,
   RegistrationSummary,
   PhraseTranslation,
+  PracticeSeriesCreated,
   SaveMessageGroupRequest,
   SavePhraseTranslationRequest,
   SavePlayerRequest,
   SavePracticeRequest,
+  SavePracticeSeriesRequest,
   SaveTeamRequest,
   SaveWhatsAppTemplateRequest,
   ScheduleSyncResult,
@@ -286,6 +288,10 @@ export const Api = {
   },
   async createPractice(teamId: number, payload: SavePracticeRequest) {
     const r = await api.post<ScheduledGame>(`/schedule/teams/${teamId}/practices`, payload)
+    return r.data
+  },
+  async createPracticeSeries(teamId: number, payload: SavePracticeSeriesRequest) {
+    const r = await api.post<PracticeSeriesCreated>(`/schedule/teams/${teamId}/practice-series`, payload)
     return r.data
   },
   async updatePractice(id: number, payload: SavePracticeRequest) {

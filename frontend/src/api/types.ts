@@ -430,6 +430,23 @@ export interface SavePracticeRequest {
   summary?: string | null
 }
 
+export interface SavePracticeSeriesRequest {
+  startDate: string  // YYYY-MM-DD
+  endDate: string    // YYYY-MM-DD
+  startTime: string  // HH:mm
+  endTime?: string | null
+  /** 0 = Sunday … 6 = Saturday */
+  daysOfWeek: number[]
+  location?: string | null
+  summary?: string | null
+}
+
+export interface PracticeSeriesCreated {
+  seriesId: string
+  count: number
+  occurrences: ScheduledGame[]
+}
+
 export interface TeamDetail {
   id: number
   name: string

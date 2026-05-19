@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -185,6 +186,77 @@ public class ScheduleController : ControllerBase
         _db.ScheduledGames.Add(practice);
         await _db.SaveChangesAsync(ct);
         return Ok(ToDto(practice, team));
+    }
+
+    /// <summary>
+    /// Materialize a recurring practice series. For each date in [StartDate, EndDate] whose
+    /// day-of-week appears in DaysOfWeek, creates one ScheduledGame at StartTime (local).
+    /// All occurrences share a single SeriesId so the UI can show "(series)" badges and so a
+    /// future "cancel entire series" action can target them as a group.
+    /// </summary>
+    [HttpPost("teams/{teamId:int}/practice-series")]
+    public async Task<ActionResult<PracticeSeriesCreatedDto>> CreatePracticeSeries(
+        int teamId, [FromBody] SavePracticeSeriesRequest request, CancellationToken ct)
+    {
+        var team = await _db.Teams.Include(t => t.MessageGroup).FirstOrDefaultAsync(t => t.Id == teamId, ct);
+        if (team is null) return NotFound();
+        if (request.StartDate == default || request.EndDate == default)
+            return BadRequest("StartDate and EndDate are required.");
+        if (request.EndDate.Date < request.StartDate.Date)
+            return BadRequest("EndDate must be on or after StartDate.");
+        if (request.DaysOfWeek is null || request.DaysOfWeek.Length == 0)
+            return BadRequest("Pick at least one day of the week.");
+        if (!TryParseTime(request.StartTime, out var startTime))
+            return BadRequest("StartTime must be HH:mm (e.g. \"17:00\").");
+        TimeSpan? endTime = null;
+        if (!string.IsNullOrWhiteSpace(request.EndTime))
+        {
+            if (!TryParseTime(request.EndTime, out var et)) return BadRequest("EndTime must be HH:mm.");
+            endTime = et;
+        }
+
+        // Soft cap so an admin who fat-fingers a 10-year range doesn't insert 3,000 rows.
+        var span = (request.EndDate.Date - request.StartDate.Date).Days + 1;
+        if (span > 365) return BadRequest("Series spans more than 365 days; trim the date range.");
+
+        var dows = new HashSet<DayOfWeek>(request.DaysOfWeek.Select(d => (DayOfWeek)d));
+        var seriesId = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+        var added = new List<ScheduledGame>();
+
+        for (var date = request.StartDate.Date; date <= request.EndDate.Date; date = date.AddDays(1))
+        {
+            if (!dows.Contains(date.DayOfWeek)) continue;
+            var startsAtLocal = date + startTime;
+            var endsAtLocal = endTime.HasValue ? (DateTime?)(date + endTime.Value) : null;
+            var practice = new ScheduledGame
+            {
+                TeamId = team.Id,
+                Kind = ScheduledEventKind.Practice,
+                SeriesId = seriesId,
+                ExternalUid = $"practice-{seriesId:N}-{date:yyyyMMdd}",
+                StartsAt = DateTime.SpecifyKind(startsAtLocal, DateTimeKind.Utc),
+                EndsAt = endsAtLocal.HasValue ? DateTime.SpecifyKind(endsAtLocal.Value, DateTimeKind.Utc) : null,
+                Location = string.IsNullOrWhiteSpace(request.Location) ? null : request.Location.Trim(),
+                Summary = string.IsNullOrWhiteSpace(request.Summary) ? "Practice" : request.Summary.Trim(),
+                CreatedAt = now,
+                LastSeenAt = now
+            };
+            _db.ScheduledGames.Add(practice);
+            added.Add(practice);
+        }
+        await _db.SaveChangesAsync(ct);
+
+        return Ok(new PracticeSeriesCreatedDto(
+            seriesId,
+            added.Count,
+            added.Select(p => ToDto(p, team)).ToList()));
+    }
+
+    private static bool TryParseTime(string text, out TimeSpan time)
+    {
+        // Accept "HH:mm" or "H:mm" 24-hour.
+        return TimeSpan.TryParseExact(text, new[] { @"hh\:mm", @"h\:mm" }, CultureInfo.InvariantCulture, out time);
     }
 
     [HttpPut("practices/{id:int}")]

@@ -1411,14 +1411,34 @@ function PracticeScheduleSection({
   const practices = useMemo(() => games.filter(g => g.kind === 1), [games])
   const upcomingGames = useMemo(() => games.filter(g => g.kind === 0), [games])
 
-  const [editingId, setEditingId] = useState<number | 'new' | null>(null)
+  const [editingId, setEditingId] = useState<number | 'new' | 'series' | null>(null)
   const [startsAt, setStartsAt] = useState('')      // datetime-local format (local time)
   const [endsAt, setEndsAt] = useState('')
   const [location, setLocation] = useState('')
   const [summary, setSummary] = useState('')
 
+  // Recurring-series form state (only used when editingId === 'series'):
+  const [seriesStartDate, setSeriesStartDate] = useState('')
+  const [seriesEndDate, setSeriesEndDate] = useState('')
+  const [seriesStartTime, setSeriesStartTime] = useState('17:00')
+  const [seriesEndTime, setSeriesEndTime] = useState('')
+  const [seriesDays, setSeriesDays] = useState<Set<number>>(new Set())
+
   const startNew = () => {
     setEditingId('new'); setStartsAt(''); setEndsAt(''); setLocation(''); setSummary('')
+  }
+  const startSeries = () => {
+    setEditingId('series')
+    setSeriesStartDate(''); setSeriesEndDate('')
+    setSeriesStartTime('17:00'); setSeriesEndTime('')
+    setSeriesDays(new Set()); setLocation(''); setSummary('')
+  }
+  const toggleDay = (d: number) => {
+    setSeriesDays(prev => {
+      const next = new Set(prev)
+      if (next.has(d)) next.delete(d); else next.add(d)
+      return next
+    })
   }
   const startEdit = (p: ScheduledGame) => {
     setEditingId(p.id)
@@ -1431,6 +1451,25 @@ function PracticeScheduleSection({
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (editingId === 'series') {
+      if (!seriesStartDate || !seriesEndDate) { onError('Start and end date are required.'); return }
+      if (seriesDays.size === 0) { onError('Pick at least one day of the week.'); return }
+      try {
+        const r = await Api.createPracticeSeries(teamId, {
+          startDate: seriesStartDate,
+          endDate: seriesEndDate,
+          startTime: seriesStartTime,
+          endTime: seriesEndTime || null,
+          daysOfWeek: Array.from(seriesDays).sort(),
+          location: location.trim() || null,
+          summary: summary.trim() || null,
+        })
+        setEditingId(null)
+        await onChanged()
+        onNotice(t('admin.msgPracticeSeriesCreated', { count: r.count }))
+      } catch (e: any) { onError(extractError(e)) }
+      return
+    }
     if (!startsAt) { onError('Start date/time is required.'); return }
     try {
       const payload = {
@@ -1487,12 +1526,16 @@ function PracticeScheduleSection({
         <div className="flex items-center justify-between mb-2">
           <h3 className="font-medium text-slate-700">{t('admin.msgPracticeScheduleHeader')}</h3>
           {editingId === null && (
-            <button onClick={startNew}
-              className="text-sm text-emerald-700 hover:underline">+ {t('admin.msgAddPractice')}</button>
+            <div className="flex gap-3">
+              <button onClick={startNew}
+                className="text-sm text-emerald-700 hover:underline">+ {t('admin.msgAddPractice')}</button>
+              <button onClick={startSeries}
+                className="text-sm text-emerald-700 hover:underline">+ {t('admin.msgAddPracticeSeries')}</button>
+            </div>
           )}
         </div>
 
-        {editingId !== null && (
+        {editingId !== null && editingId !== 'series' && (
           <form onSubmit={save} className="border border-slate-200 rounded p-3 grid sm:grid-cols-2 gap-2 mb-3">
             <label className="block text-sm">
               <span className="font-medium text-slate-700">{t('admin.msgPracticeStart')}</span>
@@ -1520,6 +1563,70 @@ function PracticeScheduleSection({
               <button type="submit"
                 className="bg-emerald-700 text-white text-sm font-semibold px-4 py-2 rounded-md hover:bg-emerald-800">
                 {editingId === 'new' ? t('admin.msgAddPractice') : t('admin.msgSave')}
+              </button>
+              <button type="button" onClick={() => setEditingId(null)}
+                className="text-sm text-slate-600 hover:underline">{t('admin.msgCancel')}</button>
+            </div>
+          </form>
+        )}
+
+        {editingId === 'series' && (
+          <form onSubmit={save} className="border border-slate-200 rounded p-3 grid sm:grid-cols-2 gap-2 mb-3">
+            <label className="block text-sm">
+              <span className="font-medium text-slate-700">{t('admin.msgSeriesStartDate')}</span>
+              <input type="date" value={seriesStartDate} onChange={e => setSeriesStartDate(e.target.value)}
+                className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+            </label>
+            <label className="block text-sm">
+              <span className="font-medium text-slate-700">{t('admin.msgSeriesEndDate')}</span>
+              <input type="date" value={seriesEndDate} onChange={e => setSeriesEndDate(e.target.value)}
+                className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+            </label>
+            <label className="block text-sm">
+              <span className="font-medium text-slate-700">{t('admin.msgSeriesStartTime')}</span>
+              <input type="time" value={seriesStartTime} onChange={e => setSeriesStartTime(e.target.value)}
+                className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+            </label>
+            <label className="block text-sm">
+              <span className="font-medium text-slate-700">{t('admin.msgSeriesEndTime')}</span>
+              <input type="time" value={seriesEndTime} onChange={e => setSeriesEndTime(e.target.value)}
+                className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+            </label>
+            <div className="sm:col-span-2">
+              <span className="block text-sm font-medium text-slate-700 mb-1">{t('admin.msgSeriesDays')}</span>
+              <div className="flex flex-wrap gap-1">
+                {[
+                  { d: 0, label: t('admin.msgDaySun') },
+                  { d: 1, label: t('admin.msgDayMon') },
+                  { d: 2, label: t('admin.msgDayTue') },
+                  { d: 3, label: t('admin.msgDayWed') },
+                  { d: 4, label: t('admin.msgDayThu') },
+                  { d: 5, label: t('admin.msgDayFri') },
+                  { d: 6, label: t('admin.msgDaySat') },
+                ].map(({ d, label }) => (
+                  <button key={d} type="button" onClick={() => toggleDay(d)}
+                    className={`text-xs px-2 py-1 rounded border ${seriesDays.has(d) ? 'bg-emerald-700 text-white border-emerald-700' : 'bg-white border-slate-300 text-slate-700'}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <label className="block text-sm sm:col-span-2">
+              <span className="font-medium text-slate-700">{t('admin.msgLocation')}</span>
+              <input type="text" value={location} onChange={e => setLocation(e.target.value)}
+                placeholder="Sunset Park, field 3"
+                className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+            </label>
+            <label className="block text-sm sm:col-span-2">
+              <span className="font-medium text-slate-700">{t('admin.msgPracticeLabel')}</span>
+              <input type="text" value={summary} onChange={e => setSummary(e.target.value)}
+                placeholder="Practice"
+                className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+            </label>
+            <div className="sm:col-span-2 flex items-center gap-3 pt-2">
+              <button type="submit"
+                className="bg-emerald-700 text-white text-sm font-semibold px-4 py-2 rounded-md hover:bg-emerald-800">
+                {t('admin.msgCreateSeries')}
               </button>
               <button type="button" onClick={() => setEditingId(null)}
                 className="text-sm text-slate-600 hover:underline">{t('admin.msgCancel')}</button>

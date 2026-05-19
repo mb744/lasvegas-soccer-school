@@ -18,6 +18,10 @@ public class ScheduledGame
     /// no opponent). Drives template-picker auto-selection in Compose.</summary>
     public ScheduledEventKind Kind { get; set; } = ScheduledEventKind.Game;
 
+    /// <summary>When this row is one occurrence of a recurring practice series, this is the
+    /// shared series identifier. Null for one-off practices and for all games.</summary>
+    public Guid? SeriesId { get; set; }
+
     /// <summary>The ICS UID property — the calendar event's stable identifier. Used as the upsert
     /// key so a re-sync updates the existing row rather than creating duplicates. For manually-
     /// added practices, set to a generated value (e.g. <c>practice-{guid}</c>) so the unique
