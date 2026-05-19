@@ -63,9 +63,6 @@ param twilioConversationsServiceSid string = ''
 @description('Optional custom domain (e.g. registration.lasvegassoccerschool.org). When set, PublicBaseUrl + OAuth redirect URIs use it instead of the auto-generated Container Apps FQDN. The actual hostname binding (managed cert + ingress.customDomains) is done by a post-Bicep step in deploy.yml because cert provisioning requires the hostname to be already registered on the container app, which Bicep cannot do in a single pass.')
 param customDomain string = ''
 
-@description('Optional bare/apex domain (e.g. lasvegassoccerschool.org). When set, App middleware 301-redirects requests hitting the apex to https://registration.<apex>, so TFN reviewers and humans typing the bare domain land on the real site instead of a parking page. Requires DNS A record at apex + post-Bicep `az containerapp hostname add/bind` for the apex.')
-param apexDomain string = ''
-
 @description('Min replicas (0 enables scale-to-zero).')
 param minReplicas int = 0
 param maxReplicas int = 3
@@ -112,9 +109,6 @@ var baseEnv = [
   // CORS not strictly needed in single-origin deploy but kept for parity with dev.
   { name: 'App__Cors__AllowedOrigins__0', value: publicBaseUrl }
 ]
-var apexEnv = !empty(apexDomain) ? [
-  { name: 'App__ApexDomain', value: apexDomain }
-] : []
 var googleEnv = hasGoogle ? [
   { name: 'App__OAuth__Google__ClientId', value: googleOAuthClientId }
   { name: 'App__OAuth__Google__ClientSecret', secretRef: 'google-oauth-secret' }
@@ -154,7 +148,7 @@ var twilioWhatsAppTemplateEnv = hasTwilio && !empty(twilioWhatsAppTemplateSid) ?
 var twilioConversationsEnv = hasTwilio && !empty(twilioConversationsServiceSid) ? [
   { name: 'Twilio__ConversationsServiceSid', value: twilioConversationsServiceSid }
 ] : []
-var allEnv = concat(baseEnv, apexEnv, googleEnv, facebookEnv, adminEnv, acsEnvCore, acsEnvEmail, acsEnvSms, twilioEnv, twilioWhatsAppEnv, twilioWhatsAppTemplateEnv, twilioConversationsEnv)
+var allEnv = concat(baseEnv, googleEnv, facebookEnv, adminEnv, acsEnvCore, acsEnvEmail, acsEnvSms, twilioEnv, twilioWhatsAppEnv, twilioWhatsAppTemplateEnv, twilioConversationsEnv)
 
 resource app 'Microsoft.App/containerApps@2024-03-01' = {
   name: name

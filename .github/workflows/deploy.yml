@@ -96,7 +96,6 @@ jobs:
             sqlAadAdminLogin=${{ vars.SQL_AAD_ADMIN_LOGIN }}
             activeSeason=${{ vars.ACTIVE_SEASON || '2026/27' }}
             customDomain=${{ vars.CUSTOM_DOMAIN }}
-            apexDomain=${{ vars.APEX_DOMAIN }}
             adminBootstrapEmail=${{ vars.ADMIN_BOOTSTRAP_EMAIL }}
             adminBootstrapPassword=${{ secrets.ADMIN_BOOTSTRAP_PASSWORD }}
             googleOAuthClientId=${{ vars.GOOGLE_OAUTH_CLIENT_ID }}
@@ -158,22 +157,4 @@ jobs:
           # `hostname bind --validation-method CNAME` provisions a managed cert if none
           # exists for this hostname yet, otherwise re-binds the existing one.
           az containerapp hostname bind -g "$RG" -n "$APP_NAME" --hostname "$DOMAIN" --environment "$ENV_NAME" --validation-method CNAME
-          az containerapp hostname list -g "$RG" -n "$APP_NAME" -o table
-
-      # Apex hostname binding. Same pattern as customDomain but uses --validation-method TXT
-      # because the apex can't have a CNAME at the zone root (RFC). Requires an A record at the
-      # apex pointing to the Container App env's static IP, plus an asuid.<apex> TXT record with
-      # the customDomainVerificationId for the cert provisioning challenge.
-      - name: Bind apex domain (idempotent)
-        if: vars.APEX_DOMAIN != ''
-        env:
-          RG: ${{ vars.AZURE_RESOURCE_GROUP }}
-          APP_NAME: lvss-app
-          APEX: ${{ vars.APEX_DOMAIN }}
-        run: |
-          set -e
-          ENV_NAME=$(az containerapp env list -g "$RG" --query "[0].name" -o tsv)
-          echo "Environment: $ENV_NAME"
-          az containerapp hostname add  -g "$RG" -n "$APP_NAME" --hostname "$APEX" || echo "hostname add: already registered or transient — continuing"
-          az containerapp hostname bind -g "$RG" -n "$APP_NAME" --hostname "$APEX" --environment "$ENV_NAME" --validation-method TXT
           az containerapp hostname list -g "$RG" -n "$APP_NAME" -o table
