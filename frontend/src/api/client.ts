@@ -23,6 +23,7 @@ import type {
   EventRecipient,
   InboundMessage,
   PracticeSeriesCreated,
+  SaveGameRequest,
   SaveMessageGroupRequest,
   SavePhraseTranslationRequest,
   SavePlayerRequest,
@@ -309,6 +310,21 @@ export const Api = {
   },
   async cancelPractice(id: number) {
     const r = await api.post<ScheduledGame>(`/schedule/practices/${id}/cancel`, {})
+    return r.data
+  },
+  async createGame(teamId: number, payload: SaveGameRequest) {
+    const r = await api.post<ScheduledGame>(`/schedule/teams/${teamId}/games`, payload)
+    return r.data
+  },
+  async updateGame(id: number, payload: SaveGameRequest) {
+    const r = await api.put<ScheduledGame>(`/schedule/games/${id}`, payload)
+    return r.data
+  },
+  async deleteGame(id: number) {
+    await api.delete(`/schedule/games/${id}`)
+  },
+  async cancelGame(id: number) {
+    const r = await api.post<ScheduledGame>(`/schedule/games/${id}/cancel`, {})
     return r.data
   },
   async listEventRecipients(eventId: number) {

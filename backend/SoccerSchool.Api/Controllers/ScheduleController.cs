@@ -293,19 +293,98 @@ public class ScheduleController : ControllerBase
     /// that linked to it remain readable and so the cancellation-notification flow can look up
     /// who previously got the reminder. Hides it from the event picker; UI renders it muted.</summary>
     [HttpPost("practices/{id:int}/cancel")]
-    public async Task<ActionResult<ScheduledGameDto>> CancelPractice(int id, CancellationToken ct)
+    public Task<ActionResult<ScheduledGameDto>> CancelPractice(int id, CancellationToken ct) =>
+        CancelEventInternal(id, ScheduledEventKind.Practice, ct);
+
+    // --- Manual game CRUD ---
+    //
+    // Mirrors the practice endpoints. Manual games coexist with GotSport-scraped games in the
+    // same table (Kind=Game). They get a synthesized ExternalUid (`manual-game-{guid}`) so the
+    // unique (team, uid) index doesn't collide with scrape upserts.
+
+    [HttpPost("teams/{teamId:int}/games")]
+    public async Task<ActionResult<ScheduledGameDto>> CreateGame(
+        int teamId, [FromBody] SaveGameRequest request, CancellationToken ct)
     {
-        var practice = await _db.ScheduledGames
-            .Include(g => g.Team).ThenInclude(t => t!.MessageGroup)
-            .FirstOrDefaultAsync(g => g.Id == id && g.Kind == ScheduledEventKind.Practice, ct);
-        if (practice is null) return NotFound();
-        if (!practice.IsCancelled)
+        var team = await _db.Teams.Include(t => t.MessageGroup).FirstOrDefaultAsync(t => t.Id == teamId, ct);
+        if (team is null) return NotFound();
+        if (request.StartsAt == default) return BadRequest("Start time is required.");
+
+        var game = new ScheduledGame
         {
-            practice.IsCancelled = true;
-            practice.CancelledAt = DateTime.UtcNow;
+            TeamId = team.Id,
+            Kind = ScheduledEventKind.Game,
+            ExternalUid = $"manual-game-{Guid.NewGuid():N}",
+            StartsAt = DateTime.SpecifyKind(request.StartsAt, DateTimeKind.Utc),
+            EndsAt = request.EndsAt.HasValue ? DateTime.SpecifyKind(request.EndsAt.Value, DateTimeKind.Utc) : null,
+            OpponentName = string.IsNullOrWhiteSpace(request.OpponentName) ? null : request.OpponentName.Trim(),
+            IsHome = request.IsHome,
+            Location = string.IsNullOrWhiteSpace(request.Location) ? null : request.Location.Trim(),
+            Summary = string.IsNullOrWhiteSpace(request.Summary)
+                ? (string.IsNullOrWhiteSpace(request.OpponentName) ? "Game" : $"vs {request.OpponentName.Trim()}")
+                : request.Summary.Trim(),
+            CreatedAt = DateTime.UtcNow,
+            LastSeenAt = DateTime.UtcNow
+        };
+        _db.ScheduledGames.Add(game);
+        await _db.SaveChangesAsync(ct);
+        return Ok(ToDto(game, team));
+    }
+
+    [HttpPut("games/{id:int}")]
+    public async Task<ActionResult<ScheduledGameDto>> UpdateGame(
+        int id, [FromBody] SaveGameRequest request, CancellationToken ct)
+    {
+        var game = await _db.ScheduledGames
+            .Include(g => g.Team).ThenInclude(t => t!.MessageGroup)
+            .FirstOrDefaultAsync(g => g.Id == id && g.Kind == ScheduledEventKind.Game, ct);
+        if (game is null) return NotFound();
+        if (request.StartsAt == default) return BadRequest("Start time is required.");
+
+        game.StartsAt = DateTime.SpecifyKind(request.StartsAt, DateTimeKind.Utc);
+        game.EndsAt = request.EndsAt.HasValue ? DateTime.SpecifyKind(request.EndsAt.Value, DateTimeKind.Utc) : null;
+        game.OpponentName = string.IsNullOrWhiteSpace(request.OpponentName) ? null : request.OpponentName.Trim();
+        game.IsHome = request.IsHome;
+        game.Location = string.IsNullOrWhiteSpace(request.Location) ? null : request.Location.Trim();
+        game.Summary = string.IsNullOrWhiteSpace(request.Summary)
+            ? (string.IsNullOrWhiteSpace(request.OpponentName) ? "Game" : $"vs {request.OpponentName.Trim()}")
+            : request.Summary.Trim();
+        game.LastSeenAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        return Ok(ToDto(game, game.Team!));
+    }
+
+    [HttpDelete("games/{id:int}")]
+    public async Task<IActionResult> DeleteGame(int id, CancellationToken ct)
+    {
+        // Note: deleting a scraped GotSport game will re-appear on the next sync (upsert by UID).
+        // Manual games (manual-game-* UID) stay deleted.
+        var game = await _db.ScheduledGames
+            .FirstOrDefaultAsync(g => g.Id == id && g.Kind == ScheduledEventKind.Game, ct);
+        if (game is null) return NotFound();
+        _db.ScheduledGames.Remove(game);
+        await _db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
+    [HttpPost("games/{id:int}/cancel")]
+    public Task<ActionResult<ScheduledGameDto>> CancelGame(int id, CancellationToken ct) =>
+        CancelEventInternal(id, ScheduledEventKind.Game, ct);
+
+    private async Task<ActionResult<ScheduledGameDto>> CancelEventInternal(
+        int id, ScheduledEventKind kind, CancellationToken ct)
+    {
+        var ev = await _db.ScheduledGames
+            .Include(g => g.Team).ThenInclude(t => t!.MessageGroup)
+            .FirstOrDefaultAsync(g => g.Id == id && g.Kind == kind, ct);
+        if (ev is null) return NotFound();
+        if (!ev.IsCancelled)
+        {
+            ev.IsCancelled = true;
+            ev.CancelledAt = DateTime.UtcNow;
             await _db.SaveChangesAsync(ct);
         }
-        return Ok(ToDto(practice, practice.Team!));
+        return Ok(ToDto(ev, ev.Team!));
     }
 
     /// <summary>Returns the distinct recipients (phone + name + language) of every prior broadcast

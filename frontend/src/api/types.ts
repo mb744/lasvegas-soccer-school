@@ -441,6 +441,15 @@ export interface SavePracticeRequest {
   summary?: string | null
 }
 
+export interface SaveGameRequest {
+  startsAt: string  // ISO 8601 in UTC
+  endsAt?: string | null
+  opponentName?: string | null
+  isHome?: boolean | null
+  location?: string | null
+  summary?: string | null
+}
+
 export interface SavePracticeSeriesRequest {
   startDate: string  // YYYY-MM-DD
   endDate: string    // YYYY-MM-DD

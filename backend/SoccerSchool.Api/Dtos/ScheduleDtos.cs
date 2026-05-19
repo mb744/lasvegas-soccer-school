@@ -78,6 +78,28 @@ public record SavePracticeRequest
     public string? Summary { get; init; }
 }
 
+/// <summary>Admin-entered game (manual; not scraped from GotSport). Lives in the same
+/// ScheduledGames table with Kind=Game and a synthesized ExternalUid (`manual-game-{guid}`)
+/// so the unique (team, uid) index doesn't collide with scraped games.</summary>
+public record SaveGameRequest
+{
+    public DateTime StartsAt { get; init; }
+
+    public DateTime? EndsAt { get; init; }
+
+    [MaxLength(256)]
+    public string? OpponentName { get; init; }
+
+    /// <summary>true = we're home, false = away, null = unknown.</summary>
+    public bool? IsHome { get; init; }
+
+    [MaxLength(512)]
+    public string? Location { get; init; }
+
+    [MaxLength(512)]
+    public string? Summary { get; init; }
+}
+
 /// <summary>Create a recurring practice series. Each combination of (day-of-week × occurrence date
 /// in the [StartDate, EndDate] range) materializes as its own ScheduledGame row sharing a SeriesId.</summary>
 public record SavePracticeSeriesRequest

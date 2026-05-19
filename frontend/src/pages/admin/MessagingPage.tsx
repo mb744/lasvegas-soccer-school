@@ -1448,9 +1448,9 @@ function normalizePhone(input: string): string | null {
   return digits.length >= 11 ? `+${digits}` : null
 }
 
-// --- Practice schedule (admin-managed) ----------------------------------
+// --- Team schedule (admin-managed games + practices) --------------------
 
-function PracticeScheduleSection({
+function TeamScheduleSection({
   teamId, games, onChanged, onError, onNotice,
 }: {
   teamId: number
@@ -1460,10 +1460,21 @@ function PracticeScheduleSection({
   onNotice: (n: string) => void
 }) {
   const { t } = useTranslation()
-  const practices = useMemo(() => games.filter(g => g.kind === 1), [games])
-  const upcomingGames = useMemo(() => games.filter(g => g.kind === 0), [games])
+  // Unified, time-sorted list. Games and practices show in the same table; admin distinguishes
+  // by the Kind badge on each row.
+  const events = useMemo(
+    () => [...games].sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime()),
+    [games])
 
-  const [editingId, setEditingId] = useState<number | 'new' | 'series' | null>(null)
+  // `editingId` discriminator:
+  //   'new-practice' | 'new-game' | 'series' → opening one of the three new forms
+  //   number → editing an existing row (Kind taken from the row)
+  //   null → no form open
+  const [editingId, setEditingId] = useState<number | 'new-practice' | 'new-game' | 'series' | null>(null)
+  const [editingKind, setEditingKind] = useState<'practice' | 'game'>('practice')
+  // Game-specific fields (only meaningful when the active form is a game form):
+  const [opponentName, setOpponentName] = useState('')
+  const [isHome, setIsHome] = useState<boolean | null>(null)
   const [startsAt, setStartsAt] = useState('')      // datetime-local format (local time)
   const [endsAt, setEndsAt] = useState('')
   const [location, setLocation] = useState('')
@@ -1476,11 +1487,18 @@ function PracticeScheduleSection({
   const [seriesEndTime, setSeriesEndTime] = useState('')
   const [seriesDays, setSeriesDays] = useState<Set<number>>(new Set())
 
-  const startNew = () => {
-    setEditingId('new'); setStartsAt(''); setEndsAt(''); setLocation(''); setSummary('')
+  const startNewPractice = () => {
+    setEditingId('new-practice'); setEditingKind('practice')
+    setStartsAt(''); setEndsAt(''); setLocation(''); setSummary('')
+    setOpponentName(''); setIsHome(null)
+  }
+  const startNewGame = () => {
+    setEditingId('new-game'); setEditingKind('game')
+    setStartsAt(''); setEndsAt(''); setLocation(''); setSummary('')
+    setOpponentName(''); setIsHome(null)
   }
   const startSeries = () => {
-    setEditingId('series')
+    setEditingId('series'); setEditingKind('practice')
     setSeriesStartDate(''); setSeriesEndDate('')
     setSeriesStartTime('17:00'); setSeriesEndTime('')
     setSeriesDays(new Set()); setLocation(''); setSummary('')
@@ -1492,13 +1510,16 @@ function PracticeScheduleSection({
       return next
     })
   }
-  const startEdit = (p: ScheduledGame) => {
-    setEditingId(p.id)
+  const startEdit = (ev: ScheduledGame) => {
+    setEditingId(ev.id)
+    setEditingKind(ev.kind === 0 ? 'game' : 'practice')
     // datetime-local wants YYYY-MM-DDTHH:mm in local time (no timezone). Strip seconds/ms.
-    setStartsAt(toDateTimeLocal(p.startsAt))
-    setEndsAt(p.endsAt ? toDateTimeLocal(p.endsAt) : '')
-    setLocation(p.location ?? '')
-    setSummary(p.summary ?? '')
+    setStartsAt(toDateTimeLocal(ev.startsAt))
+    setEndsAt(ev.endsAt ? toDateTimeLocal(ev.endsAt) : '')
+    setLocation(ev.location ?? '')
+    setSummary(ev.summary ?? '')
+    setOpponentName(ev.opponentName ?? '')
+    setIsHome(ev.isHome)
   }
 
   const save = async (e: React.FormEvent) => {
@@ -1524,32 +1545,54 @@ function PracticeScheduleSection({
     }
     if (!startsAt) { onError('Start date/time is required.'); return }
     try {
-      const payload = {
-        startsAt: new Date(startsAt).toISOString(),
-        endsAt: endsAt ? new Date(endsAt).toISOString() : null,
-        location: location.trim() || null,
-        summary: summary.trim() || null,
+      const startsAtIso = new Date(startsAt).toISOString()
+      const endsAtIso = endsAt ? new Date(endsAt).toISOString() : null
+      const trimmedLocation = location.trim() || null
+      const trimmedSummary = summary.trim() || null
+      if (editingKind === 'game') {
+        const payload = {
+          startsAt: startsAtIso,
+          endsAt: endsAtIso,
+          opponentName: opponentName.trim() || null,
+          isHome,
+          location: trimmedLocation,
+          summary: trimmedSummary,
+        }
+        if (editingId === 'new-game') await Api.createGame(teamId, payload)
+        else if (typeof editingId === 'number') await Api.updateGame(editingId, payload)
+        onNotice(t('admin.msgGameSaved'))
+      } else {
+        const payload = {
+          startsAt: startsAtIso,
+          endsAt: endsAtIso,
+          location: trimmedLocation,
+          summary: trimmedSummary,
+        }
+        if (editingId === 'new-practice') await Api.createPractice(teamId, payload)
+        else if (typeof editingId === 'number') await Api.updatePractice(editingId, payload)
+        onNotice(t('admin.msgPracticeSaved'))
       }
-      if (editingId === 'new') await Api.createPractice(teamId, payload)
-      else if (typeof editingId === 'number') await Api.updatePractice(editingId, payload)
       setEditingId(null)
       await onChanged()
-      onNotice(t('admin.msgPracticeSaved'))
     } catch (e: any) { onError(extractError(e)) }
   }
 
-  const remove = async (p: ScheduledGame) => {
-    if (!confirm(`Delete this practice on ${new Date(p.startsAt).toLocaleString()}?`)) return
+  const remove = async (ev: ScheduledGame) => {
+    const label = ev.kind === 0 ? 'game' : 'practice'
+    if (!confirm(`Delete this ${label} on ${new Date(ev.startsAt).toLocaleString()}?`)) return
     try {
-      await Api.deletePractice(p.id)
+      if (ev.kind === 0) await Api.deleteGame(ev.id)
+      else await Api.deletePractice(ev.id)
       await onChanged()
     } catch (e: any) { onError(extractError(e)) }
   }
 
-  const cancel = async (p: ScheduledGame) => {
-    if (!confirm(`Cancel this practice on ${new Date(p.startsAt).toLocaleString()}? You'll be able to notify parents who already received the reminder.`)) return
+  const cancel = async (ev: ScheduledGame) => {
+    const label = ev.kind === 0 ? 'game' : 'practice'
+    if (!confirm(`Cancel this ${label} on ${new Date(ev.startsAt).toLocaleString()}? You'll be able to notify parents who already received the reminder.`)) return
     try {
-      await Api.cancelPractice(p.id)
+      if (ev.kind === 0) await Api.cancelGame(ev.id)
+      else await Api.cancelPractice(ev.id)
       await onChanged()
       onNotice(t('admin.msgPracticeCancelled'))
     } catch (e: any) { onError(extractError(e)) }
@@ -1603,38 +1646,14 @@ function PracticeScheduleSection({
 
   return (
     <div className="bg-white border border-slate-200 rounded-lg p-4 space-y-4">
-      {/* Games (read-only, from GotSport scrape) */}
-      {upcomingGames.length > 0 && (
-        <div>
-          <h3 className="font-medium text-slate-700 mb-2">{t('admin.msgUpcoming')}</h3>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-slate-500 border-b">
-                <th className="py-1 pr-4">{t('admin.msgWhen')}</th>
-                <th className="py-1 pr-4">{t('admin.msgSummary')}</th>
-                <th className="py-1 pr-4">{t('admin.msgLocation')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {upcomingGames.map(g => (
-                <tr key={g.id} className="border-b last:border-0">
-                  <td className="py-1 pr-4 whitespace-nowrap">{new Date(g.startsAt).toLocaleString()}</td>
-                  <td className="py-1 pr-4">{g.summary ?? '—'}</td>
-                  <td className="py-1 pr-4">{g.location ?? '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* Practices (admin-managed) */}
       <div>
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="font-medium text-slate-700">{t('admin.msgPracticeScheduleHeader')}</h3>
+        <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+          <h3 className="font-medium text-slate-700">{t('admin.msgTeamScheduleHeader')}</h3>
           {editingId === null && (
-            <div className="flex gap-3">
-              <button onClick={startNew}
+            <div className="flex gap-3 flex-wrap">
+              <button onClick={startNewGame}
+                className="text-sm text-emerald-700 hover:underline">+ {t('admin.msgAddGame')}</button>
+              <button onClick={startNewPractice}
                 className="text-sm text-emerald-700 hover:underline">+ {t('admin.msgAddPractice')}</button>
               <button onClick={startSeries}
                 className="text-sm text-emerald-700 hover:underline">+ {t('admin.msgAddPracticeSeries')}</button>
@@ -1644,6 +1663,9 @@ function PracticeScheduleSection({
 
         {editingId !== null && editingId !== 'series' && (
           <form onSubmit={save} className="border border-slate-200 rounded p-3 grid sm:grid-cols-2 gap-2 mb-3">
+            <div className="sm:col-span-2 text-xs uppercase tracking-wide text-slate-500">
+              {editingKind === 'game' ? t('admin.msgFormGame') : t('admin.msgFormPractice')}
+            </div>
             <label className="block text-sm">
               <span className="font-medium text-slate-700">{t('admin.msgPracticeStart')}</span>
               <input type="datetime-local" value={startsAt} onChange={e => setStartsAt(e.target.value)}
@@ -1654,6 +1676,27 @@ function PracticeScheduleSection({
               <input type="datetime-local" value={endsAt} onChange={e => setEndsAt(e.target.value)}
                 className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
             </label>
+            {editingKind === 'game' && (
+              <>
+                <label className="block text-sm">
+                  <span className="font-medium text-slate-700">{t('admin.msgGameOpponent')}</span>
+                  <input type="text" value={opponentName} onChange={e => setOpponentName(e.target.value)}
+                    placeholder="PRIME SC B17 White"
+                    className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+                </label>
+                <label className="block text-sm">
+                  <span className="font-medium text-slate-700">{t('admin.msgGameHomeAway')}</span>
+                  <select
+                    value={isHome === null ? '' : isHome ? 'home' : 'away'}
+                    onChange={e => setIsHome(e.target.value === '' ? null : e.target.value === 'home')}
+                    className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm">
+                    <option value="">— {t('admin.msgGameHomeAwayUnknown')} —</option>
+                    <option value="home">{t('admin.msgGameHome')}</option>
+                    <option value="away">{t('admin.msgGameAway')}</option>
+                  </select>
+                </label>
+              </>
+            )}
             <label className="block text-sm sm:col-span-2">
               <span className="font-medium text-slate-700">{t('admin.msgLocation')}</span>
               <input type="text" value={location} onChange={e => setLocation(e.target.value)}
@@ -1663,13 +1706,15 @@ function PracticeScheduleSection({
             <label className="block text-sm sm:col-span-2">
               <span className="font-medium text-slate-700">{t('admin.msgPracticeLabel')}</span>
               <input type="text" value={summary} onChange={e => setSummary(e.target.value)}
-                placeholder="Practice"
+                placeholder={editingKind === 'game' ? 'Game' : 'Practice'}
                 className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
             </label>
             <div className="sm:col-span-2 flex items-center gap-3 pt-2">
               <button type="submit"
                 className="bg-emerald-700 text-white text-sm font-semibold px-4 py-2 rounded-md hover:bg-emerald-800">
-                {editingId === 'new' ? t('admin.msgAddPractice') : t('admin.msgSave')}
+                {editingId === 'new-practice' ? t('admin.msgAddPractice') :
+                 editingId === 'new-game' ? t('admin.msgAddGame') :
+                 t('admin.msgSave')}
               </button>
               <button type="button" onClick={() => setEditingId(null)}
                 className="text-sm text-slate-600 hover:underline">{t('admin.msgCancel')}</button>
@@ -1745,43 +1790,57 @@ function PracticeScheduleSection({
           <thead>
             <tr className="text-left text-slate-500 border-b">
               <th className="py-1 pr-4">{t('admin.msgWhen')}</th>
-              <th className="py-1 pr-4">{t('admin.msgLocation')}</th>
+              <th className="py-1 pr-4">{t('admin.msgKind')}</th>
               <th className="py-1 pr-4">{t('admin.msgSummary')}</th>
+              <th className="py-1 pr-4">{t('admin.msgLocation')}</th>
               <th className="py-1 pr-4"></th>
             </tr>
           </thead>
           <tbody>
-            {practices.map(p => (
-              <tr key={p.id} className={`border-b last:border-0 ${p.isCancelled ? 'text-slate-400 line-through' : ''}`}>
-                <td className="py-1 pr-4 whitespace-nowrap">{new Date(p.startsAt).toLocaleString()}</td>
-                <td className="py-1 pr-4">{p.location ?? '—'}</td>
-                <td className="py-1 pr-4">
-                  {p.summary ?? '—'}
-                  {p.seriesId && <span className="ml-2 inline-block text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 no-underline">{t('admin.msgSeriesBadge')}</span>}
-                  {p.isCancelled && <span className="ml-2 inline-block text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 no-underline">{t('admin.msgCancelledBadge')}</span>}
-                </td>
-                <td className="py-1 pr-4 text-right whitespace-nowrap no-underline">
-                  {!p.isCancelled && (
-                    <>
-                      <button onClick={() => startEdit(p)}
-                        className="text-emerald-700 hover:underline">{t('admin.details')}</button>
-                      <span className="mx-2 text-slate-300">|</span>
-                      <button onClick={() => cancel(p)}
-                        className="text-amber-700 hover:underline">{t('admin.msgCancelPractice')}</button>
-                      <span className="mx-2 text-slate-300">|</span>
-                      <button onClick={() => remove(p)}
-                        className="text-rose-700 hover:underline">{t('admin.delete')}</button>
-                    </>
-                  )}
-                  {p.isCancelled && (
-                    <button onClick={() => startNotify(p)}
-                      className="text-emerald-700 hover:underline">{t('admin.msgNotifyParents')}</button>
-                  )}
-                </td>
-              </tr>
-            ))}
-            {practices.length === 0 && (
-              <tr><td colSpan={4} className="py-3 text-center text-slate-400">{t('admin.msgPracticeEmpty')}</td></tr>
+            {events.map(ev => {
+              const isGame = ev.kind === 0
+              const summary = isGame
+                ? (ev.opponentName ? `vs ${ev.opponentName}` : (ev.summary ?? 'Game'))
+                : (ev.summary ?? 'Practice')
+              const homeAway = isGame && ev.isHome === true ? ' (H)' : isGame && ev.isHome === false ? ' (A)' : ''
+              const kindBadgeClass = isGame ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'
+              return (
+                <tr key={ev.id} className={`border-b last:border-0 ${ev.isCancelled ? 'text-slate-400 line-through' : ''}`}>
+                  <td className="py-1 pr-4 whitespace-nowrap">{new Date(ev.startsAt).toLocaleString()}</td>
+                  <td className="py-1 pr-4 no-underline">
+                    <span className={`inline-block text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded ${kindBadgeClass}`}>
+                      {isGame ? t('admin.msgKindGame') : t('admin.msgKindPractice')}
+                    </span>
+                  </td>
+                  <td className="py-1 pr-4">
+                    {summary}{homeAway}
+                    {ev.seriesId && <span className="ml-2 inline-block text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 no-underline">{t('admin.msgSeriesBadge')}</span>}
+                    {ev.isCancelled && <span className="ml-2 inline-block text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 no-underline">{t('admin.msgCancelledBadge')}</span>}
+                  </td>
+                  <td className="py-1 pr-4">{ev.location ?? '—'}</td>
+                  <td className="py-1 pr-4 text-right whitespace-nowrap no-underline">
+                    {!ev.isCancelled && (
+                      <>
+                        <button onClick={() => startEdit(ev)}
+                          className="text-emerald-700 hover:underline">{t('admin.details')}</button>
+                        <span className="mx-2 text-slate-300">|</span>
+                        <button onClick={() => cancel(ev)}
+                          className="text-amber-700 hover:underline">{t('admin.msgCancelPractice')}</button>
+                        <span className="mx-2 text-slate-300">|</span>
+                        <button onClick={() => remove(ev)}
+                          className="text-rose-700 hover:underline">{t('admin.delete')}</button>
+                      </>
+                    )}
+                    {ev.isCancelled && (
+                      <button onClick={() => startNotify(ev)}
+                        className="text-emerald-700 hover:underline">{t('admin.msgNotifyParents')}</button>
+                    )}
+                  </td>
+                </tr>
+              )
+            })}
+            {events.length === 0 && (
+              <tr><td colSpan={5} className="py-3 text-center text-slate-400">{t('admin.msgScheduleEmpty')}</td></tr>
             )}
           </tbody>
         </table>
@@ -2117,7 +2176,7 @@ function TeamsTab({
         )}
 
         {detail && (
-          <PracticeScheduleSection
+          <TeamScheduleSection
             teamId={detail.id}
             games={detail.upcomingGames}
             onChanged={async () => {
