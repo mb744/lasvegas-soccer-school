@@ -288,7 +288,8 @@ public class MessagingController : ControllerBase
             BodyEs = bodyEs,
             TargetLabel = resolved.Label,
             WhatsAppTemplateId = template?.Id,
-            TemplateVariablesJson = isTemplate ? JsonSerializer.Serialize(templateVars) : null
+            TemplateVariablesJson = isTemplate ? JsonSerializer.Serialize(templateVars) : null,
+            ScheduledGameId = request.ScheduledGameId
         };
         foreach (var r in resolved.Recipients)
         {

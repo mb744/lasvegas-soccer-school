@@ -259,6 +259,8 @@ export interface CreateBroadcastRequest {
   whatsAppTemplateId?: number | null
   /** Values for the template's positional variables, keyed by position as string. */
   templateVariables?: Record<string, string> | null
+  /** Event this send is about (picked from event picker). Drives the cancellation flow later. */
+  scheduledGameId?: number | null
   target: BroadcastTarget
 }
 
@@ -421,6 +423,15 @@ export interface ScheduledGame {
   opponentName: string | null
   /** true = we're home, false = away, null = unknown (practice/training). Drives wear text. */
   isHome: boolean | null
+  seriesId: string | null
+  isCancelled: boolean
+  cancelledAt: string | null
+}
+
+export interface EventRecipient {
+  phone: string
+  name: string | null
+  language: Language
 }
 
 export interface SavePracticeRequest {

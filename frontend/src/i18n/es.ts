@@ -385,6 +385,16 @@ const es: Translations = {
     msgDayThu: 'Jue',
     msgDayFri: 'Vie',
     msgDaySat: 'Sáb',
+    msgCancelPractice: 'Cancelar',
+    msgCancelledBadge: 'Cancelada',
+    msgSeriesBadge: 'Serie',
+    msgPracticeCancelled: 'Práctica cancelada. Use "Notificar a padres" para enviar el aviso.',
+    msgNotifyParents: 'Notificar a padres',
+    msgNotifyHeader: 'Enviar cancelación a {{count}} padre(s) que recibieron el aviso original',
+    msgNotifyHelp: 'Se envía como SMS libre a los mismos padres que recibieron recordatorios previos de esta práctica. Edite el mensaje abajo si quiere.',
+    msgNotifyNoRecipients: 'Ningún padre fue notificado previamente sobre esta práctica. No hay a quién cancelar.',
+    msgSendCancellation: 'Enviar cancelación',
+    msgCancellationSent: 'Cancelación enviada a {{count}} padre(s).',
   },
 }
 

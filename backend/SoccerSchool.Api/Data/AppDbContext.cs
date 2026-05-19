@@ -184,6 +184,11 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             .HasForeignKey(b => b.WhatsAppTemplateId)
             .OnDelete(DeleteBehavior.SetNull);
 
+        modelBuilder.Entity<Broadcast>().HasOne(b => b.ScheduledGame)
+            .WithMany()
+            .HasForeignKey(b => b.ScheduledGameId)
+            .OnDelete(DeleteBehavior.SetNull);
+
         modelBuilder.Entity<Team>(b =>
         {
             b.HasIndex(t => t.Name).IsUnique();

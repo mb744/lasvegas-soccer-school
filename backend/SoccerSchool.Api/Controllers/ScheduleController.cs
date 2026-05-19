@@ -62,7 +62,7 @@ public class ScheduleController : ControllerBase
             .Select(g => new ScheduledGameDto(
                 g.Id, team.Id, team.Name, team.MessageGroupId, team.MessageGroup?.Name,
                 g.Kind, g.StartsAt, g.EndsAt, g.Summary, g.Location, g.Description,
-                g.OpponentName, g.IsHome))
+                g.OpponentName, g.IsHome, g.SeriesId, g.IsCancelled, g.CancelledAt))
             .ToList();
 
         return Ok(new TeamDetail(
@@ -289,10 +289,55 @@ public class ScheduleController : ControllerBase
         return NoContent();
     }
 
+    /// <summary>Mark a practice as cancelled. The row stays in the DB so historical broadcasts
+    /// that linked to it remain readable and so the cancellation-notification flow can look up
+    /// who previously got the reminder. Hides it from the event picker; UI renders it muted.</summary>
+    [HttpPost("practices/{id:int}/cancel")]
+    public async Task<ActionResult<ScheduledGameDto>> CancelPractice(int id, CancellationToken ct)
+    {
+        var practice = await _db.ScheduledGames
+            .Include(g => g.Team).ThenInclude(t => t!.MessageGroup)
+            .FirstOrDefaultAsync(g => g.Id == id && g.Kind == ScheduledEventKind.Practice, ct);
+        if (practice is null) return NotFound();
+        if (!practice.IsCancelled)
+        {
+            practice.IsCancelled = true;
+            practice.CancelledAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync(ct);
+        }
+        return Ok(ToDto(practice, practice.Team!));
+    }
+
+    /// <summary>Returns the distinct recipients (phone + name + language) of every prior broadcast
+    /// that announced this event. Drives the cancellation-notification flow: admin sees this list
+    /// and the Compose tab pre-populates with them as an ad-hoc list.</summary>
+    [HttpGet("events/{id:int}/broadcast-recipients")]
+    public async Task<ActionResult<IEnumerable<EventRecipientDto>>> GetEventBroadcastRecipients(int id, CancellationToken ct)
+    {
+        var exists = await _db.ScheduledGames.AnyAsync(g => g.Id == id, ct);
+        if (!exists) return NotFound();
+        // Dedupe by phone, preferring the most recent broadcast's language for the recipient
+        // (parents who got the most recent reminder are the most relevant audience).
+        var rows = await _db.BroadcastRecipients
+            .Where(r => r.Broadcast!.ScheduledGameId == id)
+            .OrderByDescending(r => r.Broadcast!.CreatedAt)
+            .Select(r => new { r.Phone, r.Name, r.Language })
+            .ToListAsync(ct);
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var result = new List<EventRecipientDto>();
+        foreach (var r in rows)
+        {
+            if (string.IsNullOrWhiteSpace(r.Phone)) continue;
+            if (!seen.Add(r.Phone)) continue;
+            result.Add(new EventRecipientDto(r.Phone, r.Name, r.Language));
+        }
+        return Ok(result);
+    }
+
     private static ScheduledGameDto ToDto(ScheduledGame g, Team team) => new(
         g.Id, team.Id, team.Name, team.MessageGroupId, team.MessageGroup?.Name,
         g.Kind, g.StartsAt, g.EndsAt, g.Summary, g.Location, g.Description,
-        g.OpponentName, g.IsHome);
+        g.OpponentName, g.IsHome, g.SeriesId, g.IsCancelled, g.CancelledAt);
 
     /// <summary>
     /// Upcoming games across all teams within the given window. Used by the Compose tab game
@@ -309,12 +354,12 @@ public class ScheduleController : ControllerBase
 
         var games = await _db.ScheduledGames
             .Include(g => g.Team).ThenInclude(t => t!.MessageGroup)
-            .Where(g => g.StartsAt >= from && g.StartsAt <= to)
+            .Where(g => g.StartsAt >= from && g.StartsAt <= to && !g.IsCancelled)
             .OrderBy(g => g.StartsAt)
             .Select(g => new ScheduledGameDto(
                 g.Id, g.TeamId, g.Team!.Name, g.Team.MessageGroupId, g.Team.MessageGroup != null ? g.Team.MessageGroup.Name : null,
                 g.Kind, g.StartsAt, g.EndsAt, g.Summary, g.Location, g.Description,
-                g.OpponentName, g.IsHome))
+                g.OpponentName, g.IsHome, g.SeriesId, g.IsCancelled, g.CancelledAt))
             .ToListAsync(ct);
         return Ok(games);
     }

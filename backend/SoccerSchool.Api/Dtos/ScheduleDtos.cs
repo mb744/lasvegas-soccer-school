@@ -60,7 +60,10 @@ public record ScheduledGameDto(
     string? Location,
     string? Description,
     string? OpponentName,
-    bool? IsHome);
+    bool? IsHome,
+    Guid? SeriesId,
+    bool IsCancelled,
+    DateTime? CancelledAt);
 
 public record SavePracticeRequest
 {
@@ -105,5 +108,9 @@ public record SavePracticeSeriesRequest
 }
 
 public record PracticeSeriesCreatedDto(Guid SeriesId, int Count, IReadOnlyList<ScheduledGameDto> Occurrences);
+
+/// <summary>One previously-notified parent for the cancel-notification flow. Sourced from the
+/// BroadcastRecipient rows of any past broadcasts that referenced the cancelled event.</summary>
+public record EventRecipientDto(string Phone, string? Name, Language Language);
 
 public record ScheduleSyncResultDto(bool Success, int Added, int Updated, string Message);

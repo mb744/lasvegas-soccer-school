@@ -383,6 +383,16 @@ const en = {
     msgDayThu: 'Thu',
     msgDayFri: 'Fri',
     msgDaySat: 'Sat',
+    msgCancelPractice: 'Cancel',
+    msgCancelledBadge: 'Cancelled',
+    msgSeriesBadge: 'Series',
+    msgPracticeCancelled: 'Practice cancelled. Use "Notify parents" to send a cancellation message.',
+    msgNotifyParents: 'Notify parents',
+    msgNotifyHeader: 'Send cancellation to {{count}} parent(s) who got the original reminder',
+    msgNotifyHelp: 'Sent as free-form SMS to the same parents who received past reminders for this practice. Edit the message below if you want.',
+    msgNotifyNoRecipients: 'No parents previously notified about this practice. There\'s no one to cancel.',
+    msgSendCancellation: 'Send cancellation',
+    msgCancellationSent: 'Cancellation sent to {{count}} parent(s).',
   },
 }
 

@@ -20,6 +20,7 @@ import type {
   RegistrationDetail,
   RegistrationSummary,
   PhraseTranslation,
+  EventRecipient,
   PracticeSeriesCreated,
   SaveMessageGroupRequest,
   SavePhraseTranslationRequest,
@@ -300,6 +301,14 @@ export const Api = {
   },
   async deletePractice(id: number) {
     await api.delete(`/schedule/practices/${id}`)
+  },
+  async cancelPractice(id: number) {
+    const r = await api.post<ScheduledGame>(`/schedule/practices/${id}/cancel`, {})
+    return r.data
+  },
+  async listEventRecipients(eventId: number) {
+    const r = await api.get<EventRecipient[]>(`/schedule/events/${eventId}/broadcast-recipients`)
+    return r.data
   },
 
   // --- Phrase translation dictionary ---

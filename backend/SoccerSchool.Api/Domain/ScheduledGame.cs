@@ -22,6 +22,13 @@ public class ScheduledGame
     /// shared series identifier. Null for one-off practices and for all games.</summary>
     public Guid? SeriesId { get; set; }
 
+    /// <summary>True when the admin has cancelled this event. The row stays in the DB so we can
+    /// still look up the broadcasts that announced it (for the cancellation notification flow);
+    /// the UI just renders it differently and the event picker hides it.</summary>
+    public bool IsCancelled { get; set; }
+
+    public DateTime? CancelledAt { get; set; }
+
     /// <summary>The ICS UID property — the calendar event's stable identifier. Used as the upsert
     /// key so a re-sync updates the existing row rather than creating duplicates. For manually-
     /// added practices, set to a generated value (e.g. <c>practice-{guid}</c>) so the unique

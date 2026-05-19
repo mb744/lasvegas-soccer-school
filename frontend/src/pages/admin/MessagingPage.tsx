@@ -8,6 +8,7 @@ import type {
   BroadcastDetail,
   BroadcastSummary,
   DynamicGroup,
+  EventRecipient,
   GroupConversationDetail,
   GroupConversationSummary,
   Language,
@@ -265,6 +266,7 @@ function ComposeTab({
   const [bodyEn, setBodyEn] = useState('')
   const [bodyEs, setBodyEs] = useState('')
   const [defaultLang, setDefaultLang] = useState<Language>(0)
+  const [pickedEventId, setPickedEventId] = useState<number | null>(null)
   const [previewStep, setPreviewStep] = useState<'edit' | 'confirm' | null>(null)
   const [templatePreviewOpen, setTemplatePreviewOpen] = useState(false)
   const [sending, setSending] = useState(false)
@@ -359,6 +361,7 @@ function ComposeTab({
               channel,
               whatsAppTemplateId: selectedTemplate!.id,
               templateVariables: templateValues,
+              scheduledGameId: pickedEventId,
               target: target(),
             }
           : {
@@ -366,6 +369,7 @@ function ComposeTab({
               bodyEn: bodyEn.trim() || null,
               bodyEs: bodyEs.trim() || null,
               defaultLanguage: defaultLang,
+              scheduledGameId: pickedEventId,
               target: target(),
             }
         const r = await Api.createBroadcast(payload)
@@ -388,6 +392,7 @@ function ComposeTab({
         await onSent(`Group chat "${r.title}" created with ${r.participants.length} participants.`)
       }
       setBodyEn(''); setBodyEs(''); setPreviewStep(null); setTemplatePreviewOpen(false)
+      setPickedEventId(null)
       if (args.usingTemplate) setTemplateValues({})
     } catch (e: any) {
       onError(extractError(e))
@@ -566,6 +571,9 @@ function ComposeTab({
                   if (activeTemplate) {
                     applyGameToTemplate(g, activeTemplate, setTemplateValues)
                   }
+                  // Record event-id on this compose state so the broadcast links back to it —
+                  // unlocks the cancellation-notification flow finding "who got reminded".
+                  setPickedEventId(g.id)
                   // Auto-target the team's linked group if there is one.
                   if (g.messageGroupId) {
                     setRecipientMode('curated')
@@ -618,6 +626,7 @@ function ComposeTab({
                   const g = upcomingGames.find(x => x.id === gameId)
                   if (!g) return
                   applyGameToFreeForm(g, setBodyEn, setBodyEs)
+                  setPickedEventId(g.id)
                   if (g.messageGroupId) {
                     setRecipientMode('curated')
                     setCustomGroupId(g.messageGroupId)
@@ -1494,6 +1503,61 @@ function PracticeScheduleSection({
     } catch (e: any) { onError(extractError(e)) }
   }
 
+  const cancel = async (p: ScheduledGame) => {
+    if (!confirm(`Cancel this practice on ${new Date(p.startsAt).toLocaleString()}? You'll be able to notify parents who already received the reminder.`)) return
+    try {
+      await Api.cancelPractice(p.id)
+      await onChanged()
+      onNotice(t('admin.msgPracticeCancelled'))
+    } catch (e: any) { onError(extractError(e)) }
+  }
+
+  const [notifyState, setNotifyState] = useState<{
+    practice: ScheduledGame
+    recipients: EventRecipient[]
+    bodyEn: string
+    bodyEs: string
+  } | null>(null)
+  const [sendingNotify, setSendingNotify] = useState(false)
+
+  const startNotify = async (p: ScheduledGame) => {
+    try {
+      const recipients = await Api.listEventRecipients(p.id)
+      const when = new Date(p.startsAt).toLocaleString()
+      const where = p.location ? ` at ${p.location}` : ''
+      setNotifyState({
+        practice: p,
+        recipients,
+        bodyEn: `The practice scheduled for ${when}${where} has been cancelled. Sorry for the late notice.`,
+        bodyEs: `La práctica programada para ${when}${where ? ` en ${p.location}` : ''} ha sido cancelada. Disculpe el aviso tardío.`,
+      })
+    } catch (e: any) { onError(extractError(e)) }
+  }
+
+  const sendNotify = async () => {
+    if (!notifyState) return
+    if (notifyState.recipients.length === 0) {
+      onError(t('admin.msgNotifyNoRecipients'))
+      return
+    }
+    setSendingNotify(true)
+    try {
+      await Api.createBroadcast({
+        channel: 0, // SMS — free-form cancellation works anytime without a template
+        bodyEn: notifyState.bodyEn.trim() || null,
+        bodyEs: notifyState.bodyEs.trim() || null,
+        scheduledGameId: notifyState.practice.id,
+        target: {
+          kind: 3, // AdHocList
+          recipients: notifyState.recipients.map(r => ({ phone: r.phone, name: r.name })),
+        },
+      })
+      onNotice(t('admin.msgCancellationSent', { count: notifyState.recipients.length }))
+      setNotifyState(null)
+    } catch (e: any) { onError(extractError(e)) }
+    finally { setSendingNotify(false) }
+  }
+
   return (
     <div className="bg-white border border-slate-200 rounded-lg p-4 space-y-4">
       {/* Games (read-only, from GotSport scrape) */}
@@ -1645,16 +1709,31 @@ function PracticeScheduleSection({
           </thead>
           <tbody>
             {practices.map(p => (
-              <tr key={p.id} className="border-b last:border-0">
+              <tr key={p.id} className={`border-b last:border-0 ${p.isCancelled ? 'text-slate-400 line-through' : ''}`}>
                 <td className="py-1 pr-4 whitespace-nowrap">{new Date(p.startsAt).toLocaleString()}</td>
                 <td className="py-1 pr-4">{p.location ?? '—'}</td>
-                <td className="py-1 pr-4">{p.summary ?? '—'}</td>
-                <td className="py-1 pr-4 text-right whitespace-nowrap">
-                  <button onClick={() => startEdit(p)}
-                    className="text-emerald-700 hover:underline">{t('admin.details')}</button>
-                  <span className="mx-2 text-slate-300">|</span>
-                  <button onClick={() => remove(p)}
-                    className="text-rose-700 hover:underline">{t('admin.delete')}</button>
+                <td className="py-1 pr-4">
+                  {p.summary ?? '—'}
+                  {p.seriesId && <span className="ml-2 inline-block text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 no-underline">{t('admin.msgSeriesBadge')}</span>}
+                  {p.isCancelled && <span className="ml-2 inline-block text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 no-underline">{t('admin.msgCancelledBadge')}</span>}
+                </td>
+                <td className="py-1 pr-4 text-right whitespace-nowrap no-underline">
+                  {!p.isCancelled && (
+                    <>
+                      <button onClick={() => startEdit(p)}
+                        className="text-emerald-700 hover:underline">{t('admin.details')}</button>
+                      <span className="mx-2 text-slate-300">|</span>
+                      <button onClick={() => cancel(p)}
+                        className="text-amber-700 hover:underline">{t('admin.msgCancelPractice')}</button>
+                      <span className="mx-2 text-slate-300">|</span>
+                      <button onClick={() => remove(p)}
+                        className="text-rose-700 hover:underline">{t('admin.delete')}</button>
+                    </>
+                  )}
+                  {p.isCancelled && (
+                    <button onClick={() => startNotify(p)}
+                      className="text-emerald-700 hover:underline">{t('admin.msgNotifyParents')}</button>
+                  )}
                 </td>
               </tr>
             ))}
@@ -1663,6 +1742,37 @@ function PracticeScheduleSection({
             )}
           </tbody>
         </table>
+
+        {notifyState && (
+          <div className="mt-3 border border-amber-300 bg-amber-50 rounded p-3 space-y-2">
+            <div className="text-sm">
+              <strong>{t('admin.msgNotifyHeader', { count: notifyState.recipients.length })}</strong>
+              <div className="text-xs text-slate-600 mt-1">{t('admin.msgNotifyHelp')}</div>
+            </div>
+            <div className="grid md:grid-cols-2 gap-2">
+              <label className="block text-xs">
+                <span className="font-medium text-slate-700">English</span>
+                <textarea rows={3} value={notifyState.bodyEn}
+                  onChange={e => setNotifyState(s => s ? { ...s, bodyEn: e.target.value } : s)}
+                  className="mt-1 w-full border border-slate-300 rounded-md px-2 py-1 text-sm" />
+              </label>
+              <label className="block text-xs">
+                <span className="font-medium text-slate-700">Español</span>
+                <textarea rows={3} value={notifyState.bodyEs}
+                  onChange={e => setNotifyState(s => s ? { ...s, bodyEs: e.target.value } : s)}
+                  className="mt-1 w-full border border-slate-300 rounded-md px-2 py-1 text-sm" />
+              </label>
+            </div>
+            <div className="flex items-center gap-3">
+              <button onClick={sendNotify} disabled={sendingNotify}
+                className="bg-emerald-700 text-white text-sm font-semibold px-3 py-1.5 rounded-md hover:bg-emerald-800 disabled:opacity-60">
+                {sendingNotify ? t('admin.sending') : t('admin.msgSendCancellation')}
+              </button>
+              <button onClick={() => setNotifyState(null)}
+                className="text-sm text-slate-600 hover:underline">{t('admin.msgCancel')}</button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

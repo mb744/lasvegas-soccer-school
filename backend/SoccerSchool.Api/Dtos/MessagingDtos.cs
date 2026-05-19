@@ -118,6 +118,11 @@ public record CreateBroadcastRequest
     /// (e.g. {"1":"5pm","2":"Sunset Park"}). Empty when sending free-form.</summary>
     public Dictionary<string, string>? TemplateVariables { get; init; }
 
+    /// <summary>When this broadcast was triggered by picking an event in Compose, the event's ID.
+    /// Stored on the Broadcast row so the cancellation flow can find recipients of past reminders
+    /// for a specific event.</summary>
+    public int? ScheduledGameId { get; init; }
+
     public BroadcastTargetDto Target { get; init; } = new();
 }
 

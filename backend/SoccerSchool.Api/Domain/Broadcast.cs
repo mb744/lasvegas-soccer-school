@@ -39,6 +39,13 @@ public class Broadcast
     [MaxLength(4000)]
     public string? TemplateVariablesJson { get; set; }
 
+    /// <summary>When this broadcast went out about a specific game/practice (picked from the
+    /// event picker in Compose), this FK points back to it. Lets the cancellation flow find
+    /// "who got the original reminder about this practice" so we can notify exactly those people.
+    /// Null for ad-hoc messages not tied to any event.</summary>
+    public int? ScheduledGameId { get; set; }
+    public ScheduledGame? ScheduledGame { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public List<BroadcastRecipient> Recipients { get; set; } = new();
