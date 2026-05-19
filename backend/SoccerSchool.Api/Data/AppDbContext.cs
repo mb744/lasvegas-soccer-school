@@ -57,6 +57,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<Team> Teams => Set<Team>();
     public DbSet<ScheduledGame> ScheduledGames => Set<ScheduledGame>();
     public DbSet<PhraseTranslation> PhraseTranslations => Set<PhraseTranslation>();
+    public DbSet<InboundMessage> InboundMessages => Set<InboundMessage>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -215,6 +216,12 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             // SQL side because admins might enter case-variant duplicates we'll dedupe in app code.
             b.HasIndex(p => p.English);
             b.HasIndex(p => p.Spanish);
+        });
+
+        modelBuilder.Entity<InboundMessage>(b =>
+        {
+            b.HasIndex(m => m.ReceivedAt);
+            b.HasIndex(m => m.FromPhone);
         });
     }
 }

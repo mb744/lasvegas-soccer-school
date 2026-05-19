@@ -11,6 +11,7 @@ import type {
   EventRecipient,
   GroupConversationDetail,
   GroupConversationSummary,
+  InboundMessage,
   Language,
   MessageChannel,
   MessageGroupDetail,
@@ -1081,6 +1082,17 @@ function HistoryTab({
   const { t } = useTranslation()
   const [expandedId, setExpandedId] = useState<number | null>(null)
   const [expanded, setExpanded] = useState<BroadcastDetail | null>(null)
+  const [inbound, setInbound] = useState<InboundMessage[]>([])
+
+  const loadInbound = async () => {
+    try { setInbound(await Api.listInboundMessages()) }
+    catch (e: any) { void e /* surface errors elsewhere if needed */ }
+  }
+  useEffect(() => { loadInbound() }, [])
+
+  const refreshBoth = async () => {
+    await Promise.all([onRefresh(), loadInbound()])
+  }
 
   const toggle = async (id: number) => {
     if (expandedId === id) { setExpandedId(null); setExpanded(null); return }
@@ -1163,6 +1175,37 @@ function HistoryTab({
           )}
         </tbody>
       </table>
+
+      <div className="mt-6">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="font-medium text-slate-700">{t('admin.msgInboundHeader')}</h3>
+          <button onClick={refreshBoth} className="text-sm text-emerald-700 hover:underline">↻</button>
+        </div>
+        <p className="text-xs text-slate-500 mb-2">{t('admin.msgInboundHelp')}</p>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-slate-500 border-b">
+              <th className="py-2 pr-4">{t('admin.msgWhen')}</th>
+              <th className="py-2 pr-4">{t('admin.msgChannel')}</th>
+              <th className="py-2 pr-4">{t('admin.msgInboundFrom')}</th>
+              <th className="py-2 pr-4">{t('admin.msgBody')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {inbound.map(m => (
+              <tr key={m.id} className="border-b last:border-0 align-top">
+                <td className="py-2 pr-4 whitespace-nowrap text-slate-500">{new Date(m.receivedAt).toLocaleString()}</td>
+                <td className="py-2 pr-4">{MESSAGE_CHANNEL_LABELS[m.channel]}</td>
+                <td className="py-2 pr-4 font-mono text-xs">{m.fromPhone}</td>
+                <td className="py-2 pr-4 max-w-xl whitespace-pre-wrap break-words">{m.body ?? '—'}</td>
+              </tr>
+            ))}
+            {inbound.length === 0 && (
+              <tr><td colSpan={4} className="py-4 text-center text-slate-400">{t('admin.msgInboundEmpty')}</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </section>
   )
 }

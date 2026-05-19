@@ -359,6 +359,18 @@ public class MessagingController : ControllerBase
     }
 
 
+    [HttpGet("inbound")]
+    public async Task<ActionResult<IEnumerable<InboundMessageDto>>> ListInbound(CancellationToken ct)
+    {
+        var items = await _db.InboundMessages
+            .OrderByDescending(m => m.ReceivedAt)
+            .Take(200)
+            .Select(m => new InboundMessageDto(
+                m.Id, m.Channel, m.FromPhone, m.ToPhone, m.Body, m.TwilioSid, m.ReceivedAt))
+            .ToListAsync(ct);
+        return Ok(items);
+    }
+
     [HttpGet("broadcasts")]
     public async Task<ActionResult<IEnumerable<BroadcastSummary>>> ListBroadcasts(CancellationToken ct)
     {

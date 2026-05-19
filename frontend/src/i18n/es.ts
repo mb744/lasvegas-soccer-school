@@ -395,6 +395,10 @@ const es: Translations = {
     msgNotifyNoRecipients: 'Ningún padre fue notificado previamente sobre esta práctica. No hay a quién cancelar.',
     msgSendCancellation: 'Enviar cancelación',
     msgCancellationSent: 'Cancelación enviada a {{count}} padre(s).',
+    msgInboundHeader: 'Respuestas recibidas',
+    msgInboundHelp: 'Respuestas SMS / WhatsApp recibidas en nuestro número de Twilio. Las respuestas STOP / HELP y mensajes libres de padres aparecen aquí.',
+    msgInboundFrom: 'De',
+    msgInboundEmpty: 'Aún no hay respuestas.',
   },
 }
 

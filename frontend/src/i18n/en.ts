@@ -393,6 +393,10 @@ const en = {
     msgNotifyNoRecipients: 'No parents previously notified about this practice. There\'s no one to cancel.',
     msgSendCancellation: 'Send cancellation',
     msgCancellationSent: 'Cancellation sent to {{count}} parent(s).',
+    msgInboundHeader: 'Replies received',
+    msgInboundHelp: 'Inbound SMS / WhatsApp replies received by our Twilio number. STOP / HELP and free-form parent replies appear here.',
+    msgInboundFrom: 'From',
+    msgInboundEmpty: 'No replies yet.',
   },
 }
 

@@ -525,6 +525,16 @@ export interface TemplatePreviewRequest {
   values: Record<string, string>
 }
 
+export interface InboundMessage {
+  id: number
+  channel: MessageChannel
+  fromPhone: string
+  toPhone: string | null
+  body: string | null
+  twilioSid: string | null
+  receivedAt: string
+}
+
 export const MESSAGE_CHANNEL_LABELS: Record<MessageChannel, string> = {
   0: 'SMS',
   1: 'WhatsApp',

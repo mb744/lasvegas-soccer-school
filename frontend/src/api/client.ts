@@ -21,6 +21,7 @@ import type {
   RegistrationSummary,
   PhraseTranslation,
   EventRecipient,
+  InboundMessage,
   PracticeSeriesCreated,
   SaveMessageGroupRequest,
   SavePhraseTranslationRequest,
@@ -216,6 +217,10 @@ export const Api = {
   },
   async listBroadcasts() {
     const r = await api.get<BroadcastSummary[]>('/messaging/broadcasts')
+    return r.data
+  },
+  async listInboundMessages() {
+    const r = await api.get<InboundMessage[]>('/messaging/inbound')
     return r.data
   },
   async getBroadcast(id: number) {

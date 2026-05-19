@@ -70,20 +70,48 @@ public class TwilioWebhookController : ControllerBase
     }
 
     /// <summary>
-    /// Inbound SMS or WhatsApp reply. Logged for now; returns empty TwiML so Twilio doesn't
-    /// try to auto-respond. Future: surface in the admin UI as replies threaded under the
-    /// originating broadcast or conversation.
+    /// Inbound SMS or WhatsApp reply. Persists the message into <see cref="InboundMessage"/> so
+    /// the admin history can show two-way context, then returns empty TwiML so Twilio doesn't
+    /// try to auto-respond. The `whatsapp:` prefix Twilio sets on From/To when the inbound was
+    /// over WhatsApp is stripped and used to set Channel.
     /// </summary>
     [HttpPost("inbound")]
     [Consumes("application/x-www-form-urlencoded")]
-    public IActionResult Inbound()
+    public async Task<IActionResult> Inbound(CancellationToken ct)
     {
         if (!ValidateSignature()) return Unauthorized();
-        var from = Request.Form["From"].ToString();
+        var fromRaw = Request.Form["From"].ToString();
+        var toRaw = Request.Form["To"].ToString();
         var body = Request.Form["Body"].ToString();
-        _logger.LogInformation("Inbound message from {From}: {Body}", from, body);
+        var sid = Request.Form["MessageSid"].ToString();
+
+        var channel = fromRaw.StartsWith("whatsapp:", StringComparison.OrdinalIgnoreCase)
+            ? MessageChannel.WhatsApp
+            : MessageChannel.Sms;
+        // Twilio prefixes phone with "whatsapp:" for WhatsApp channel sends. Strip it for storage
+        // so the FromPhone column has a clean E.164 value that matches our outbound records.
+        var from = StripWhatsAppPrefix(fromRaw);
+        var to = StripWhatsAppPrefix(toRaw);
+
+        _db.InboundMessages.Add(new InboundMessage
+        {
+            Channel = channel,
+            FromPhone = Truncate(from, 32),
+            ToPhone = Truncate(to, 32),
+            Body = Truncate(body, 4000),
+            TwilioSid = Truncate(sid, 64),
+            ReceivedAt = DateTime.UtcNow
+        });
+        await _db.SaveChangesAsync(ct);
+        _logger.LogInformation("Inbound {Channel} from {From}: {Body}", channel, from, body);
         return Content("<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response></Response>", "application/xml");
     }
+
+    private static string StripWhatsAppPrefix(string s) =>
+        s.StartsWith("whatsapp:", StringComparison.OrdinalIgnoreCase) ? s["whatsapp:".Length..] : s;
+
+    private static string Truncate(string? s, int max) =>
+        string.IsNullOrEmpty(s) ? string.Empty : (s.Length <= max ? s : s[..max]);
 
     private bool ValidateSignature()
     {

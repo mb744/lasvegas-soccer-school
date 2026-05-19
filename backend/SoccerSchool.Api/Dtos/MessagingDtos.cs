@@ -308,3 +308,14 @@ public record TemplatePreviewSide(
     IReadOnlyDictionary<string, string>? Values);
 
 public record TemplatePreviewResponse(TemplatePreviewSide English, TemplatePreviewSide Spanish);
+
+// --- Inbound replies (received via Twilio webhook) ---
+
+public record InboundMessageDto(
+    int Id,
+    MessageChannel Channel,
+    string FromPhone,
+    string? ToPhone,
+    string? Body,
+    string? TwilioSid,
+    DateTime ReceivedAt);
