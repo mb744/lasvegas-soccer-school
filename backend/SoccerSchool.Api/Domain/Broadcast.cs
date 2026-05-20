@@ -23,6 +23,14 @@ public class Broadcast
     [MaxLength(2000)]
     public string? BodyEs { get; set; }
 
+    /// <summary>Email-channel subject (EN). Ignored for SMS/WhatsApp channels.</summary>
+    [MaxLength(256)]
+    public string? SubjectEn { get; set; }
+
+    /// <summary>Email-channel subject (ES). Ignored for SMS/WhatsApp channels.</summary>
+    [MaxLength(256)]
+    public string? SubjectEs { get; set; }
+
     /// <summary>Human-readable description of who this was sent to, e.g. "Individual",
     /// "Group: U10 parents", "All active-season parents". Used for the admin log.</summary>
     [MaxLength(256)]

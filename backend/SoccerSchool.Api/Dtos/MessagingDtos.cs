@@ -5,7 +5,7 @@ namespace SoccerSchool.Api.Dtos;
 
 // --- Config ---
 
-public record MessagingConfigDto(bool Sms, bool WhatsApp, bool Conversations);
+public record MessagingConfigDto(bool Sms, bool WhatsApp, bool Email, bool Conversations);
 
 // --- Curated groups ---
 
@@ -37,7 +37,7 @@ public record MessageGroupDetail(
     DateTime CreatedAt,
     IReadOnlyList<MessageGroupMemberDto> Members);
 
-public record MessageGroupMemberDto(int Id, string? Name, string Phone, Language Language, int? ParentAccountId);
+public record MessageGroupMemberDto(int Id, string? Name, string Phone, string? Email, Language Language, int? ParentAccountId);
 
 public record AddMessageGroupMemberRequest
 {
@@ -46,6 +46,9 @@ public record AddMessageGroupMemberRequest
 
     [Required, MaxLength(32)]
     public string Phone { get; init; } = string.Empty;
+
+    [MaxLength(256)]
+    public string? Email { get; init; }
 
     /// <summary>Optional. If omitted, the new member inherits the group's default language.</summary>
     public Language? Language { get; init; }
@@ -70,7 +73,7 @@ public enum RecipientTargetKindDto
     AdHocList = 3
 }
 
-public record AdHocRecipientDto(string Phone, string? Name);
+public record AdHocRecipientDto(string Phone, string? Name, string? Email = null);
 
 public record BroadcastTargetDto
 {
@@ -110,9 +113,22 @@ public record CreateBroadcastRequest
     /// (ad-hoc list, individual phone, dynamic group). Default English per admin spec.</summary>
     public Language DefaultLanguage { get; init; } = Language.English;
 
+    /// <summary>Email-channel subject (EN). Required when Channel = Email and not using EmailTemplateId.</summary>
+    [MaxLength(256)]
+    public string? SubjectEn { get; init; }
+
+    /// <summary>Email-channel subject (ES).</summary>
+    [MaxLength(256)]
+    public string? SubjectEs { get; init; }
+
     /// <summary>Use an approved WhatsApp Content template instead of free-form Body. Channel must
     /// be WhatsApp when this is set, and TemplateVariables must cover every variable on the template.</summary>
     public int? WhatsAppTemplateId { get; init; }
+
+    /// <summary>Use an admin-managed Email template instead of free-form subject/body. Channel
+    /// must be Email when this is set. Templates supply both Subject and Body templates with
+    /// positional placeholders.</summary>
+    public int? EmailTemplateId { get; init; }
 
     /// <summary>Values for the template's positional variables, keyed by position as string
     /// (e.g. {"1":"5pm","2":"Sunset Park"}). Empty when sending free-form.</summary>
@@ -131,6 +147,8 @@ public record BroadcastSummary(
     MessageChannel Channel,
     string? BodyEn,
     string? BodyEs,
+    string? SubjectEn,
+    string? SubjectEs,
     string? TargetLabel,
     DateTime CreatedAt,
     int Total,
@@ -142,6 +160,7 @@ public record BroadcastRecipientDto(
     int Id,
     string? Name,
     string Phone,
+    string? Email,
     Language Language,
     MessageDeliveryStatus Status,
     string? StatusMessage,
@@ -152,6 +171,8 @@ public record BroadcastDetail(
     MessageChannel Channel,
     string? BodyEn,
     string? BodyEs,
+    string? SubjectEn,
+    string? SubjectEs,
     string? TargetLabel,
     DateTime CreatedAt,
     IReadOnlyList<BroadcastRecipientDto> Recipients);
@@ -237,6 +258,51 @@ public record SaveTemplateVariableDto
 
     [MaxLength(256)]
     public string? Example { get; init; }
+}
+
+// --- Email templates ---
+
+public record EmailTemplateVariableDto(int Id, int Position, string Label, string? Example);
+
+public record EmailTemplateDto(
+    int Id,
+    string Name,
+    Language Language,
+    string? Description,
+    string Subject,
+    string Body,
+    DateTime CreatedAt,
+    DateTime UpdatedAt,
+    IReadOnlyList<EmailTemplateVariableDto> Variables,
+    EmailTemplatePairDto? Paired);
+
+/// <summary>Lightweight reference to an email template's opposite-language counterpart, mirroring
+/// <see cref="TemplatePairDto"/>. Auto-paired by base name (strip _en/_es/_english/_spanish).</summary>
+public record EmailTemplatePairDto(
+    int Id,
+    string Name,
+    Language Language,
+    string Subject,
+    string Body,
+    IReadOnlyList<EmailTemplateVariableDto> Variables);
+
+public record SaveEmailTemplateRequest
+{
+    [Required, MaxLength(128)]
+    public string Name { get; init; } = string.Empty;
+
+    public Language Language { get; init; } = Language.English;
+
+    [MaxLength(512)]
+    public string? Description { get; init; }
+
+    [Required, MaxLength(256)]
+    public string Subject { get; init; } = string.Empty;
+
+    [Required, MaxLength(8000)]
+    public string Body { get; init; } = string.Empty;
+
+    public List<SaveTemplateVariableDto> Variables { get; init; } = new();
 }
 
 public record SaveWhatsAppTemplateRequest

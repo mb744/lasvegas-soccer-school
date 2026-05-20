@@ -20,8 +20,10 @@ public interface IRecipientResolver
 /// <summary>One concrete recipient row produced by the resolver. <see cref="Language"/> is
 /// <c>null</c> when the recipient came from a context that doesn't carry a language preference
 /// (ad-hoc paste list, individual phone, dynamic group). The broadcast layer fills nulls with
-/// the request's default language at send time.</summary>
-public record ResolvedRecipient(string Phone, string? Name, int? ParentAccountId, Language? Language = null);
+/// the request's default language at send time. <see cref="Email"/> is populated for curated
+/// group members who have one set, and for active-season parents from <c>ApplicationUser.Email</c>;
+/// it's required when the broadcast channel is Email and is ignored on SMS/WhatsApp sends.</summary>
+public record ResolvedRecipient(string Phone, string? Name, int? ParentAccountId, Language? Language = null, string? Email = null);
 
 public record RecipientList(string Label, IReadOnlyList<ResolvedRecipient> Recipients);
 
@@ -100,9 +102,10 @@ public class RecipientResolver : IRecipientResolver
                 if (group is null) return new RecipientList("Group", Array.Empty<ResolvedRecipient>());
                 // Language is per-member (a group can mix EN and ES parents). The group's
                 // own Language field is just the default we apply when adding new members.
+                // Email is also per-member; broadcasts on the email channel skip members without one.
                 var members = group.Members
-                    .Where(m => !string.IsNullOrWhiteSpace(m.Phone))
-                    .Select(m => new ResolvedRecipient(m.Phone, m.Name, m.ParentAccountId, m.Language))
+                    .Where(m => !string.IsNullOrWhiteSpace(m.Phone) || !string.IsNullOrWhiteSpace(m.Email))
+                    .Select(m => new ResolvedRecipient(m.Phone, m.Name, m.ParentAccountId, m.Language, m.Email))
                     .ToList();
                 return new RecipientList($"Group: {group.Name}", members);
 
@@ -118,8 +121,13 @@ public class RecipientResolver : IRecipientResolver
 
             case RecipientTargetKind.AdHocList:
                 var list = (target.AdHocRecipients ?? Array.Empty<ResolvedRecipient>())
-                    .Where(r => !string.IsNullOrWhiteSpace(r.Phone))
-                    .Select(r => new ResolvedRecipient(r.Phone.Trim(), r.Name?.Trim(), null))
+                    .Where(r => !string.IsNullOrWhiteSpace(r.Phone) || !string.IsNullOrWhiteSpace(r.Email))
+                    .Select(r => new ResolvedRecipient(
+                        r.Phone?.Trim() ?? string.Empty,
+                        r.Name?.Trim(),
+                        null,
+                        null,
+                        string.IsNullOrWhiteSpace(r.Email) ? null : r.Email.Trim()))
                     .ToList();
                 return new RecipientList($"Ad-hoc list ({list.Count})", list);
 
@@ -130,12 +138,14 @@ public class RecipientResolver : IRecipientResolver
 
     private async Task<IReadOnlyList<ResolvedRecipient>> LoadAllParentsAsync(CancellationToken ct)
     {
+        // Email comes from ApplicationUser (the parent's identity record). Parents missing both
+        // phone and email are excluded outright — there's no way to reach them.
         var rows = await _db.ParentAccounts
-            .Where(p => p.CellPhone != null && p.CellPhone != "")
-            .Select(p => new { p.Id, p.CellPhone, p.FirstName, p.LastName })
+            .Where(p => (p.CellPhone != null && p.CellPhone != "") || (p.User != null && p.User.Email != null && p.User.Email != ""))
+            .Select(p => new { p.Id, p.CellPhone, p.FirstName, p.LastName, p.Language, Email = p.User!.Email })
             .ToListAsync(ct);
         return rows
-            .Select(r => new ResolvedRecipient(r.CellPhone!, $"{r.FirstName} {r.LastName}".Trim(), r.Id))
+            .Select(r => new ResolvedRecipient(r.CellPhone ?? string.Empty, $"{r.FirstName} {r.LastName}".Trim(), r.Id, r.Language, r.Email))
             .ToList();
     }
 
@@ -143,12 +153,22 @@ public class RecipientResolver : IRecipientResolver
     {
         var season = _app.ActiveSeason;
         var rows = await _db.Registrations
-            .Where(r => r.Season == season && r.ParentAccount != null && r.ParentAccount.CellPhone != null && r.ParentAccount.CellPhone != "")
-            .Select(r => new { r.ParentAccount!.Id, r.ParentAccount.CellPhone, r.ParentAccount.FirstName, r.ParentAccount.LastName })
+            .Where(r => r.Season == season && r.ParentAccount != null &&
+                        ((r.ParentAccount.CellPhone != null && r.ParentAccount.CellPhone != "") ||
+                         (r.ParentAccount.User != null && r.ParentAccount.User.Email != null && r.ParentAccount.User.Email != "")))
+            .Select(r => new
+            {
+                r.ParentAccount!.Id,
+                r.ParentAccount.CellPhone,
+                r.ParentAccount.FirstName,
+                r.ParentAccount.LastName,
+                r.ParentAccount.Language,
+                Email = r.ParentAccount.User!.Email
+            })
             .Distinct()
             .ToListAsync(ct);
         return rows
-            .Select(r => new ResolvedRecipient(r.CellPhone!, $"{r.FirstName} {r.LastName}".Trim(), r.Id))
+            .Select(r => new ResolvedRecipient(r.CellPhone ?? string.Empty, $"{r.FirstName} {r.LastName}".Trim(), r.Id, r.Language, r.Email))
             .ToList();
     }
 }

@@ -110,6 +110,7 @@ builder.Services.AddAuthorization();
 
 builder.Services.AddScoped<IOutreachSender, OutreachSender>();
 builder.Services.AddScoped<IMessageSender, MessageSender>();
+builder.Services.AddScoped<IEmailSender, EmailSender>();
 builder.Services.AddScoped<IRecipientResolver, RecipientResolver>();
 builder.Services.AddScoped<IConversationService, ConversationService>();
 builder.Services.AddScoped<IScheduleSyncService, ScheduleSyncService>();

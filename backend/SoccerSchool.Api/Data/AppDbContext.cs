@@ -54,6 +54,8 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<GroupConversationParticipant> GroupConversationParticipants => Set<GroupConversationParticipant>();
     public DbSet<WhatsAppTemplate> WhatsAppTemplates => Set<WhatsAppTemplate>();
     public DbSet<WhatsAppTemplateVariable> WhatsAppTemplateVariables => Set<WhatsAppTemplateVariable>();
+    public DbSet<EmailTemplate> EmailTemplates => Set<EmailTemplate>();
+    public DbSet<EmailTemplateVariable> EmailTemplateVariables => Set<EmailTemplateVariable>();
     public DbSet<Team> Teams => Set<Team>();
     public DbSet<ScheduledGame> ScheduledGames => Set<ScheduledGame>();
     public DbSet<PhraseTranslation> PhraseTranslations => Set<PhraseTranslation>();
@@ -178,6 +180,20 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
                 .HasForeignKey(v => v.WhatsAppTemplateId)
                 .OnDelete(DeleteBehavior.Cascade);
             b.HasIndex(v => new { v.WhatsAppTemplateId, v.Position }).IsUnique();
+        });
+
+        modelBuilder.Entity<EmailTemplate>(b =>
+        {
+            b.HasIndex(t => t.Name).IsUnique();
+        });
+
+        modelBuilder.Entity<EmailTemplateVariable>(b =>
+        {
+            b.HasOne(v => v.Template)
+                .WithMany(t => t.Variables)
+                .HasForeignKey(v => v.EmailTemplateId)
+                .OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(v => new { v.EmailTemplateId, v.Position }).IsUnique();
         });
 
         modelBuilder.Entity<Broadcast>().HasOne(b => b.WhatsAppTemplate)

@@ -31,6 +31,8 @@ import type {
   SavePracticeSeriesRequest,
   SaveTeamRequest,
   SaveWhatsAppTemplateRequest,
+  SaveEmailTemplateRequest,
+  EmailTemplate,
   ScheduleSyncResult,
   ScheduledGame,
   SignupRequest,
@@ -263,6 +265,21 @@ export const Api = {
   },
   async deleteWhatsAppTemplate(id: number) {
     await api.delete(`/messaging/whatsapp-templates/${id}`)
+  },
+  async listEmailTemplates() {
+    const r = await api.get<EmailTemplate[]>('/messaging/email-templates')
+    return r.data
+  },
+  async createEmailTemplate(payload: SaveEmailTemplateRequest) {
+    const r = await api.post<EmailTemplate>('/messaging/email-templates', payload)
+    return r.data
+  },
+  async updateEmailTemplate(id: number, payload: SaveEmailTemplateRequest) {
+    const r = await api.put<EmailTemplate>(`/messaging/email-templates/${id}`, payload)
+    return r.data
+  },
+  async deleteEmailTemplate(id: number) {
+    await api.delete(`/messaging/email-templates/${id}`)
   },
 
   // --- Schedules (GotSport iCal sync) ---

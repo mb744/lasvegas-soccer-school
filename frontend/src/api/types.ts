@@ -173,13 +173,14 @@ export const OUTREACH_STATUS_LABELS: Record<OutreachStatus, string> = {
 
 // --- Messaging (chat/broadcast) ---
 
-export type MessageChannel = 0 | 1 // 0 = SMS, 1 = WhatsApp
+export type MessageChannel = 0 | 1 | 2 // 0 = SMS, 1 = WhatsApp, 2 = Email
 export type MessageDeliveryStatus = 0 | 1 | 2 | 3 | 4 | 5
 // Pending Queued Sent Delivered Failed Undelivered
 
 export interface MessagingConfig {
   sms: boolean
   whatsApp: boolean
+  email: boolean
   conversations: boolean
 }
 
@@ -187,6 +188,7 @@ export interface MessageGroupMember {
   id: number
   name: string | null
   phone: string
+  email: string | null
   language: Language
   parentAccountId: number | null
 }
@@ -220,6 +222,7 @@ export interface SaveMessageGroupRequest {
 export interface AddMessageGroupMemberRequest {
   name?: string | null
   phone: string
+  email?: string | null
   /** When omitted, the new member inherits the group's default language. */
   language?: Language | null
   parentAccountId?: number | null
@@ -235,6 +238,7 @@ export type RecipientTargetKind = 0 | 1 | 2 | 3 // Individual CustomGroup Dynami
 export interface AdHocRecipient {
   phone: string
   name?: string | null
+  email?: string | null
 }
 
 export interface BroadcastTarget {
@@ -253,10 +257,16 @@ export interface CreateBroadcastRequest {
   bodyEn?: string | null
   /** Spanish body. */
   bodyEs?: string | null
+  /** Email subject EN (required when channel = Email and not using a template). */
+  subjectEn?: string | null
+  /** Email subject ES. */
+  subjectEs?: string | null
   /** Language to use for recipients without one attached (ad-hoc/individual/dynamic). Default English. */
   defaultLanguage?: Language
   /** Use an approved WhatsApp Content template instead of free-form body. WhatsApp channel only. */
   whatsAppTemplateId?: number | null
+  /** Use an admin-managed Email template. Email channel only. */
+  emailTemplateId?: number | null
   /** Values for the template's positional variables, keyed by position as string. */
   templateVariables?: Record<string, string> | null
   /** Event this send is about (picked from event picker). Drives the cancellation flow later. */
@@ -269,6 +279,8 @@ export interface BroadcastSummary {
   channel: MessageChannel
   bodyEn: string | null
   bodyEs: string | null
+  subjectEn: string | null
+  subjectEs: string | null
   targetLabel: string | null
   createdAt: string
   total: number
@@ -281,6 +293,7 @@ export interface BroadcastRecipientRow {
   id: number
   name: string | null
   phone: string
+  email: string | null
   language: Language
   status: MessageDeliveryStatus
   statusMessage: string | null
@@ -292,6 +305,8 @@ export interface BroadcastDetail {
   channel: MessageChannel
   bodyEn: string | null
   bodyEs: string | null
+  subjectEn: string | null
+  subjectEs: string | null
   targetLabel: string | null
   createdAt: string
   recipients: BroadcastRecipientRow[]
@@ -379,6 +394,47 @@ export interface SaveWhatsAppTemplateRequest {
   language: Language
   description?: string | null
   previewText?: string | null
+  variables: SaveTemplateVariable[]
+}
+
+// --- Email templates ---
+
+export interface EmailTemplateVariable {
+  id: number
+  position: number
+  label: string
+  example: string | null
+}
+
+export interface EmailTemplatePair {
+  id: number
+  name: string
+  language: Language
+  subject: string
+  body: string
+  variables: EmailTemplateVariable[]
+}
+
+export interface EmailTemplate {
+  id: number
+  name: string
+  language: Language
+  description: string | null
+  subject: string
+  body: string
+  createdAt: string
+  updatedAt: string
+  variables: EmailTemplateVariable[]
+  /** Opposite-language counterpart auto-detected by base name. */
+  paired: EmailTemplatePair | null
+}
+
+export interface SaveEmailTemplateRequest {
+  name: string
+  language: Language
+  description?: string | null
+  subject: string
+  body: string
   variables: SaveTemplateVariable[]
 }
 
@@ -547,6 +603,7 @@ export interface InboundMessage {
 export const MESSAGE_CHANNEL_LABELS: Record<MessageChannel, string> = {
   0: 'SMS',
   1: 'WhatsApp',
+  2: 'Email',
 }
 
 export const MESSAGE_DELIVERY_LABELS: Record<MessageDeliveryStatus, string> = {

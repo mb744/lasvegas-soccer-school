@@ -15,6 +15,11 @@ public class BroadcastRecipient
     [MaxLength(32)]
     public string Phone { get; set; } = string.Empty;
 
+    /// <summary>Recipient email when this row is part of an email-channel broadcast. For SMS/
+    /// WhatsApp the column is null and Phone is used.</summary>
+    [MaxLength(256)]
+    public string? Email { get; set; }
+
     /// <summary>Which language body was sent to this recipient. Defaults to English; populated
     /// at send time from the recipient's group / parent preference / broadcast default.</summary>
     public Language Language { get; set; } = Language.English;

@@ -25,6 +25,7 @@ import type {
   TemplatePreviewResponse,
   TemplatePreviewSide,
   WhatsAppTemplate,
+  EmailTemplate,
 } from '../../api/types'
 
 // Soccer-school-specific business strings for the practice_or_game template's "wear" variable.
@@ -65,6 +66,7 @@ export function AdminMessagingPage() {
   const [broadcasts, setBroadcasts] = useState<BroadcastSummary[]>([])
   const [conversations, setConversations] = useState<GroupConversationSummary[]>([])
   const [templates, setTemplates] = useState<WhatsAppTemplate[]>([])
+  const [emailTemplates, setEmailTemplates] = useState<EmailTemplate[]>([])
   const [teams, setTeams] = useState<TeamSummary[]>([])
   const [upcomingGames, setUpcomingGames] = useState<ScheduledGame[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -87,7 +89,10 @@ export function AdminMessagingPage() {
     } catch (e: any) { setError(extractError(e)) }
   }
   const refreshTemplates = async () => {
-    try { setTemplates(await Api.listWhatsAppTemplates()) }
+    try {
+      const [wa, em] = await Promise.all([Api.listWhatsAppTemplates(), Api.listEmailTemplates()])
+      setTemplates(wa); setEmailTemplates(em)
+    }
     catch (e: any) { setError(extractError(e)) }
   }
   const refreshTeams = async () => {
@@ -131,6 +136,7 @@ export function AdminMessagingPage() {
           <div className="flex flex-wrap gap-2 text-xs">
             <Capability ok={config.sms} label="SMS" />
             <Capability ok={config.whatsApp} label="WhatsApp" />
+            <Capability ok={config.email} label="Email" />
             <Capability ok={config.conversations} label={t('admin.msgGroupChat')} />
           </div>
         )}
@@ -158,6 +164,7 @@ export function AdminMessagingPage() {
             curated={curated}
             dynamicGroups={dynamicGroups}
             templates={templates}
+            emailTemplates={emailTemplates}
             upcomingGames={upcomingGames}
             onSent={async (msg) => {
               setNotice(msg); setError(null)
@@ -181,6 +188,7 @@ export function AdminMessagingPage() {
         {tab === 'templates' && (
           <TemplatesTab
             templates={templates}
+            emailTemplates={emailTemplates}
             onChanged={refreshTemplates}
             onError={(e) => setError(e)}
             onNotice={(n) => setNotice(n)}
@@ -240,12 +248,13 @@ function Capability({ ok, label }: { ok: boolean; label: string }) {
 // --- Compose tab -----------------------------------------------------------
 
 function ComposeTab({
-  config, curated, dynamicGroups, templates, upcomingGames, onSent, onError,
+  config, curated, dynamicGroups, templates, emailTemplates, upcomingGames, onSent, onError,
 }: {
   config: MessagingConfig | null
   curated: MessageGroupSummary[]
   dynamicGroups: DynamicGroup[]
   templates: WhatsAppTemplate[]
+  emailTemplates: EmailTemplate[]
   upcomingGames: ScheduledGame[]
   onSent: (msg: string) => void | Promise<void>
   onError: (e: string) => void
@@ -255,6 +264,7 @@ function ComposeTab({
   const [mode, setMode] = useState<SendMode>('broadcast')
   const [bodyMode, setBodyMode] = useState<ComposeBodyMode>('free-form')
   const [templateId, setTemplateId] = useState<number | ''>('')
+  const [emailTemplateId, setEmailTemplateId] = useState<number | ''>('')
   const [templateValues, setTemplateValues] = useState<Record<string, string>>({})
   const [recipientMode, setRecipientMode] = useState<RecipientMode>('individual')
   const [phone, setPhone] = useState('')
@@ -266,6 +276,8 @@ function ComposeTab({
   const [title, setTitle] = useState('')
   const [bodyEn, setBodyEn] = useState('')
   const [bodyEs, setBodyEs] = useState('')
+  const [subjectEn, setSubjectEn] = useState('')
+  const [subjectEs, setSubjectEs] = useState('')
   const [defaultLang, setDefaultLang] = useState<Language>(0)
   const [pickedEventId, setPickedEventId] = useState<number | null>(null)
   const [previewStep, setPreviewStep] = useState<'edit' | 'confirm' | null>(null)
@@ -275,18 +287,29 @@ function ComposeTab({
   const selectedTemplate = useMemo(
     () => templates.find(t => t.id === templateId) ?? null,
     [templateId, templates])
+  const selectedEmailTemplate = useMemo(
+    () => emailTemplates.find(t => t.id === emailTemplateId) ?? null,
+    [emailTemplateId, emailTemplates])
 
-  // Templates only apply to WhatsApp broadcasts. Reset to free-form on any other combination
-  // so the UI doesn't drift into an invalid state.
+  // Templates apply to WhatsApp (Content) and Email (admin-managed) broadcasts. Reset to free-form
+  // on any other combination so the UI doesn't drift into an invalid state.
   useEffect(() => {
-    if (channel !== 1 || mode !== 'broadcast') {
+    if (mode !== 'broadcast' || (channel !== 1 && channel !== 2)) {
       setBodyMode('free-form')
       setTemplateId('')
+      setEmailTemplateId('')
       setTemplateValues({})
+    } else if (channel === 1) {
+      setEmailTemplateId('')
+    } else if (channel === 2) {
+      setTemplateId('')
     }
   }, [channel, mode])
 
-  const channelAvailable = (c: MessageChannel) => c === 0 ? config?.sms : config?.whatsApp
+  const channelAvailable = (c: MessageChannel) =>
+    c === 0 ? config?.sms : c === 1 ? config?.whatsApp : config?.email
+  const isWhatsAppChannel = channel === 1
+  const isEmailChannel = channel === 2
 
   const recipientPreview = useMemo(() => {
     if (recipientMode === 'individual') return phone.trim() ? `1 recipient (${phone.trim()})` : 'No recipient yet'
@@ -303,6 +326,14 @@ function ComposeTab({
 
   const target = () => {
     if (recipientMode === 'individual') {
+      // For email channel, route through ad-hoc list so we can carry the email — the Individual
+      // target only carries a phone.
+      if (isEmailChannel) {
+        return {
+          kind: 3 as const,
+          recipients: [{ phone: '', name: name.trim() || null, email: phone.trim() }],
+        }
+      }
       return { kind: 0 as const, phone: phone.trim(), name: name.trim() || null }
     }
     if (recipientMode === 'curated') {
@@ -317,11 +348,15 @@ function ComposeTab({
   /** Final validation that's shared between the "send straight" paths and the bilingual modal. */
   const validate = (): string | null => {
     if (!channelAvailable(channel)) return `${MESSAGE_CHANNEL_LABELS[channel]} is not configured on this server.`
-    if (recipientMode === 'individual' && !phone.trim()) return 'Enter a phone number.'
+    if (recipientMode === 'individual') {
+      if (isEmailChannel && !phone.trim()) return 'Enter an email address.'
+      if (!isEmailChannel && !phone.trim()) return 'Enter a phone number.'
+    }
     if (recipientMode === 'curated' && customGroupId === '') return 'Pick a group.'
     if (recipientMode === 'dynamic' && !dynamicKey) return 'Pick a group.'
-    if (recipientMode === 'list' && parsedList.length === 0) return 'Paste at least one phone number.'
+    if (recipientMode === 'list' && parsedList.length === 0) return 'Paste at least one recipient.'
     if (mode === 'group-chat' && !title.trim()) return 'Group chat title is required.'
+    if (mode === 'group-chat' && isEmailChannel) return 'Group chat is only available for SMS or WhatsApp.'
     return null
   }
 
@@ -330,22 +365,34 @@ function ComposeTab({
     const err = validate()
     if (err) { onError(err); return }
 
-    const usingTemplate = mode === 'broadcast' && channel === 1 && bodyMode === 'template'
-    if (usingTemplate) {
+    const usingWhatsAppTemplate = mode === 'broadcast' && isWhatsAppChannel && bodyMode === 'template'
+    const usingEmailTemplate = mode === 'broadcast' && isEmailChannel && bodyMode === 'template'
+    if (usingWhatsAppTemplate) {
       if (!selectedTemplate) { onError('Pick a template.'); return }
       const missing = selectedTemplate.variables
         .filter(v => !templateValues[v.position.toString()]?.trim())
         .map(v => v.label)
       if (missing.length) { onError(`Fill in: ${missing.join(', ')}.`); return }
-      // Show the rendered template preview before firing the send so admin can verify the
-      // variable substitution one last time.
       setTemplatePreviewOpen(true)
+      return
+    }
+    if (usingEmailTemplate) {
+      if (!selectedEmailTemplate) { onError('Pick an email template.'); return }
+      const missing = selectedEmailTemplate.variables
+        .filter(v => !templateValues[v.position.toString()]?.trim())
+        .map(v => v.label)
+      if (missing.length) { onError(`Fill in: ${missing.join(', ')}.`); return }
+      await sendNow({ usingTemplate: true })
       return
     }
 
     // Free-form: require at least the EN side, then open the bilingual preview gate. Group-chat
-    // skips the preview because Conversations only sends one body anyway.
+    // skips the preview because Conversations only sends one body anyway. Email also requires
+    // a subject.
     if (!bodyEn.trim() && !bodyEs.trim()) { onError('Message body is required.'); return }
+    if (isEmailChannel && !subjectEn.trim() && !subjectEs.trim()) {
+      onError('Subject is required for email.'); return
+    }
     if (mode === 'group-chat') {
       await sendNow({ usingTemplate: false })
       return
@@ -358,17 +405,27 @@ function ComposeTab({
     try {
       if (mode === 'broadcast') {
         const payload = args.usingTemplate
-          ? {
-              channel,
-              whatsAppTemplateId: selectedTemplate!.id,
-              templateVariables: templateValues,
-              scheduledGameId: pickedEventId,
-              target: target(),
-            }
+          ? (isEmailChannel
+            ? {
+                channel,
+                emailTemplateId: selectedEmailTemplate!.id,
+                templateVariables: templateValues,
+                scheduledGameId: pickedEventId,
+                target: target(),
+              }
+            : {
+                channel,
+                whatsAppTemplateId: selectedTemplate!.id,
+                templateVariables: templateValues,
+                scheduledGameId: pickedEventId,
+                target: target(),
+              })
           : {
               channel,
               bodyEn: bodyEn.trim() || null,
               bodyEs: bodyEs.trim() || null,
+              subjectEn: isEmailChannel ? (subjectEn.trim() || null) : null,
+              subjectEs: isEmailChannel ? (subjectEs.trim() || null) : null,
               defaultLanguage: defaultLang,
               scheduledGameId: pickedEventId,
               target: target(),
@@ -376,7 +433,9 @@ function ComposeTab({
         const r = await Api.createBroadcast(payload)
         const ok = r.recipients.filter(x => x.status !== 4 && x.status !== 5).length
         const via = args.usingTemplate
-          ? `${MESSAGE_CHANNEL_LABELS[channel]} template "${selectedTemplate!.name}"`
+          ? (isEmailChannel
+              ? `Email template "${selectedEmailTemplate!.name}"`
+              : `${MESSAGE_CHANNEL_LABELS[channel]} template "${selectedTemplate!.name}"`)
           : MESSAGE_CHANNEL_LABELS[channel]
         await onSent(`Sent to ${ok}/${r.recipients.length} via ${via}.`)
       } else {
@@ -392,7 +451,8 @@ function ComposeTab({
         if (initial) await Api.sendToConversation(r.id, initial)
         await onSent(`Group chat "${r.title}" created with ${r.participants.length} participants.`)
       }
-      setBodyEn(''); setBodyEs(''); setPreviewStep(null); setTemplatePreviewOpen(false)
+      setBodyEn(''); setBodyEs(''); setSubjectEn(''); setSubjectEs('')
+      setPreviewStep(null); setTemplatePreviewOpen(false)
       setPickedEventId(null)
       if (args.usingTemplate) setTemplateValues({})
     } catch (e: any) {
@@ -402,9 +462,8 @@ function ComposeTab({
     }
   }
 
-  // Available WhatsApp templates (filtered by language? No — admin picks any.)
-  const isWhatsApp = channel === 1
-  const showTemplateMode = isWhatsApp && mode === 'broadcast'
+  // Template mode is available for WhatsApp (Twilio Content) and Email (admin-managed) broadcasts.
+  const showTemplateMode = (isWhatsAppChannel || isEmailChannel) && mode === 'broadcast'
 
   return (
     <>
@@ -413,7 +472,7 @@ function ComposeTab({
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">{t('admin.msgChannel')}</label>
           <div className="flex gap-2">
-            {[0, 1].map(c => (
+            {[0, 1, 2].map(c => (
               <button key={c} type="button" disabled={!channelAvailable(c as MessageChannel)}
                 onClick={() => setChannel(c as MessageChannel)}
                 className={`px-3 py-2 rounded-md border text-sm ${channel === c
@@ -455,8 +514,9 @@ function ComposeTab({
 
         {recipientMode === 'individual' && (
           <div className="grid sm:grid-cols-2 gap-3">
-            <input type="tel" value={phone} onChange={e => setPhone(e.target.value)}
-              placeholder="+17025551212"
+            <input type={isEmailChannel ? 'email' : 'tel'}
+              value={phone} onChange={e => setPhone(e.target.value)}
+              placeholder={isEmailChannel ? 'parent@example.com' : '+17025551212'}
               className="border border-slate-300 rounded-md px-3 py-2 text-sm" />
             <input type="text" value={name} onChange={e => setName(e.target.value)}
               placeholder={t('admin.msgNameOptional')}
@@ -528,6 +588,28 @@ function ComposeTab({
 
       {bodyMode === 'template' ? (
         <div className="space-y-3">
+          {isEmailChannel ? (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">{t('admin.msgTemplate')}</label>
+              <select value={emailTemplateId}
+                onChange={e => {
+                  const id = e.target.value === '' ? '' : Number(e.target.value)
+                  setEmailTemplateId(id)
+                  setTemplateValues({})
+                }}
+                className="border border-slate-300 rounded-md px-3 py-2 text-sm w-full sm:w-96">
+                <option value="">— {t('admin.msgPickTemplate')} —</option>
+                {emailTemplates.map(tpl => (
+                  <option key={tpl.id} value={tpl.id}>
+                    {tpl.name} ({tpl.language === 1 ? 'ES' : 'EN'})
+                  </option>
+                ))}
+              </select>
+              {emailTemplates.length === 0 && (
+                <p className="mt-1 text-xs text-rose-700">{t('admin.msgNoTemplates')}</p>
+              )}
+            </div>
+          ) : (
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">{t('admin.msgTemplate')}</label>
             <select value={templateId}
@@ -548,6 +630,7 @@ function ComposeTab({
               <p className="mt-1 text-xs text-rose-700">{t('admin.msgNoTemplates')}</p>
             )}
           </div>
+          )}
           {upcomingGames.length > 0 && (
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">{t('admin.msgPickGame')}</label>
@@ -590,10 +673,35 @@ function ComposeTab({
               <p className="mt-1 text-xs text-slate-500">{t('admin.msgPickGameHelp')}</p>
             </div>
           )}
-          {selectedTemplate?.previewText && (
+          {isEmailChannel && selectedEmailTemplate && (
+            <div className="space-y-2">
+              <pre className="text-xs bg-slate-50 border border-slate-200 rounded p-2 whitespace-pre-wrap">
+{`Subject: ${selectedEmailTemplate.subject}\n\n${selectedEmailTemplate.body}`}
+              </pre>
+            </div>
+          )}
+          {isEmailChannel && selectedEmailTemplate && selectedEmailTemplate.variables.length > 0 && (
+            <div className="space-y-2">
+              <h3 className="text-sm font-medium text-slate-700">{t('admin.msgFillVariables')}</h3>
+              {selectedEmailTemplate.variables.map(v => {
+                const key = v.position.toString()
+                return (
+                  <div key={v.id} className="grid grid-cols-[8rem_1fr] items-center gap-2">
+                    <label className="text-sm text-slate-700">{v.label} <span className="text-slate-400">{`{{${v.position}}}`}</span></label>
+                    <input type="text"
+                      value={templateValues[key] ?? ''}
+                      placeholder={v.example ?? ''}
+                      onChange={e => setTemplateValues(prev => ({ ...prev, [key]: e.target.value }))}
+                      className="border border-slate-300 rounded-md px-3 py-2 text-sm" />
+                  </div>
+                )
+              })}
+            </div>
+          )}
+          {!isEmailChannel && selectedTemplate?.previewText && (
             <pre className="text-xs bg-slate-50 border border-slate-200 rounded p-2 whitespace-pre-wrap">{selectedTemplate.previewText}</pre>
           )}
-          {selectedTemplate && selectedTemplate.variables.length > 0 && (
+          {!isEmailChannel && selectedTemplate && selectedTemplate.variables.length > 0 && (
             <div className="space-y-2">
               <h3 className="text-sm font-medium text-slate-700">{t('admin.msgFillVariables')}</h3>
               {selectedTemplate.variables.map(v => {
@@ -642,13 +750,23 @@ function ComposeTab({
               <p className="mt-1 text-xs text-slate-500">{t('admin.msgPickGameFreeFormHelp')}</p>
             </div>
           )}
+          {isEmailChannel && (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">{t('admin.msgSubject')}</label>
+              <input type="text" value={subjectEn} onChange={e => setSubjectEn(e.target.value)}
+                maxLength={256}
+                placeholder={t('admin.msgSubjectPlaceholder')}
+                className="border border-slate-300 rounded-md px-3 py-2 text-sm w-full" />
+              <p className="mt-1 text-xs text-slate-500">{t('admin.msgSubjectHint')}</p>
+            </div>
+          )}
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">{t('admin.msgBody')}</label>
-            <textarea rows={4} value={bodyEn} onChange={e => setBodyEn(e.target.value)}
-              maxLength={2000}
+            <textarea rows={isEmailChannel ? 8 : 4} value={bodyEn} onChange={e => setBodyEn(e.target.value)}
+              maxLength={isEmailChannel ? 8000 : 2000}
               placeholder={t('admin.msgBodyPlaceholder')}
               className="border border-slate-300 rounded-md px-3 py-2 text-sm w-full" />
-            <p className="mt-1 text-xs text-slate-500">{bodyEn.length} / 2000 · {t('admin.msgBodyHint')}</p>
+            <p className="mt-1 text-xs text-slate-500">{bodyEn.length} / {isEmailChannel ? 8000 : 2000} · {t('admin.msgBodyHint')}</p>
           </div>
         </div>
       )}
@@ -712,6 +830,7 @@ function GroupsTab({
   const [newLanguage, setNewLanguage] = useState<Language>(0)
   const [memberName, setMemberName] = useState('')
   const [memberPhone, setMemberPhone] = useState('')
+  const [memberEmail, setMemberEmail] = useState('')
   const [memberLanguage, setMemberLanguage] = useState<Language | ''>('') // '' = inherit group default
 
   const loadGroup = async (id: number) => {
@@ -757,9 +876,10 @@ function GroupsTab({
       await Api.addMessagingGroupMember(selected.id, {
         name: memberName.trim() || null,
         phone: memberPhone.trim(),
+        email: memberEmail.trim() || null,
         language: memberLanguage === '' ? null : memberLanguage,
       })
-      setMemberName(''); setMemberPhone(''); setMemberLanguage('')
+      setMemberName(''); setMemberPhone(''); setMemberEmail(''); setMemberLanguage('')
       await loadGroup(selected.id)
       await onChanged()
     } catch (e: any) { onError(extractError(e)) }
@@ -871,12 +991,15 @@ function GroupsTab({
                 </button>
               </div>
             </div>
-            <form onSubmit={addMember} className="grid sm:grid-cols-[1fr_1fr_auto_auto] gap-2">
+            <form onSubmit={addMember} className="grid sm:grid-cols-[1fr_1fr_1fr_auto_auto] gap-2">
               <input type="text" value={memberName} onChange={e => setMemberName(e.target.value)}
                 placeholder={t('admin.msgNameOptional')}
                 className="border border-slate-300 rounded-md px-3 py-2 text-sm" />
               <input type="tel" value={memberPhone} onChange={e => setMemberPhone(e.target.value)}
                 placeholder="+17025551212"
+                className="border border-slate-300 rounded-md px-3 py-2 text-sm" />
+              <input type="email" value={memberEmail} onChange={e => setMemberEmail(e.target.value)}
+                placeholder={t('admin.msgEmailOptional')}
                 className="border border-slate-300 rounded-md px-3 py-2 text-sm" />
               <select value={memberLanguage}
                 onChange={e => setMemberLanguage(e.target.value === '' ? '' : Number(e.target.value) as Language)}
@@ -895,6 +1018,7 @@ function GroupsTab({
                 <tr className="text-left text-slate-500 border-b">
                   <th className="py-2 pr-4">{t('admin.msgMember')}</th>
                   <th className="py-2 pr-4">{t('admin.phone')}</th>
+                  <th className="py-2 pr-4">{t('admin.email')}</th>
                   <th className="py-2 pr-4">{t('admin.msgMemberLang')}</th>
                   <th className="py-2 pr-4"></th>
                 </tr>
@@ -904,6 +1028,7 @@ function GroupsTab({
                   <tr key={m.id} className="border-b last:border-0">
                     <td className="py-2 pr-4">{m.name ?? '—'}</td>
                     <td className="py-2 pr-4">{m.phone}</td>
+                    <td className="py-2 pr-4">{m.email ?? '—'}</td>
                     <td className="py-2 pr-4">
                       <select value={m.language}
                         onChange={e => setMemberLang(m.id, Number(e.target.value) as Language)}
@@ -919,7 +1044,7 @@ function GroupsTab({
                   </tr>
                 ))}
                 {selected.members.length === 0 && (
-                  <tr><td colSpan={4} className="py-4 text-center text-slate-400">—</td></tr>
+                  <tr><td colSpan={5} className="py-4 text-center text-slate-400">—</td></tr>
                 )}
               </tbody>
             </table>
@@ -1213,14 +1338,16 @@ function HistoryTab({
 // --- Templates tab ---------------------------------------------------------
 
 function TemplatesTab({
-  templates, onChanged, onError, onNotice,
+  templates, emailTemplates, onChanged, onError, onNotice,
 }: {
   templates: WhatsAppTemplate[]
+  emailTemplates: EmailTemplate[]
   onChanged: () => Promise<void> | void
   onError: (e: string) => void
   onNotice: (n: string) => void
 }) {
   const { t } = useTranslation()
+  const [kind, setKind] = useState<'whatsapp' | 'email'>('whatsapp')
   const [editingId, setEditingId] = useState<number | 'new' | null>(null)
   const [name, setName] = useState('')
   const [contentSid, setContentSid] = useState('')
@@ -1287,6 +1414,24 @@ function TemplatesTab({
   }
 
   return (
+    <div className="space-y-4">
+      <div className="flex gap-2">
+        <button type="button" onClick={() => { setKind('whatsapp'); setEditingId(null) }}
+          className={`px-3 py-2 rounded-md border text-sm ${kind === 'whatsapp' ? 'bg-emerald-700 text-white border-emerald-700' : 'bg-white border-slate-300 text-slate-700'}`}
+        >{t('admin.msgTemplateKindWhatsApp')}</button>
+        <button type="button" onClick={() => { setKind('email'); setEditingId(null) }}
+          className={`px-3 py-2 rounded-md border text-sm ${kind === 'email' ? 'bg-emerald-700 text-white border-emerald-700' : 'bg-white border-slate-300 text-slate-700'}`}
+        >{t('admin.msgTemplateKindEmail')}</button>
+      </div>
+
+      {kind === 'email' ? (
+        <EmailTemplatesSection
+          emailTemplates={emailTemplates}
+          onChanged={onChanged}
+          onError={onError}
+          onNotice={onNotice}
+        />
+      ) : (
     <div className="grid lg:grid-cols-3 gap-4">
       <section className="bg-white border border-slate-200 rounded-lg p-4 lg:col-span-1 space-y-3">
         <div className="flex items-center justify-between">
@@ -1396,6 +1541,199 @@ function TemplatesTab({
         )}
       </section>
     </div>
+      )}
+    </div>
+  )
+}
+
+// --- Email templates section (rendered inside TemplatesTab when kind=email) -
+
+function EmailTemplatesSection({
+  emailTemplates, onChanged, onError, onNotice,
+}: {
+  emailTemplates: EmailTemplate[]
+  onChanged: () => Promise<void> | void
+  onError: (e: string) => void
+  onNotice: (n: string) => void
+}) {
+  const { t } = useTranslation()
+  const [editingId, setEditingId] = useState<number | 'new' | null>(null)
+  const [name, setName] = useState('')
+  const [language, setLanguage] = useState<Language>(0)
+  const [description, setDescription] = useState('')
+  const [subject, setSubject] = useState('')
+  const [body, setBody] = useState('')
+  const [vars, setVars] = useState<SaveTemplateVariable[]>([])
+
+  const loadForm = (tpl: EmailTemplate | null) => {
+    if (tpl) {
+      setEditingId(tpl.id)
+      setName(tpl.name); setLanguage(tpl.language)
+      setDescription(tpl.description ?? ''); setSubject(tpl.subject); setBody(tpl.body)
+      setVars(tpl.variables.map(v => ({ position: v.position, label: v.label, example: v.example })))
+    } else {
+      setEditingId('new')
+      setName(''); setLanguage(0)
+      setDescription(''); setSubject(''); setBody(''); setVars([])
+    }
+  }
+
+  const addVar = () => {
+    const next = vars.length === 0 ? 1 : Math.max(...vars.map(v => v.position)) + 1
+    setVars(prev => [...prev, { position: next, label: '', example: '' }])
+  }
+  const updateVar = (idx: number, patch: Partial<SaveTemplateVariable>) =>
+    setVars(prev => prev.map((v, i) => i === idx ? { ...v, ...patch } : v))
+  const removeVar = (idx: number) =>
+    setVars(prev => prev.filter((_, i) => i !== idx))
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!name.trim()) { onError('Name is required.'); return }
+    if (!subject.trim()) { onError('Subject is required.'); return }
+    if (!body.trim()) { onError('Body is required.'); return }
+    const payload = {
+      name: name.trim(),
+      language,
+      description: description.trim() || null,
+      subject: subject.trim(),
+      body,
+      variables: vars.filter(v => v.label.trim()),
+    }
+    try {
+      if (editingId === 'new' || editingId === null) {
+        await Api.createEmailTemplate(payload)
+        onNotice(`Created email template "${payload.name}".`)
+      } else {
+        await Api.updateEmailTemplate(editingId, payload)
+        onNotice(`Updated email template "${payload.name}".`)
+      }
+      setEditingId(null)
+      await onChanged()
+    } catch (e: any) { onError(extractError(e)) }
+  }
+
+  const remove = async () => {
+    if (typeof editingId !== 'number') return
+    if (!confirm(`Delete email template "${name}"? Past broadcasts are unaffected.`)) return
+    try {
+      await Api.deleteEmailTemplate(editingId)
+      setEditingId(null)
+      await onChanged()
+    } catch (e: any) { onError(extractError(e)) }
+  }
+
+  return (
+    <div className="grid lg:grid-cols-3 gap-4">
+      <section className="bg-white border border-slate-200 rounded-lg p-4 lg:col-span-1 space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="font-bold text-emerald-800">{t('admin.msgEmailTemplatesHeader')}</h2>
+          <button onClick={() => loadForm(null)}
+            className="text-sm text-emerald-700 hover:underline">+ {t('admin.msgNewTemplate')}</button>
+        </div>
+        <ul className="space-y-1">
+          {emailTemplates.map(tpl => (
+            <li key={tpl.id}>
+              <button onClick={() => loadForm(tpl)}
+                className={`w-full text-left px-2 py-1.5 rounded text-sm hover:bg-emerald-50 ${editingId === tpl.id ? 'bg-emerald-50 text-emerald-800 font-medium' : ''}`}>
+                <div>{tpl.name} <span className="text-xs text-slate-400">{tpl.language === 1 ? 'ES' : 'EN'}</span></div>
+                <div className="text-xs text-slate-500 truncate">{tpl.subject}</div>
+              </button>
+            </li>
+          ))}
+          {emailTemplates.length === 0 && <li className="text-sm text-slate-400">{t('admin.msgNoTemplates')}</li>}
+        </ul>
+        <p className="text-xs text-slate-500">{t('admin.msgEmailTemplatesHint')}</p>
+      </section>
+
+      <section className="lg:col-span-2">
+        {editingId === null && (
+          <div className="bg-white border border-dashed border-slate-300 rounded-lg p-8 text-center text-sm text-slate-500">
+            {t('admin.msgSelectTemplate')}
+          </div>
+        )}
+        {editingId !== null && (
+          <form onSubmit={save} className="bg-white border border-slate-200 rounded-lg p-4 space-y-3">
+            <div className="grid sm:grid-cols-2 gap-3">
+              <label className="block text-sm">
+                <span className="font-medium text-slate-700">{t('admin.msgTemplateName')}</span>
+                <input type="text" value={name} onChange={e => setName(e.target.value)}
+                  placeholder="practice_reminder"
+                  className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+              </label>
+              <label className="block text-sm">
+                <span className="font-medium text-slate-700">{t('admin.language')}</span>
+                <select value={language} onChange={e => setLanguage(Number(e.target.value) as Language)}
+                  className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm">
+                  <option value={0}>English</option>
+                  <option value={1}>Español</option>
+                </select>
+              </label>
+              <label className="block text-sm sm:col-span-2">
+                <span className="font-medium text-slate-700">{t('admin.msgTemplateDescription')}</span>
+                <input type="text" value={description} onChange={e => setDescription(e.target.value)}
+                  className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+              </label>
+            </div>
+
+            <label className="block text-sm">
+              <span className="font-medium text-slate-700">{t('admin.msgSubject')}</span>
+              <input type="text" value={subject} onChange={e => setSubject(e.target.value)}
+                placeholder={t('admin.msgEmailSubjectTemplatePh')}
+                className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+            </label>
+
+            <label className="block text-sm">
+              <span className="font-medium text-slate-700">{t('admin.msgBody')}</span>
+              <textarea rows={10} value={body} onChange={e => setBody(e.target.value)}
+                placeholder={t('admin.msgEmailBodyTemplatePh')}
+                className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm font-mono" />
+              <span className="block text-xs text-slate-500 mt-1">{t('admin.msgEmailTemplatePlaceholderHelp')}</span>
+            </label>
+
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-medium text-slate-700">{t('admin.msgTemplateVariables')}</h3>
+                <button type="button" onClick={addVar}
+                  className="text-sm text-emerald-700 hover:underline">+ {t('admin.msgTemplateAddVariable')}</button>
+              </div>
+              <p className="text-xs text-slate-500 mb-2">{t('admin.msgTemplateVariablesHelp')}</p>
+              {vars.length === 0 && <p className="text-xs text-slate-400">{t('admin.msgTemplateNoVariables')}</p>}
+              {vars.map((v, idx) => (
+                <div key={idx} className="grid grid-cols-[5rem_1fr_1fr_2rem] items-center gap-2 mb-1">
+                  <input type="number" min={1} value={v.position}
+                    onChange={e => updateVar(idx, { position: Number(e.target.value) })}
+                    className="border border-slate-300 rounded-md px-2 py-1 text-sm" />
+                  <input type="text" value={v.label} placeholder={t('admin.msgTemplateVarLabel')}
+                    onChange={e => updateVar(idx, { label: e.target.value })}
+                    className="border border-slate-300 rounded-md px-2 py-1 text-sm" />
+                  <input type="text" value={v.example ?? ''} placeholder={t('admin.msgTemplateVarExample')}
+                    onChange={e => updateVar(idx, { example: e.target.value })}
+                    className="border border-slate-300 rounded-md px-2 py-1 text-sm" />
+                  <button type="button" onClick={() => removeVar(idx)}
+                    className="text-rose-700 text-sm">✕</button>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-3 pt-2 border-t border-slate-100">
+              <button type="submit"
+                className="bg-emerald-700 text-white text-sm font-semibold px-4 py-2 rounded-md hover:bg-emerald-800">
+                {editingId === 'new' ? t('admin.msgSave') : t('admin.msgSave')}
+              </button>
+              {typeof editingId === 'number' && (
+                <button type="button" onClick={remove}
+                  className="text-sm border border-rose-300 text-rose-700 rounded-md px-3 py-1.5 hover:bg-rose-50">
+                  {t('admin.delete')}
+                </button>
+              )}
+              <button type="button" onClick={() => setEditingId(null)}
+                className="text-sm text-slate-600 hover:underline ml-auto">{t('admin.msgCancel')}</button>
+            </div>
+          </form>
+        )}
+      </section>
+    </div>
   )
 }
 
@@ -1417,6 +1755,19 @@ function parseRecipientList(raw: string): AdHocRecipient[] {
   for (const line of raw.split(/[\n;]+/)) {
     const trimmed = line.trim()
     if (!trimmed) continue
+    // Email-first detection: if the line contains an email-shaped token, treat the line as an
+    // email recipient (with optional preceding name). Otherwise fall back to phone parsing.
+    const emailMatch = trimmed.match(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/)
+    if (emailMatch) {
+      const email = emailMatch[0]
+      const key = `email:${email.toLowerCase()}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      const before = trimmed.slice(0, emailMatch.index).trim()
+      const name = before.replace(/[,:]\s*$/, '').replace(/^~+/, '').replace(/~+/g, ' ').trim()
+      out.push({ phone: '', name: name || null, email })
+      continue
+    }
     // Greedy phone-like run: optional +, then digits and phone punctuation, anchored by digits at the ends.
     const matches = [...trimmed.matchAll(/\+?\d[\d\s\-().]{6,}\d/g)]
     if (matches.length === 0) continue

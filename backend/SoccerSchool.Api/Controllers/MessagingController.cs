@@ -24,6 +24,7 @@ public class MessagingController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly IMessageSender _sender;
+    private readonly IEmailSender _emailSender;
     private readonly IRecipientResolver _resolver;
     private readonly IConversationService _conversations;
     private readonly IPhraseTranslator _translator;
@@ -32,6 +33,7 @@ public class MessagingController : ControllerBase
     public MessagingController(
         AppDbContext db,
         IMessageSender sender,
+        IEmailSender emailSender,
         IRecipientResolver resolver,
         IConversationService conversations,
         IPhraseTranslator translator,
@@ -39,6 +41,7 @@ public class MessagingController : ControllerBase
     {
         _db = db;
         _sender = sender;
+        _emailSender = emailSender;
         _resolver = resolver;
         _conversations = conversations;
         _translator = translator;
@@ -52,6 +55,7 @@ public class MessagingController : ControllerBase
         Ok(new MessagingConfigDto(
             Sms: _twilio.IsSmsConfigured,
             WhatsApp: _twilio.IsWhatsAppConfigured,
+            Email: _emailSender.IsAvailable,
             Conversations: _twilio.IsSmsConfigured || _twilio.IsWhatsAppConfigured));
 
     // --- Curated groups ---
@@ -79,7 +83,7 @@ public class MessagingController : ControllerBase
         if (g is null) return NotFound();
         return Ok(new MessageGroupDetail(
             g.Id, g.Name, g.Description, g.Language, g.CreatedAt,
-            g.Members.Select(m => new MessageGroupMemberDto(m.Id, m.Name, m.Phone, m.Language, m.ParentAccountId)).ToList()));
+            g.Members.Select(m => new MessageGroupMemberDto(m.Id, m.Name, m.Phone, m.Email, m.Language, m.ParentAccountId)).ToList()));
     }
 
     [HttpPost("groups")]
@@ -143,12 +147,13 @@ public class MessagingController : ControllerBase
             MessageGroupId = id,
             Name = request.Name?.Trim(),
             Phone = phone,
+            Email = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim(),
             Language = request.Language ?? g.Language,
             ParentAccountId = request.ParentAccountId
         };
         _db.MessageGroupMembers.Add(m);
         await _db.SaveChangesAsync(ct);
-        return Ok(new MessageGroupMemberDto(m.Id, m.Name, m.Phone, m.Language, m.ParentAccountId));
+        return Ok(new MessageGroupMemberDto(m.Id, m.Name, m.Phone, m.Email, m.Language, m.ParentAccountId));
     }
 
     [HttpPatch("groups/{id:int}/members/{memberId:int}/language")]
@@ -160,7 +165,7 @@ public class MessagingController : ControllerBase
         if (m is null) return NotFound();
         m.Language = request.Language;
         await _db.SaveChangesAsync(ct);
-        return Ok(new MessageGroupMemberDto(m.Id, m.Name, m.Phone, m.Language, m.ParentAccountId));
+        return Ok(new MessageGroupMemberDto(m.Id, m.Name, m.Phone, m.Email, m.Language, m.ParentAccountId));
     }
 
     [HttpDelete("groups/{id:int}/members/{memberId:int}")]
@@ -207,6 +212,7 @@ public class MessagingController : ControllerBase
                 MessageGroupId = g.Id,
                 Name = r.Name,
                 Phone = r.Phone,
+                Email = string.IsNullOrWhiteSpace(r.Email) ? null : r.Email,
                 Language = memberLang,
                 ParentAccountId = r.ParentAccountId
             });
@@ -216,7 +222,7 @@ public class MessagingController : ControllerBase
 
         return Ok(new MessageGroupDetail(
             g.Id, g.Name, g.Description, g.Language, g.CreatedAt,
-            g.Members.Select(m => new MessageGroupMemberDto(m.Id, m.Name, m.Phone, m.Language, m.ParentAccountId)).ToList()));
+            g.Members.Select(m => new MessageGroupMemberDto(m.Id, m.Name, m.Phone, m.Email, m.Language, m.ParentAccountId)).ToList()));
     }
 
     // --- Broadcasts (fan-out) ---
@@ -229,16 +235,22 @@ public class MessagingController : ControllerBase
             return BadRequest($"{request.Channel} not configured on this server.");
 
         // Two send modes: free-form (with optional bilingual bodies) or WhatsApp Content template.
-        var isTemplate = request.WhatsAppTemplateId.HasValue;
+        var isWhatsAppTemplate = request.WhatsAppTemplateId.HasValue;
+        var isEmailTemplate = request.EmailTemplateId.HasValue;
         WhatsAppTemplate? template = null;
+        EmailTemplate? emailTemplate = null;
         Dictionary<string, string> templateVars = new();
         var bodyEn = request.BodyEn?.Trim();
         var bodyEs = request.BodyEs?.Trim();
+        var subjectEn = request.SubjectEn?.Trim();
+        var subjectEs = request.SubjectEs?.Trim();
 
-        if (isTemplate)
+        if (isWhatsAppTemplate)
         {
             if (request.Channel != MessageChannel.WhatsApp)
-                return BadRequest("Templates can only be used on the WhatsApp channel.");
+                return BadRequest("WhatsApp templates can only be used on the WhatsApp channel.");
+            if (isEmailTemplate)
+                return BadRequest("Specify either WhatsAppTemplateId or EmailTemplateId, not both.");
             template = await _db.WhatsAppTemplates
                 .Include(t => t.Variables)
                 .FirstOrDefaultAsync(t => t.Id == request.WhatsAppTemplateId, ct);
@@ -246,10 +258,25 @@ public class MessagingController : ControllerBase
             templateVars = (request.TemplateVariables ?? new())
                 .Where(kv => !string.IsNullOrEmpty(kv.Key))
                 .ToDictionary(kv => kv.Key, kv => kv.Value ?? string.Empty);
-            // Validate by the variable's Position rendered as a string. Approved templates use
-            // positional placeholders ({{1}}, {{2}}, ...); Twilio's Content API substitutes by
-            // these numeric keys, so the ContentVariables JSON we serialize must use them.
             var missing = template.Variables
+                .Select(v => v.Position.ToString(CultureInfo.InvariantCulture))
+                .Where(key => !templateVars.ContainsKey(key) || string.IsNullOrWhiteSpace(templateVars[key]))
+                .ToList();
+            if (missing.Count > 0)
+                return BadRequest($"Template variables missing: {string.Join(", ", missing)}.");
+        }
+        else if (isEmailTemplate)
+        {
+            if (request.Channel != MessageChannel.Email)
+                return BadRequest("Email templates can only be used on the Email channel.");
+            emailTemplate = await _db.EmailTemplates
+                .Include(t => t.Variables)
+                .FirstOrDefaultAsync(t => t.Id == request.EmailTemplateId, ct);
+            if (emailTemplate is null) return BadRequest("Email template not found.");
+            templateVars = (request.TemplateVariables ?? new())
+                .Where(kv => !string.IsNullOrEmpty(kv.Key))
+                .ToDictionary(kv => kv.Key, kv => kv.Value ?? string.Empty);
+            var missing = emailTemplate.Variables
                 .Select(v => v.Position.ToString(CultureInfo.InvariantCulture))
                 .Where(key => !templateVars.ContainsKey(key) || string.IsNullOrWhiteSpace(templateVars[key]))
                 .ToList();
@@ -258,8 +285,12 @@ public class MessagingController : ControllerBase
         }
         else
         {
+            // Free-form: at least one body required. For email, subject also required.
             if (string.IsNullOrWhiteSpace(bodyEn) && string.IsNullOrWhiteSpace(bodyEs))
-                return BadRequest("Either BodyEn, BodyEs, or WhatsAppTemplateId is required.");
+                return BadRequest("Either BodyEn, BodyEs, or a template is required.");
+            if (request.Channel == MessageChannel.Email &&
+                string.IsNullOrWhiteSpace(subjectEn) && string.IsNullOrWhiteSpace(subjectEs))
+                return BadRequest("Email broadcasts require a subject.");
         }
 
         var target = MapTarget(request.Target);
@@ -268,38 +299,50 @@ public class MessagingController : ControllerBase
             return BadRequest("No recipients matched the selected target.");
 
         // For template sends, look up the language pair so we can route each recipient to the
-        // template matching their language. Pair lookup is by base name (e.g. `practice_or_game`
-        // ↔ `practice_or_game_es`) with opposite Language. If no pair exists, every recipient
-        // gets the primary template and the log notes the language mismatch.
+        // template matching their language. Pair lookup is by base name with opposite Language.
+        // If no pair exists, every recipient gets the primary template and the log notes the mismatch.
         WhatsAppTemplate? pairedTemplate = null;
-        if (isTemplate)
+        EmailTemplate? pairedEmailTemplate = null;
+        if (isWhatsAppTemplate)
             pairedTemplate = await FindPairAsync(template!, ct);
+        if (isEmailTemplate)
+            pairedEmailTemplate = await FindEmailPairAsync(emailTemplate!, ct);
 
-        // Persist a human-readable rendering of the message in BodyEn so the history log shows
-        // what went out (Twilio does the real substitution server-side; this is admin-display).
-        var renderedTemplate = isTemplate
+        // For WhatsApp-template sends, persist a rendered preview in BodyEn so the history view
+        // shows what went out (Twilio does the real substitution server-side). For Email templates,
+        // the subject + body live on the broadcast itself so we copy those in instead.
+        var renderedWhatsAppTemplate = isWhatsAppTemplate
             ? RenderTemplatePreview(template!.PreviewText, template.Name, templateVars)
             : null;
 
         var broadcast = new Broadcast
         {
             Channel = request.Channel,
-            BodyEn = bodyEn ?? renderedTemplate,
-            BodyEs = bodyEs,
+            BodyEn = isEmailTemplate
+                ? RenderTemplateString(emailTemplate!.Body, emailTemplate.Variables, templateVars)
+                : (bodyEn ?? renderedWhatsAppTemplate),
+            BodyEs = isEmailTemplate && pairedEmailTemplate is not null
+                ? RenderTemplateString(pairedEmailTemplate.Body, pairedEmailTemplate.Variables, templateVars)
+                : bodyEs,
+            SubjectEn = isEmailTemplate
+                ? RenderTemplateString(emailTemplate!.Subject, emailTemplate.Variables, templateVars)
+                : subjectEn,
+            SubjectEs = isEmailTemplate && pairedEmailTemplate is not null
+                ? RenderTemplateString(pairedEmailTemplate.Subject, pairedEmailTemplate.Variables, templateVars)
+                : subjectEs,
             TargetLabel = resolved.Label,
             WhatsAppTemplateId = template?.Id,
-            TemplateVariablesJson = isTemplate ? JsonSerializer.Serialize(templateVars) : null,
+            TemplateVariablesJson = (isWhatsAppTemplate || isEmailTemplate) ? JsonSerializer.Serialize(templateVars) : null,
             ScheduledGameId = request.ScheduledGameId
         };
         foreach (var r in resolved.Recipients)
         {
-            // Recipient language: from the source (curated group) if present, else from the
-            // broadcast's default (per admin spec: English unless overridden).
             var lang = r.Language ?? request.DefaultLanguage;
             broadcast.Recipients.Add(new BroadcastRecipient
             {
                 Name = r.Name,
                 Phone = r.Phone,
+                Email = string.IsNullOrWhiteSpace(r.Email) ? null : r.Email,
                 Language = lang,
                 Status = MessageDeliveryStatus.Pending
             });
@@ -307,55 +350,155 @@ public class MessagingController : ControllerBase
         _db.Broadcasts.Add(broadcast);
         await _db.SaveChangesAsync(ct);
 
-        // Synchronous fan-out. Each recipient gets the body matching their resolved language;
-        // if that body is empty we fall back to whichever is set so we don't silently skip them.
+        // Synchronous fan-out. Branches by channel: SMS/WhatsApp go through IMessageSender,
+        // Email goes through IEmailSender. Each recipient gets the language-matching content;
+        // for templates we use the paired template when the recipient's language differs.
         foreach (var recipient in broadcast.Recipients)
         {
-            MessageSendResult send;
-            if (isTemplate)
+            if (request.Channel == MessageChannel.Email)
             {
-                // Pick the template matching recipient.Language. Fall back to the primary (with a
-                // log note) if no opposite-language pair exists.
-                var sendTemplate = recipient.Language == template!.Language ? template
-                    : (pairedTemplate?.Language == recipient.Language ? pairedTemplate : template);
-                var languageMismatch = sendTemplate.Language != recipient.Language;
-
-                // If we're falling back to a mismatched template, run each variable value through
-                // the admin's phrase dictionary so at least the dynamic content speaks the
-                // recipient's language. The template body itself stays in the approved language
-                // (Meta locks template bodies; we can't translate them at send time), but the
-                // values that fill {{What}}, {{wear}}, etc. become bilingual.
-                var varsToSend = templateVars;
-                if (languageMismatch)
-                {
-                    var translated = new Dictionary<string, string>();
-                    foreach (var kv in templateVars)
-                    {
-                        var outcome = await _translator.TranslateAsync(
-                            kv.Value, sendTemplate.Language, recipient.Language, ct);
-                        translated[kv.Key] = outcome.Translated;
-                    }
-                    varsToSend = translated;
-                }
-
-                send = await _sender.SendTemplateAsync(recipient.Phone, sendTemplate.ContentSid, varsToSend, ct);
-                if (languageMismatch)
-                {
-                    send = send with { Message = $"[No {recipient.Language} template; sent {sendTemplate.Language} body with dictionary-translated values] {send.Message}" };
-                }
+                await SendEmailRecipientAsync(recipient, broadcast, emailTemplate, pairedEmailTemplate, templateVars, ct);
+            }
+            else if (isWhatsAppTemplate)
+            {
+                await SendWhatsAppTemplateRecipientAsync(recipient, template!, pairedTemplate, templateVars, ct);
             }
             else
             {
                 var body = recipient.Language == Language.Spanish ? (bodyEs ?? bodyEn) : (bodyEn ?? bodyEs);
-                send = await _sender.SendAsync(request.Channel, recipient.Phone, body ?? string.Empty, ct);
+                var send = await _sender.SendAsync(request.Channel, recipient.Phone, body ?? string.Empty, ct);
+                recipient.TwilioSid = send.TwilioSid;
+                recipient.Status = send.Status;
+                recipient.StatusMessage = send.Message;
             }
-            recipient.TwilioSid = send.TwilioSid;
-            recipient.Status = send.Status;
-            recipient.StatusMessage = send.Message;
         }
         await _db.SaveChangesAsync(ct);
 
         return Ok(ToDetail(broadcast));
+    }
+
+    private async Task SendWhatsAppTemplateRecipientAsync(
+        BroadcastRecipient recipient,
+        WhatsAppTemplate template,
+        WhatsAppTemplate? pairedTemplate,
+        Dictionary<string, string> templateVars,
+        CancellationToken ct)
+    {
+        var sendTemplate = recipient.Language == template.Language ? template
+            : (pairedTemplate?.Language == recipient.Language ? pairedTemplate : template);
+        var languageMismatch = sendTemplate.Language != recipient.Language;
+
+        var varsToSend = templateVars;
+        if (languageMismatch)
+        {
+            var translated = new Dictionary<string, string>();
+            foreach (var kv in templateVars)
+            {
+                var outcome = await _translator.TranslateAsync(
+                    kv.Value, sendTemplate.Language, recipient.Language, ct);
+                translated[kv.Key] = outcome.Translated;
+            }
+            varsToSend = translated;
+        }
+
+        var send = await _sender.SendTemplateAsync(recipient.Phone, sendTemplate.ContentSid, varsToSend, ct);
+        if (languageMismatch)
+            send = send with { Message = $"[No {recipient.Language} template; sent {sendTemplate.Language} body with dictionary-translated values] {send.Message}" };
+
+        recipient.TwilioSid = send.TwilioSid;
+        recipient.Status = send.Status;
+        recipient.StatusMessage = send.Message;
+    }
+
+    private async Task SendEmailRecipientAsync(
+        BroadcastRecipient recipient,
+        Broadcast broadcast,
+        EmailTemplate? emailTemplate,
+        EmailTemplate? pairedEmailTemplate,
+        Dictionary<string, string> templateVars,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(recipient.Email))
+        {
+            recipient.Status = MessageDeliveryStatus.Failed;
+            recipient.StatusMessage = "No email address on file.";
+            return;
+        }
+
+        string subject;
+        string body;
+        if (emailTemplate is not null)
+        {
+            // Pick the language-matching template; fall back to the picked one with translated
+            // values if no pair exists.
+            var pickedTemplate = recipient.Language == emailTemplate.Language ? emailTemplate
+                : (pairedEmailTemplate?.Language == recipient.Language ? pairedEmailTemplate : emailTemplate);
+            var languageMismatch = pickedTemplate.Language != recipient.Language;
+            var vars = templateVars;
+            if (languageMismatch)
+            {
+                var translated = new Dictionary<string, string>();
+                foreach (var kv in templateVars)
+                {
+                    var outcome = await _translator.TranslateAsync(
+                        kv.Value, pickedTemplate.Language, recipient.Language, ct);
+                    translated[kv.Key] = outcome.Translated;
+                }
+                vars = translated;
+            }
+            subject = RenderTemplateString(pickedTemplate.Subject, pickedTemplate.Variables, vars);
+            body = RenderTemplateString(pickedTemplate.Body, pickedTemplate.Variables, vars);
+        }
+        else
+        {
+            // Free-form: pick subject + body matching recipient language, falling back to the
+            // other side if their preferred language is empty.
+            subject = recipient.Language == Language.Spanish
+                ? (broadcast.SubjectEs ?? broadcast.SubjectEn ?? string.Empty)
+                : (broadcast.SubjectEn ?? broadcast.SubjectEs ?? string.Empty);
+            body = recipient.Language == Language.Spanish
+                ? (broadcast.BodyEs ?? broadcast.BodyEn ?? string.Empty)
+                : (broadcast.BodyEn ?? broadcast.BodyEs ?? string.Empty);
+        }
+
+        var send = await _emailSender.SendAsync(recipient.Email, subject, body, ct);
+        recipient.TwilioSid = send.MessageId;
+        recipient.Status = send.Success ? MessageDeliveryStatus.Queued : MessageDeliveryStatus.Failed;
+        recipient.StatusMessage = send.Message;
+    }
+
+    private static string RenderTemplateString(
+        string template,
+        IEnumerable<EmailTemplateVariable> templateVars,
+        IReadOnlyDictionary<string, string> values)
+    {
+        if (string.IsNullOrEmpty(template)) return string.Empty;
+        var result = template;
+        foreach (var v in templateVars)
+        {
+            var key = v.Position.ToString(CultureInfo.InvariantCulture);
+            var val = values.TryGetValue(key, out var x) ? x : "";
+            result = result.Replace($"{{{{{key}}}}}", val);
+        }
+        return result;
+    }
+
+    private async Task<EmailTemplate?> FindEmailPairAsync(EmailTemplate t, CancellationToken ct)
+    {
+        var baseName = BaseName(t.Name);
+        string[] candidates =
+        {
+            baseName,
+            baseName + "_en", baseName + "_es",
+            baseName + "_english", baseName + "_spanish"
+        };
+        return await _db.EmailTemplates
+            .Include(x => x.Variables)
+            .FirstOrDefaultAsync(x =>
+                x.Id != t.Id &&
+                x.Language != t.Language &&
+                candidates.Contains(x.Name),
+                ct);
     }
 
 
@@ -382,6 +525,8 @@ public class MessagingController : ControllerBase
                 b.Channel,
                 b.BodyEn,
                 b.BodyEs,
+                b.SubjectEn,
+                b.SubjectEs,
                 b.TargetLabel,
                 b.CreatedAt,
                 b.Recipients.Count,
@@ -602,6 +747,86 @@ public class MessagingController : ControllerBase
         return NoContent();
     }
 
+    // --- Email templates ---
+
+    [HttpGet("email-templates")]
+    public async Task<ActionResult<IEnumerable<EmailTemplateDto>>> ListEmailTemplates(CancellationToken ct)
+    {
+        var items = await _db.EmailTemplates
+            .Include(t => t.Variables)
+            .OrderBy(t => t.Name)
+            .ToListAsync(ct);
+        var byBase = items.GroupBy(t => BaseName(t.Name)).ToDictionary(g => g.Key, g => g.ToList());
+        return Ok(items.Select(t => ToEmailDto(t, FindEmailPairFromGroup(t, byBase))));
+    }
+
+    [HttpPost("email-templates")]
+    public async Task<ActionResult<EmailTemplateDto>> CreateEmailTemplate(
+        [FromBody] SaveEmailTemplateRequest request, CancellationToken ct)
+    {
+        var name = request.Name.Trim();
+        var subject = request.Subject.Trim();
+        var body = request.Body.Trim();
+        if (string.IsNullOrWhiteSpace(name)) return BadRequest("Name is required.");
+        if (string.IsNullOrWhiteSpace(subject)) return BadRequest("Subject is required.");
+        if (string.IsNullOrWhiteSpace(body)) return BadRequest("Body is required.");
+        if (await _db.EmailTemplates.AnyAsync(t => t.Name == name, ct))
+            return Conflict($"An email template named '{name}' already exists.");
+
+        var template = new EmailTemplate
+        {
+            Name = name,
+            Language = request.Language,
+            Description = request.Description?.Trim(),
+            Subject = subject,
+            Body = body,
+            Variables = MapEmailVariables(request.Variables)
+        };
+        _db.EmailTemplates.Add(template);
+        await _db.SaveChangesAsync(ct);
+        return Ok(ToEmailDto(template, await FindEmailPairAsync(template, ct)));
+    }
+
+    [HttpPut("email-templates/{id:int}")]
+    public async Task<ActionResult<EmailTemplateDto>> UpdateEmailTemplate(
+        int id, [FromBody] SaveEmailTemplateRequest request, CancellationToken ct)
+    {
+        var template = await _db.EmailTemplates
+            .Include(t => t.Variables)
+            .FirstOrDefaultAsync(t => t.Id == id, ct);
+        if (template is null) return NotFound();
+
+        var name = request.Name.Trim();
+        var subject = request.Subject.Trim();
+        var body = request.Body.Trim();
+        if (string.IsNullOrWhiteSpace(name)) return BadRequest("Name is required.");
+        if (string.IsNullOrWhiteSpace(subject)) return BadRequest("Subject is required.");
+        if (string.IsNullOrWhiteSpace(body)) return BadRequest("Body is required.");
+        if (await _db.EmailTemplates.AnyAsync(t => t.Name == name && t.Id != id, ct))
+            return Conflict($"An email template named '{name}' already exists.");
+
+        template.Name = name;
+        template.Language = request.Language;
+        template.Description = request.Description?.Trim();
+        template.Subject = subject;
+        template.Body = body;
+        template.UpdatedAt = DateTime.UtcNow;
+        _db.EmailTemplateVariables.RemoveRange(template.Variables);
+        template.Variables = MapEmailVariables(request.Variables);
+        await _db.SaveChangesAsync(ct);
+        return Ok(ToEmailDto(template, await FindEmailPairAsync(template, ct)));
+    }
+
+    [HttpDelete("email-templates/{id:int}")]
+    public async Task<IActionResult> DeleteEmailTemplate(int id, CancellationToken ct)
+    {
+        var template = await _db.EmailTemplates.FindAsync(new object?[] { id }, ct);
+        if (template is null) return NotFound();
+        _db.EmailTemplates.Remove(template);
+        await _db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
     // --- Phrase translation dictionary ---
 
     [HttpGet("translations")]
@@ -778,9 +1003,9 @@ public class MessagingController : ControllerBase
                 .ToList());
 
     private static BroadcastDetail ToDetail(Broadcast b) => new(
-        b.Id, b.Channel, b.BodyEn, b.BodyEs, b.TargetLabel, b.CreatedAt,
+        b.Id, b.Channel, b.BodyEn, b.BodyEs, b.SubjectEn, b.SubjectEs, b.TargetLabel, b.CreatedAt,
         b.Recipients.Select(r => new BroadcastRecipientDto(
-            r.Id, r.Name, r.Phone, r.Language, r.Status, r.StatusMessage, r.TwilioSid)).ToList());
+            r.Id, r.Name, r.Phone, r.Email, r.Language, r.Status, r.StatusMessage, r.TwilioSid)).ToList());
 
     private static GroupConversationDetail ToDetail(GroupConversation c) => new(
         c.Id, c.Title, c.Channel, c.TwilioConversationSid, c.CreatedAt,
@@ -837,6 +1062,36 @@ public class MessagingController : ControllerBase
                 candidates.Contains(x.Name),
                 ct);
     }
+
+    private static EmailTemplateDto ToEmailDto(EmailTemplate t, EmailTemplate? pair = null) => new(
+        t.Id, t.Name, t.Language, t.Description, t.Subject, t.Body, t.CreatedAt, t.UpdatedAt,
+        t.Variables.OrderBy(v => v.Position).Select(v => new EmailTemplateVariableDto(
+            v.Id, v.Position, v.Label, v.Example)).ToList(),
+        pair is null ? null : new EmailTemplatePairDto(
+            pair.Id, pair.Name, pair.Language, pair.Subject, pair.Body,
+            pair.Variables.OrderBy(v => v.Position).Select(v => new EmailTemplateVariableDto(
+                v.Id, v.Position, v.Label, v.Example)).ToList()));
+
+    private static EmailTemplate? FindEmailPairFromGroup(
+        EmailTemplate t,
+        IReadOnlyDictionary<string, List<EmailTemplate>> byBaseName)
+    {
+        if (!byBaseName.TryGetValue(BaseName(t.Name), out var siblings)) return null;
+        return siblings.FirstOrDefault(s => s.Id != t.Id && s.Language != t.Language);
+    }
+
+    private static List<EmailTemplateVariable> MapEmailVariables(IEnumerable<SaveTemplateVariableDto> input) =>
+        input
+            .Where(v => v.Position > 0 && !string.IsNullOrWhiteSpace(v.Label))
+            .GroupBy(v => v.Position)
+            .Select(g => g.Last())
+            .Select(v => new EmailTemplateVariable
+            {
+                Position = v.Position,
+                Label = v.Label.Trim(),
+                Example = v.Example?.Trim()
+            })
+            .ToList();
 
     private static List<WhatsAppTemplateVariable> MapVariables(IEnumerable<SaveTemplateVariableDto> input) =>
         input
