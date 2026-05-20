@@ -224,19 +224,26 @@ public class ScheduleController : ControllerBase
         var now = DateTime.UtcNow;
         var added = new List<ScheduledGame>();
 
+        // Series times are entered as wall-clock Pacific (DST-aware). Convert each occurrence's
+        // local datetime to UTC explicitly — `SpecifyKind(..., Utc)` alone would mis-label the
+        // local time as UTC and shift it by 7-8 hours.
+        var pacific = ResolvePacificTimeZone();
+
         for (var date = request.StartDate.Date; date <= request.EndDate.Date; date = date.AddDays(1))
         {
             if (!dows.Contains(date.DayOfWeek)) continue;
-            var startsAtLocal = date + startTime;
-            var endsAtLocal = endTime.HasValue ? (DateTime?)(date + endTime.Value) : null;
+            var startsAtLocal = DateTime.SpecifyKind(date + startTime, DateTimeKind.Unspecified);
+            var endsAtLocal = endTime.HasValue
+                ? (DateTime?)DateTime.SpecifyKind(date + endTime.Value, DateTimeKind.Unspecified)
+                : null;
             var practice = new ScheduledGame
             {
                 TeamId = team.Id,
                 Kind = ScheduledEventKind.Practice,
                 SeriesId = seriesId,
                 ExternalUid = $"practice-{seriesId:N}-{date:yyyyMMdd}",
-                StartsAt = DateTime.SpecifyKind(startsAtLocal, DateTimeKind.Utc),
-                EndsAt = endsAtLocal.HasValue ? DateTime.SpecifyKind(endsAtLocal.Value, DateTimeKind.Utc) : null,
+                StartsAt = TimeZoneInfo.ConvertTimeToUtc(startsAtLocal, pacific),
+                EndsAt = endsAtLocal.HasValue ? TimeZoneInfo.ConvertTimeToUtc(endsAtLocal.Value, pacific) : null,
                 Location = string.IsNullOrWhiteSpace(request.Location) ? null : request.Location.Trim(),
                 Summary = string.IsNullOrWhiteSpace(request.Summary) ? "Practice" : request.Summary.Trim(),
                 CreatedAt = now,
@@ -257,6 +264,14 @@ public class ScheduleController : ControllerBase
     {
         // Accept "HH:mm" or "H:mm" 24-hour.
         return TimeSpan.TryParseExact(text, new[] { @"hh\:mm", @"h\:mm" }, CultureInfo.InvariantCulture, out time);
+    }
+
+    /// <summary>America/Los_Angeles, with Windows-name fallback. LVSS operates in Las Vegas which
+    /// shares Pacific Time, including DST.</summary>
+    private static TimeZoneInfo ResolvePacificTimeZone()
+    {
+        try { return TimeZoneInfo.FindSystemTimeZoneById("America/Los_Angeles"); }
+        catch { return TimeZoneInfo.FindSystemTimeZoneById("Pacific Standard Time"); }
     }
 
     [HttpPut("practices/{id:int}")]
