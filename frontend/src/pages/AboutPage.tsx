@@ -99,6 +99,27 @@ export function AboutPage() {
           <Stat number="16" label={es ? 'Años al firmar profesional' : 'Age signed professional'} />
         </section>
 
+        <section className="bg-white border border-slate-200 rounded-lg p-6">
+          <h2 className="text-xl font-bold text-emerald-800">
+            {es ? 'Liderazgo' : 'Leadership'}
+          </h2>
+          <ul className="mt-3 space-y-2 text-sm">
+            <li>
+              <span className="font-semibold text-slate-800">Ricardo Llamas</span>
+              <span className="text-slate-600"> — {es ? 'Fundador y entrenador principal' : 'Founder & head coach'}</span>
+            </li>
+            <li>
+              <span className="font-semibold text-slate-800">Mauricio Baez</span>
+              <span className="text-slate-600"> — {es ? 'Co-fundador y operaciones' : 'Co-founder & operations'}</span>
+            </li>
+          </ul>
+          <p className="mt-3 text-xs text-slate-500">
+            {es
+              ? 'Contacto administrativo: info@lasvegassoccerschool.org'
+              : 'Administrative contact: info@lasvegassoccerschool.org'}
+          </p>
+        </section>
+
         <section className="bg-emerald-50 border border-emerald-200 rounded-lg p-6">
           <h2 className="text-xl font-bold text-emerald-800">
             {es ? 'Nuestra forma de entrenar' : 'How we train'}
