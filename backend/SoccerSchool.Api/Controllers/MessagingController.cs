@@ -386,24 +386,27 @@ public class MessagingController : ControllerBase
     {
         var sendTemplate = recipient.Language == template.Language ? template
             : (pairedTemplate?.Language == recipient.Language ? pairedTemplate : template);
-        var languageMismatch = sendTemplate.Language != recipient.Language;
 
+        // Values were authored against the primary template's language (the admin filled them in
+        // while looking at the primary template's variable labels). Translate them into the sent
+        // template's language so body + variables read in the same language — covers both the
+        // "use the paired template" case and any future mismatch path.
         var varsToSend = templateVars;
-        if (languageMismatch)
+        if (sendTemplate.Language != template.Language)
         {
             var translated = new Dictionary<string, string>();
             foreach (var kv in templateVars)
             {
                 var outcome = await _translator.TranslateAsync(
-                    kv.Value, sendTemplate.Language, recipient.Language, ct);
+                    kv.Value, template.Language, sendTemplate.Language, ct);
                 translated[kv.Key] = outcome.Translated;
             }
             varsToSend = translated;
         }
 
         var send = await _sender.SendTemplateAsync(recipient.Phone, sendTemplate.ContentSid, varsToSend, ct);
-        if (languageMismatch)
-            send = send with { Message = $"[No {recipient.Language} template; sent {sendTemplate.Language} body with dictionary-translated values] {send.Message}" };
+        if (sendTemplate.Language != recipient.Language)
+            send = send with { Message = $"[No {recipient.Language} template; sent {sendTemplate.Language} body] {send.Message}" };
 
         recipient.TwilioSid = send.TwilioSid;
         recipient.Status = send.Status;
@@ -429,19 +432,19 @@ public class MessagingController : ControllerBase
         string body;
         if (emailTemplate is not null)
         {
-            // Pick the language-matching template; fall back to the picked one with translated
-            // values if no pair exists.
+            // Pick the language-matching template; fall back to the primary if no pair exists.
             var pickedTemplate = recipient.Language == emailTemplate.Language ? emailTemplate
                 : (pairedEmailTemplate?.Language == recipient.Language ? pairedEmailTemplate : emailTemplate);
-            var languageMismatch = pickedTemplate.Language != recipient.Language;
+            // Values were authored against the primary template's language; translate when we're
+            // actually sending via the paired one so subject/body + variables read in the same lang.
             var vars = templateVars;
-            if (languageMismatch)
+            if (pickedTemplate.Language != emailTemplate.Language)
             {
                 var translated = new Dictionary<string, string>();
                 foreach (var kv in templateVars)
                 {
                     var outcome = await _translator.TranslateAsync(
-                        kv.Value, pickedTemplate.Language, recipient.Language, ct);
+                        kv.Value, emailTemplate.Language, pickedTemplate.Language, ct);
                     translated[kv.Key] = outcome.Translated;
                 }
                 vars = translated;
@@ -899,40 +902,50 @@ public class MessagingController : ControllerBase
 
         var values = request.Values ?? new();
 
-        TemplatePreviewSide BuildSide(Language target)
+        async Task<TemplatePreviewSide> BuildSideAsync(Language target)
         {
             // Pick which approved template's body to use for this side.
             var pickedTemplate = template.Language == target ? template
                 : (pair?.Language == target ? pair : null);
 
+            // If the picked template's language differs from the primary (where the admin entered
+            // the values), translate the values via the dictionary so this side reads in `target`'s
+            // language. This covers both the "paired template exists" path and the "no paired
+            // template, render primary with translated values" fallback.
+            var valuesForSide = values;
+            var sourceLang = pickedTemplate?.Language ?? template.Language;
+            if (sourceLang != template.Language)
+            {
+                var translated = new Dictionary<string, string>();
+                foreach (var kv in values)
+                {
+                    var outcome = await _translator.TranslateAsync(kv.Value ?? string.Empty,
+                        template.Language, sourceLang, ct);
+                    translated[kv.Key] = outcome.Translated;
+                }
+                valuesForSide = translated;
+            }
+
             if (pickedTemplate is not null)
             {
-                // Same-language template exists — render against its preview text with original values.
-                var rendered = RenderTemplatePreviewBody(pickedTemplate.PreviewText, pickedTemplate.Variables, values);
+                var rendered = RenderTemplatePreviewBody(pickedTemplate.PreviewText, pickedTemplate.Variables, valuesForSide);
                 return new TemplatePreviewSide(target, pickedTemplate.Name, rendered,
-                    TemplatePreviewSource.ApprovedTemplate, values);
+                    TemplatePreviewSource.ApprovedTemplate, valuesForSide);
             }
 
             // No template in the target language — fall back to the primary template's body and
-            // translate the values via the dictionary. Mirrors what the send loop will actually do.
-            return new TemplatePreviewSide(target, template.Name, null,
-                TemplatePreviewSource.TranslatedValues, null);
-        }
-
-        // For the translated-values side, we need to await the translation, so do that out-of-line.
-        async Task<TemplatePreviewSide> BuildSideAsync(Language target)
-        {
-            var side = BuildSide(target);
-            if (side.Source != TemplatePreviewSource.TranslatedValues) return side;
-            var translated = new Dictionary<string, string>();
+            // translate the values via the dictionary into `target`'s language. Mirrors what the
+            // send loop will actually do.
+            var fallbackTranslated = new Dictionary<string, string>();
             foreach (var kv in values)
             {
                 var outcome = await _translator.TranslateAsync(kv.Value ?? string.Empty,
                     template.Language, target, ct);
-                translated[kv.Key] = outcome.Translated;
+                fallbackTranslated[kv.Key] = outcome.Translated;
             }
-            var rendered = RenderTemplatePreviewBody(template.PreviewText, template.Variables, translated);
-            return side with { Rendered = rendered, Values = translated };
+            var fallbackRendered = RenderTemplatePreviewBody(template.PreviewText, template.Variables, fallbackTranslated);
+            return new TemplatePreviewSide(target, template.Name, fallbackRendered,
+                TemplatePreviewSource.TranslatedValues, fallbackTranslated);
         }
 
         var en = await BuildSideAsync(Language.English);
