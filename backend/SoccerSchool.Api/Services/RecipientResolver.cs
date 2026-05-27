@@ -92,9 +92,13 @@ public class RecipientResolver : IRecipientResolver
             case RecipientTargetKind.Individual:
                 if (string.IsNullOrWhiteSpace(target.Phone))
                     return new RecipientList("Individual", Array.Empty<ResolvedRecipient>());
+                var indivPhone = target.Phone.Trim();
+                // Look up the parent by phone (matching common variants) so the WhatsApp skip path
+                // can short-circuit when the admin typed a known no-WhatsApp number directly.
+                var indivHas = await LookupHasWhatsAppAsync(indivPhone, ct);
                 return new RecipientList(
                     "Individual",
-                    new[] { new ResolvedRecipient(target.Phone.Trim(), target.Name?.Trim(), null) });
+                    new[] { new ResolvedRecipient(indivPhone, target.Name?.Trim(), null, null, null, indivHas) });
 
             case RecipientTargetKind.CustomGroup:
                 if (target.CustomGroupId is null)
@@ -138,14 +142,31 @@ public class RecipientResolver : IRecipientResolver
                 };
 
             case RecipientTargetKind.AdHocList:
-                var list = (target.AdHocRecipients ?? Array.Empty<ResolvedRecipient>())
+                var listInputs = (target.AdHocRecipients ?? Array.Empty<ResolvedRecipient>())
                     .Where(r => !string.IsNullOrWhiteSpace(r.Phone) || !string.IsNullOrWhiteSpace(r.Email))
+                    .Select(r => new
+                    {
+                        Phone = r.Phone?.Trim() ?? string.Empty,
+                        Name = r.Name?.Trim(),
+                        Email = string.IsNullOrWhiteSpace(r.Email) ? null : r.Email.Trim(),
+                    })
+                    .ToList();
+                // One DB hit for all phone variants in the list — covers parents stored as the
+                // typed form, the +1-prefixed form, or the bare-10-digit form.
+                var allCandidates = listInputs
+                    .Where(r => !string.IsNullOrWhiteSpace(r.Phone))
+                    .SelectMany(r => PhoneVariants(r.Phone))
+                    .Distinct()
+                    .ToList();
+                var adHocLookup = allCandidates.Count == 0
+                    ? new Dictionary<string, bool>()
+                    : await _db.ParentAccounts
+                        .Where(p => p.CellPhone != null && allCandidates.Contains(p.CellPhone))
+                        .ToDictionaryAsync(p => p.CellPhone!, p => p.HasWhatsApp, ct);
+                var list = listInputs
                     .Select(r => new ResolvedRecipient(
-                        r.Phone?.Trim() ?? string.Empty,
-                        r.Name?.Trim(),
-                        null,
-                        null,
-                        string.IsNullOrWhiteSpace(r.Email) ? null : r.Email.Trim()))
+                        r.Phone, r.Name, null, null, r.Email,
+                        ResolveHasWhatsAppFromLookup(r.Phone, adHocLookup)))
                     .ToList();
                 return new RecipientList($"Ad-hoc list ({list.Count})", list);
 
@@ -189,5 +210,42 @@ public class RecipientResolver : IRecipientResolver
         return rows
             .Select(r => new ResolvedRecipient(r.CellPhone ?? string.Empty, $"{r.FirstName} {r.LastName}".Trim(), r.Id, r.Language, r.Email, r.HasWhatsApp))
             .ToList();
+    }
+
+    /// <summary>One-shot lookup for a single typed phone. Tries common variants (as-typed,
+    /// `+1`-prefixed, bare-10-digit) so the match works whether the admin pasted the E.164 form
+    /// or just the digits.</summary>
+    private async Task<bool?> LookupHasWhatsAppAsync(string phone, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(phone)) return null;
+        var candidates = PhoneVariants(phone);
+        var match = await _db.ParentAccounts
+            .Where(p => p.CellPhone != null && candidates.Contains(p.CellPhone))
+            .Select(p => (bool?)p.HasWhatsApp)
+            .FirstOrDefaultAsync(ct);
+        return match;
+    }
+
+    private static bool? ResolveHasWhatsAppFromLookup(string phone, IReadOnlyDictionary<string, bool> lookup)
+    {
+        if (string.IsNullOrWhiteSpace(phone)) return null;
+        foreach (var v in PhoneVariants(phone))
+            if (lookup.TryGetValue(v, out var has)) return has;
+        return null;
+    }
+
+    /// <summary>Common form variants for a typed phone so DB equality matches stored E.164 numbers.
+    /// Returns at most the as-typed value, a `+1`-prefixed variant for 10-digit US numbers, and a
+    /// `+`-prefixed variant for 11-digit numbers starting with `1`.</summary>
+    private static IReadOnlyList<string> PhoneVariants(string raw)
+    {
+        var trimmed = raw.Trim();
+        var set = new HashSet<string>(StringComparer.Ordinal);
+        if (!string.IsNullOrEmpty(trimmed)) set.Add(trimmed);
+        var digits = new string(trimmed.Where(char.IsDigit).ToArray());
+        if (digits.Length == 10) set.Add("+1" + digits);
+        if (digits.Length == 11 && digits.StartsWith('1')) set.Add("+" + digits);
+        if (digits.Length >= 10 && !trimmed.StartsWith('+')) set.Add("+" + digits);
+        return set.ToList();
     }
 }
