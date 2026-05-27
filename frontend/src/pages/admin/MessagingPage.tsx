@@ -311,6 +311,15 @@ function ComposeTab({
   const isWhatsAppChannel = channel === 1
   const isEmailChannel = channel === 2
 
+  // True once the admin has put anything into the recipient picker. Used to suppress the game
+  // picker's auto-flip to the linked group — if the admin already picked an individual/group/list,
+  // we shouldn't silently override that just because they want the game's variables autofilled.
+  const hasRecipientInput = () =>
+    phone.trim() !== '' ||
+    customGroupId !== '' ||
+    dynamicKey !== '' ||
+    listRaw.trim() !== ''
+
   const recipientPreview = useMemo(() => {
     if (recipientMode === 'individual') return phone.trim() ? `1 recipient (${phone.trim()})` : 'No recipient yet'
     if (recipientMode === 'curated') {
@@ -658,8 +667,10 @@ function ComposeTab({
                   // Record event-id on this compose state so the broadcast links back to it —
                   // unlocks the cancellation-notification flow finding "who got reminded".
                   setPickedEventId(g.id)
-                  // Auto-target the team's linked group if there is one.
-                  if (g.messageGroupId) {
+                  // Auto-target the team's linked group only when the admin hasn't already picked
+                  // a recipient. Otherwise we'd silently override an explicit Individual / list /
+                  // dynamic-group choice when the admin just wanted the variables autofilled.
+                  if (g.messageGroupId && !hasRecipientInput()) {
                     setRecipientMode('curated')
                     setCustomGroupId(g.messageGroupId)
                   }
@@ -736,7 +747,9 @@ function ComposeTab({
                   if (!g) return
                   applyGameToFreeForm(g, setBodyEn, setBodyEs)
                   setPickedEventId(g.id)
-                  if (g.messageGroupId) {
+                  // Same rule as the template path: only auto-target the linked group when the
+                  // admin hasn't already chosen a recipient.
+                  if (g.messageGroupId && !hasRecipientInput()) {
                     setRecipientMode('curated')
                     setCustomGroupId(g.messageGroupId)
                   }
