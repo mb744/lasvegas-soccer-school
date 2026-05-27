@@ -384,4 +384,6 @@ public record InboundMessageDto(
     string? ToPhone,
     string? Body,
     string? TwilioSid,
-    DateTime ReceivedAt);
+    DateTime ReceivedAt,
+    int? BroadcastId,
+    string? BroadcastSummary);

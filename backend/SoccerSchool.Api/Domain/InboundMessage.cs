@@ -27,4 +27,10 @@ public class InboundMessage
     public string? TwilioSid { get; set; }
 
     public DateTime ReceivedAt { get; set; } = DateTime.UtcNow;
+
+    /// <summary>The most recent broadcast where this phone was a recipient, set at receive time.
+    /// Threads inbound replies under the outbound that likely prompted them. Null when the sender
+    /// has never been on a broadcast (out-of-the-blue inbound — e.g., a new parent texts us first).</summary>
+    public int? BroadcastId { get; set; }
+    public Broadcast? Broadcast { get; set; }
 }

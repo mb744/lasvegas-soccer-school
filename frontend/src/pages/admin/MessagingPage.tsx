@@ -1327,6 +1327,7 @@ function HistoryTab({
               <th className="py-2 pr-4">{t('admin.msgChannel')}</th>
               <th className="py-2 pr-4">{t('admin.msgInboundFrom')}</th>
               <th className="py-2 pr-4">{t('admin.msgBody')}</th>
+              <th className="py-2 pr-4">{t('admin.msgInboundReplyTo')}</th>
             </tr>
           </thead>
           <tbody>
@@ -1336,10 +1337,15 @@ function HistoryTab({
                 <td className="py-2 pr-4">{MESSAGE_CHANNEL_LABELS[m.channel]}</td>
                 <td className="py-2 pr-4 font-mono text-xs">{m.fromPhone}</td>
                 <td className="py-2 pr-4 max-w-xl whitespace-pre-wrap break-words">{m.body ?? '—'}</td>
+                <td className="py-2 pr-4 max-w-xs text-xs text-slate-500">
+                  {m.broadcastId
+                    ? (<><span className="text-slate-700 font-medium">#{m.broadcastId}</span>{m.broadcastSummary ? <> · <span className="line-clamp-2">{m.broadcastSummary}</span></> : null}</>)
+                    : <span className="text-slate-400">—</span>}
+                </td>
               </tr>
             ))}
             {inbound.length === 0 && (
-              <tr><td colSpan={4} className="py-4 text-center text-slate-400">{t('admin.msgInboundEmpty')}</td></tr>
+              <tr><td colSpan={5} className="py-4 text-center text-slate-400">{t('admin.msgInboundEmpty')}</td></tr>
             )}
           </tbody>
         </table>

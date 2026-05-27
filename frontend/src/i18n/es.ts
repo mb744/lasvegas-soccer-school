@@ -431,6 +431,7 @@ const es: Translations = {
     msgInboundHeader: 'Respuestas recibidas',
     msgInboundHelp: 'Respuestas SMS / WhatsApp recibidas en nuestro número de Twilio. Las respuestas STOP / HELP y mensajes libres de padres aparecen aquí.',
     msgInboundFrom: 'De',
+    msgInboundReplyTo: 'En respuesta a',
     msgInboundEmpty: 'Aún no hay respuestas.',
   },
 }

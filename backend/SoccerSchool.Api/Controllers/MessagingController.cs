@@ -531,7 +531,12 @@ public class MessagingController : ControllerBase
             .OrderByDescending(m => m.ReceivedAt)
             .Take(200)
             .Select(m => new InboundMessageDto(
-                m.Id, m.Channel, m.FromPhone, m.ToPhone, m.Body, m.TwilioSid, m.ReceivedAt))
+                m.Id, m.Channel, m.FromPhone, m.ToPhone, m.Body, m.TwilioSid, m.ReceivedAt,
+                m.BroadcastId,
+                // Short preview of the original broadcast so the UI can show "Re: <preview>" without
+                // an extra fetch. Falls back to subject/label/template id depending on what's set.
+                m.Broadcast == null ? null
+                    : (m.Broadcast.BodyEn ?? m.Broadcast.BodyEs ?? m.Broadcast.SubjectEn ?? m.Broadcast.SubjectEs ?? m.Broadcast.TargetLabel)))
             .ToListAsync(ct);
         return Ok(items);
     }

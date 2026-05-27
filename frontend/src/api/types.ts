@@ -615,6 +615,11 @@ export interface InboundMessage {
   body: string | null
   twilioSid: string | null
   receivedAt: string
+  /** ID of the most recent broadcast this phone was a recipient of. Null when the inbound is
+   *  unprompted (e.g. parent texts us first). */
+  broadcastId: number | null
+  /** Short preview text of the linked broadcast — body or subject, whichever was set. */
+  broadcastSummary: string | null
 }
 
 export const MESSAGE_CHANNEL_LABELS: Record<MessageChannel, string> = {

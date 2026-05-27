@@ -238,6 +238,11 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
         {
             b.HasIndex(m => m.ReceivedAt);
             b.HasIndex(m => m.FromPhone);
+            b.HasIndex(m => m.BroadcastId);
+            b.HasOne(m => m.Broadcast)
+                .WithMany()
+                .HasForeignKey(m => m.BroadcastId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
     }
 }

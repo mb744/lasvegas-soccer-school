@@ -429,6 +429,7 @@ const en = {
     msgInboundHeader: 'Replies received',
     msgInboundHelp: 'Inbound SMS / WhatsApp replies received by our Twilio number. STOP / HELP and free-form parent replies appear here.',
     msgInboundFrom: 'From',
+    msgInboundReplyTo: 'Reply to',
     msgInboundEmpty: 'No replies yet.',
   },
 }
