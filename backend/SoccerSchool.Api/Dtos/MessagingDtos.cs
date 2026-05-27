@@ -375,6 +375,53 @@ public record TemplatePreviewSide(
 
 public record TemplatePreviewResponse(TemplatePreviewSide English, TemplatePreviewSide Spanish);
 
+// --- Per-phone conversation threads (admin reads & replies in-line) ---
+
+/// <summary>Direction of a single entry in a phone-keyed conversation thread.</summary>
+public enum ThreadDirection
+{
+    /// <summary>Message from the parent to us — sourced from <c>InboundMessages</c>.</summary>
+    Inbound = 0,
+    /// <summary>Message from us to the parent — sourced from a <c>BroadcastRecipient</c> row.</summary>
+    Outbound = 1
+}
+
+public record ThreadMessageDto(
+    ThreadDirection Direction,
+    MessageChannel Channel,
+    string Body,
+    DateTime At,
+    MessageDeliveryStatus? Status,
+    string? StatusMessage,
+    int? BroadcastId);
+
+public record ThreadSummaryDto(
+    string Phone,
+    string? Name,
+    int? ParentAccountId,
+    bool ParentRegistered,
+    DateTime LastAt,
+    string? LastBody,
+    ThreadDirection LastDirection,
+    int InboundCount,
+    int OutboundCount);
+
+public record ThreadDetailDto(
+    string Phone,
+    string? Name,
+    int? ParentAccountId,
+    bool ParentRegistered,
+    Language? Language,
+    IReadOnlyList<ThreadMessageDto> Messages);
+
+public record SendThreadReplyRequest
+{
+    public MessageChannel Channel { get; init; } = MessageChannel.Sms;
+
+    [Required, MinLength(1), MaxLength(2000)]
+    public string Body { get; init; } = string.Empty;
+}
+
 // --- Inbound replies (received via Twilio webhook) ---
 
 // --- Messaging settings (singleton row used by inbound auto-reply) ---

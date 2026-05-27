@@ -541,6 +541,160 @@ public class MessagingController : ControllerBase
         return Ok(items);
     }
 
+    // --- Threaded view: list distinct phones, fetch full thread, reply --------
+
+    /// <summary>One row per distinct phone we've exchanged messages with. Powers the admin Inbox.</summary>
+    [HttpGet("threads")]
+    public async Task<ActionResult<IEnumerable<ThreadSummaryDto>>> ListThreads(CancellationToken ct)
+    {
+        // Pull last 6 months of activity into memory and group there — keeps the SQL simple and
+        // works against both InboundMessages and BroadcastRecipients without a complex union join.
+        var since = DateTime.UtcNow.AddMonths(-6);
+        var inbound = await _db.InboundMessages
+            .Where(m => m.ReceivedAt >= since)
+            .Select(m => new { m.FromPhone, m.Body, At = m.ReceivedAt, Direction = ThreadDirection.Inbound })
+            .ToListAsync(ct);
+        var outbound = await _db.BroadcastRecipients
+            .Where(r => r.Broadcast!.CreatedAt >= since)
+            .Select(r => new
+            {
+                FromPhone = r.Phone,
+                Body = r.Broadcast!.BodyEn ?? r.Broadcast.BodyEs ?? r.Broadcast.SubjectEn ?? r.Broadcast.SubjectEs,
+                At = r.Broadcast.CreatedAt,
+                Direction = ThreadDirection.Outbound
+            })
+            .ToListAsync(ct);
+
+        var byPhone = inbound.Concat(outbound)
+            .Where(x => !string.IsNullOrWhiteSpace(x.FromPhone))
+            .GroupBy(x => x.FromPhone)
+            .ToList();
+
+        // Look up parent records in one shot for name + registered flag.
+        var phones = byPhone.Select(g => g.Key).ToList();
+        var parents = await _db.ParentAccounts
+            .Where(p => p.CellPhone != null && phones.Contains(p.CellPhone))
+            .ToDictionaryAsync(p => p.CellPhone!, p => p, ct);
+
+        var summaries = byPhone
+            .Select(g =>
+            {
+                var last = g.OrderByDescending(x => x.At).First();
+                var inboundCount = g.Count(x => x.Direction == ThreadDirection.Inbound);
+                var outboundCount = g.Count(x => x.Direction == ThreadDirection.Outbound);
+                parents.TryGetValue(g.Key, out var parent);
+                return new ThreadSummaryDto(
+                    g.Key,
+                    parent is null ? null : $"{parent.FirstName} {parent.LastName}".Trim(),
+                    parent?.Id,
+                    parent is not null,
+                    last.At,
+                    last.Body,
+                    last.Direction,
+                    inboundCount,
+                    outboundCount);
+            })
+            .OrderByDescending(s => s.LastAt)
+            .Take(200)
+            .ToList();
+
+        return Ok(summaries);
+    }
+
+    /// <summary>Full chronological thread for one phone — inbounds + outbounds interleaved.</summary>
+    [HttpGet("threads/{phone}")]
+    public async Task<ActionResult<ThreadDetailDto>> GetThread(string phone, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(phone)) return BadRequest("Phone is required.");
+
+        var inbound = await _db.InboundMessages
+            .Where(m => m.FromPhone == phone)
+            .Select(m => new ThreadMessageDto(
+                ThreadDirection.Inbound,
+                m.Channel,
+                m.Body ?? string.Empty,
+                m.ReceivedAt,
+                null,
+                null,
+                m.BroadcastId))
+            .ToListAsync(ct);
+
+        var outbound = await _db.BroadcastRecipients
+            .Where(r => r.Phone == phone)
+            .Select(r => new ThreadMessageDto(
+                ThreadDirection.Outbound,
+                r.Broadcast!.Channel,
+                r.Language == Language.Spanish
+                    ? (r.Broadcast.BodyEs ?? r.Broadcast.BodyEn ?? r.Broadcast.SubjectEs ?? r.Broadcast.SubjectEn ?? string.Empty)
+                    : (r.Broadcast.BodyEn ?? r.Broadcast.BodyEs ?? r.Broadcast.SubjectEn ?? r.Broadcast.SubjectEs ?? string.Empty),
+                r.Broadcast.CreatedAt,
+                r.Status,
+                r.StatusMessage,
+                r.BroadcastId))
+            .ToListAsync(ct);
+
+        var messages = inbound.Concat(outbound).OrderBy(m => m.At).ToList();
+
+        var parent = await _db.ParentAccounts.FirstOrDefaultAsync(p => p.CellPhone == phone, ct);
+        return Ok(new ThreadDetailDto(
+            phone,
+            parent is null ? null : $"{parent.FirstName} {parent.LastName}".Trim(),
+            parent?.Id,
+            parent is not null,
+            parent?.Language,
+            messages));
+    }
+
+    /// <summary>Sends a one-off reply on the chosen channel as a single-recipient broadcast. Reuses
+    /// the broadcast pipeline so the outbound shows up in History + the thread automatically.</summary>
+    [HttpPost("threads/{phone}/reply")]
+    public async Task<ActionResult<ThreadMessageDto>> SendThreadReply(
+        string phone, [FromBody] SendThreadReplyRequest request, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(phone)) return BadRequest("Phone is required.");
+        if (string.IsNullOrWhiteSpace(request.Body)) return BadRequest("Body is required.");
+        if (!_sender.IsAvailable(request.Channel))
+            return BadRequest($"{request.Channel} not configured on this server.");
+
+        var parent = await _db.ParentAccounts.FirstOrDefaultAsync(p => p.CellPhone == phone, ct);
+        var name = parent is null ? null : $"{parent.FirstName} {parent.LastName}".Trim();
+        var lang = parent?.Language ?? Language.English;
+
+        var broadcast = new Broadcast
+        {
+            Channel = request.Channel,
+            BodyEn = lang == Language.English ? request.Body.Trim() : null,
+            BodyEs = lang == Language.Spanish ? request.Body.Trim() : null,
+            TargetLabel = $"Reply to {phone}",
+        };
+        var recipient = new BroadcastRecipient
+        {
+            Name = name,
+            Phone = phone,
+            Email = null,
+            Language = lang,
+            Status = MessageDeliveryStatus.Pending
+        };
+        broadcast.Recipients.Add(recipient);
+        _db.Broadcasts.Add(broadcast);
+        await _db.SaveChangesAsync(ct);
+
+        var send = await _sender.SendAsync(request.Channel, phone, request.Body.Trim(), ct);
+        recipient.TwilioSid = send.TwilioSid;
+        recipient.Status = send.Status;
+        recipient.StatusMessage = send.Message;
+        await _db.SaveChangesAsync(ct);
+
+        return Ok(new ThreadMessageDto(
+            ThreadDirection.Outbound,
+            request.Channel,
+            request.Body.Trim(),
+            broadcast.CreatedAt,
+            recipient.Status,
+            recipient.StatusMessage,
+            broadcast.Id));
+    }
+
     [HttpGet("broadcasts")]
     public async Task<ActionResult<IEnumerable<BroadcastSummary>>> ListBroadcasts(CancellationToken ct)
     {

@@ -35,6 +35,10 @@ import type {
   EmailTemplate,
   MessagingSettings,
   SaveMessagingSettingsRequest,
+  ThreadSummary,
+  ThreadDetail,
+  ThreadMessage,
+  SendThreadReplyRequest,
   ScheduleSyncResult,
   ScheduledGame,
   SignupRequest,
@@ -294,6 +298,18 @@ export const Api = {
   },
   async updateMessagingSettings(payload: SaveMessagingSettingsRequest) {
     const r = await api.put<MessagingSettings>('/messaging/settings', payload)
+    return r.data
+  },
+  async listThreads() {
+    const r = await api.get<ThreadSummary[]>('/messaging/threads')
+    return r.data
+  },
+  async getThread(phone: string) {
+    const r = await api.get<ThreadDetail>(`/messaging/threads/${encodeURIComponent(phone)}`)
+    return r.data
+  },
+  async sendThreadReply(phone: string, payload: SendThreadReplyRequest) {
+    const r = await api.post<ThreadMessage>(`/messaging/threads/${encodeURIComponent(phone)}/reply`, payload)
     return r.data
   },
 

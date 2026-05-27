@@ -26,6 +26,8 @@ import type {
   TemplatePreviewSide,
   WhatsAppTemplate,
   EmailTemplate,
+  ThreadSummary,
+  ThreadDetail,
 } from '../../api/types'
 
 // Soccer-school-specific business strings for the practice_or_game template's "wear" variable.
@@ -46,7 +48,7 @@ import {
   MESSAGE_DELIVERY_LABELS,
 } from '../../api/types'
 
-type Tab = 'compose' | 'groups' | 'conversations' | 'templates' | 'teams' | 'dictionary' | 'history' | 'settings'
+type Tab = 'compose' | 'inbox' | 'groups' | 'conversations' | 'templates' | 'teams' | 'dictionary' | 'history' | 'settings'
 type RecipientMode = 'individual' | 'curated' | 'dynamic' | 'list'
 type SendMode = 'broadcast' | 'group-chat'
 type ComposeBodyMode = 'free-form' | 'template'
@@ -143,6 +145,7 @@ export function AdminMessagingPage() {
 
         <div className="flex gap-1 border-b border-slate-200">
           {tabBtn('compose', t('admin.msgTabCompose'))}
+          {tabBtn('inbox', t('admin.msgTabInbox'))}
           {tabBtn('groups', t('admin.msgTabGroups'))}
           {tabBtn('conversations', t('admin.msgTabConversations'))}
           {tabBtn('templates', t('admin.msgTabTemplates'))}
@@ -233,6 +236,14 @@ export function AdminMessagingPage() {
 
         {tab === 'settings' && (
           <SettingsTab
+            onError={(e) => setError(e)}
+            onNotice={(n) => setNotice(n)}
+          />
+        )}
+
+        {tab === 'inbox' && (
+          <InboxTab
+            config={config}
             onError={(e) => setError(e)}
             onNotice={(n) => setNotice(n)}
           />
@@ -1210,6 +1221,185 @@ function ConversationsTab({
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+      </section>
+    </div>
+  )
+}
+
+// --- Inbox tab (per-phone conversation threads with reply) -----------------
+
+function InboxTab({
+  config, onError, onNotice,
+}: {
+  config: MessagingConfig | null
+  onError: (e: string) => void
+  onNotice: (n: string) => void
+}) {
+  const { t } = useTranslation()
+  const [threads, setThreads] = useState<ThreadSummary[]>([])
+  const [selectedPhone, setSelectedPhone] = useState<string | null>(null)
+  const [thread, setThread] = useState<ThreadDetail | null>(null)
+  const [loadingThread, setLoadingThread] = useState(false)
+  const [replyChannel, setReplyChannel] = useState<MessageChannel>(0)
+  const [replyBody, setReplyBody] = useState('')
+  const [sending, setSending] = useState(false)
+
+  const refresh = async () => {
+    try { setThreads(await Api.listThreads()) }
+    catch (e: any) { onError(extractError(e)) }
+  }
+
+  useEffect(() => { refresh() }, [])
+
+  const openThread = async (phone: string) => {
+    setSelectedPhone(phone)
+    setLoadingThread(true)
+    setThread(null)
+    try {
+      const d = await Api.getThread(phone)
+      setThread(d)
+      // Default the reply channel to whatever the most recent message used. Falls back to SMS.
+      const last = d.messages[d.messages.length - 1]
+      if (last) setReplyChannel(last.channel)
+    } catch (e: any) {
+      onError(extractError(e))
+    } finally {
+      setLoadingThread(false)
+    }
+  }
+
+  const channelAvailable = (c: MessageChannel) =>
+    c === 0 ? config?.sms : c === 1 ? config?.whatsApp : config?.email
+
+  const send = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!selectedPhone) return
+    if (!replyBody.trim()) return
+    if (replyChannel === 2) { onError(t('admin.msgInboxNoEmailReply')); return }
+    setSending(true)
+    try {
+      const msg = await Api.sendThreadReply(selectedPhone, { channel: replyChannel, body: replyBody.trim() })
+      // Optimistically append the new outbound to the open thread so the admin sees it immediately.
+      setThread(prev => prev ? { ...prev, messages: [...prev.messages, msg] } : prev)
+      setReplyBody('')
+      await refresh()
+      onNotice(t('admin.msgInboxReplySent'))
+    } catch (e: any) {
+      onError(extractError(e))
+    } finally {
+      setSending(false)
+    }
+  }
+
+  return (
+    <div className="grid lg:grid-cols-3 gap-4">
+      <section className="bg-white border border-slate-200 rounded-lg p-4 lg:col-span-1">
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="font-bold text-emerald-800">{t('admin.msgInboxHeader')}</h2>
+          <button onClick={refresh} className="text-sm text-emerald-700 hover:underline">↻</button>
+        </div>
+        <ul className="space-y-1 max-h-[60vh] overflow-y-auto">
+          {threads.map(thr => (
+            <li key={thr.phone}>
+              <button onClick={() => openThread(thr.phone)}
+                className={`w-full text-left px-2 py-2 rounded text-sm hover:bg-emerald-50 ${selectedPhone === thr.phone ? 'bg-emerald-50 text-emerald-800 font-medium' : ''}`}>
+                <div className="flex items-center justify-between">
+                  <span className="font-medium">{thr.name ?? thr.phone}</span>
+                  {!thr.parentRegistered && (
+                    <span className="text-[10px] uppercase tracking-wide bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">
+                      {t('admin.msgInboxUnregistered')}
+                    </span>
+                  )}
+                </div>
+                <div className="text-xs text-slate-500 font-mono">{thr.phone}</div>
+                {thr.lastBody && (
+                  <div className="text-xs text-slate-600 line-clamp-2 mt-0.5">
+                    <span className="text-slate-400">{thr.lastDirection === 0 ? '← ' : '→ '}</span>
+                    {thr.lastBody}
+                  </div>
+                )}
+                <div className="text-xs text-slate-400 mt-0.5">
+                  {new Date(thr.lastAt).toLocaleString()}
+                </div>
+              </button>
+            </li>
+          ))}
+          {threads.length === 0 && (
+            <li className="text-sm text-slate-400 py-4 text-center">{t('admin.msgInboxEmpty')}</li>
+          )}
+        </ul>
+      </section>
+
+      <section className="lg:col-span-2">
+        {!selectedPhone && (
+          <div className="bg-white border border-dashed border-slate-300 rounded-lg p-8 text-center text-sm text-slate-500">
+            {t('admin.msgInboxSelect')}
+          </div>
+        )}
+        {selectedPhone && (
+          <div className="bg-white border border-slate-200 rounded-lg flex flex-col" style={{ minHeight: '60vh' }}>
+            <div className="border-b border-slate-100 px-4 py-3 flex items-start justify-between">
+              <div>
+                <div className="font-bold text-emerald-800">{thread?.name ?? selectedPhone}</div>
+                <div className="text-xs text-slate-500 font-mono">{selectedPhone}</div>
+                {thread && !thread.parentRegistered && (
+                  <div className="text-[10px] uppercase tracking-wide bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded inline-block mt-1">
+                    {t('admin.msgInboxUnregistered')}
+                  </div>
+                )}
+              </div>
+              <button onClick={() => openThread(selectedPhone)} className="text-sm text-emerald-700 hover:underline">↻</button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2 bg-slate-50" style={{ maxHeight: '50vh' }}>
+              {loadingThread && <div className="text-sm text-slate-500">{t('common.loading')}</div>}
+              {!loadingThread && thread?.messages.map((m, idx) => (
+                <div key={idx} className={`flex ${m.direction === 1 ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[75%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap break-words ${m.direction === 1
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-white border border-slate-200 text-slate-800'}`}>
+                    <div>{m.body || '—'}</div>
+                    <div className={`text-[10px] mt-1 ${m.direction === 1 ? 'text-emerald-100' : 'text-slate-400'}`}>
+                      {MESSAGE_CHANNEL_LABELS[m.channel]} · {new Date(m.at).toLocaleString()}
+                      {m.direction === 1 && m.status !== null && m.status !== undefined && (
+                        <span> · {MESSAGE_DELIVERY_LABELS[m.status]}</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {!loadingThread && thread?.messages.length === 0 && (
+                <div className="text-sm text-slate-400 text-center py-8">{t('admin.msgInboxNoMessages')}</div>
+              )}
+            </div>
+
+            <form onSubmit={send} className="border-t border-slate-100 p-3 space-y-2">
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-slate-600">{t('admin.msgChannel')}:</label>
+                {[0, 1].map(c => (
+                  <button key={c} type="button"
+                    disabled={!channelAvailable(c as MessageChannel)}
+                    onClick={() => setReplyChannel(c as MessageChannel)}
+                    className={`px-2 py-1 rounded text-xs border ${replyChannel === c
+                      ? 'bg-emerald-700 text-white border-emerald-700'
+                      : 'bg-white text-slate-700 border-slate-300'} disabled:opacity-40 disabled:cursor-not-allowed`}
+                  >{MESSAGE_CHANNEL_LABELS[c as MessageChannel]}</button>
+                ))}
+              </div>
+              <div className="flex items-end gap-2">
+                <textarea rows={2} value={replyBody}
+                  onChange={e => setReplyBody(e.target.value)}
+                  placeholder={t('admin.msgInboxReplyPlaceholder')}
+                  maxLength={2000}
+                  className="flex-1 border border-slate-300 rounded-md px-3 py-2 text-sm" />
+                <button type="submit" disabled={sending || !replyBody.trim()}
+                  className="bg-emerald-700 text-white text-sm font-semibold px-4 py-2 rounded-md hover:bg-emerald-800 disabled:opacity-60">
+                  {sending ? t('admin.sending') : t('admin.msgInboxSend')}
+                </button>
+              </div>
+            </form>
           </div>
         )}
       </section>

@@ -622,6 +622,46 @@ export interface SaveMessagingSettingsRequest {
   autoReplyTextEs: string
 }
 
+// --- Threaded view (per-phone inbox) ---
+
+export type ThreadDirection = 0 | 1 // 0 = Inbound, 1 = Outbound
+
+export interface ThreadMessage {
+  direction: ThreadDirection
+  channel: MessageChannel
+  body: string
+  at: string
+  status: MessageDeliveryStatus | null
+  statusMessage: string | null
+  broadcastId: number | null
+}
+
+export interface ThreadSummary {
+  phone: string
+  name: string | null
+  parentAccountId: number | null
+  parentRegistered: boolean
+  lastAt: string
+  lastBody: string | null
+  lastDirection: ThreadDirection
+  inboundCount: number
+  outboundCount: number
+}
+
+export interface ThreadDetail {
+  phone: string
+  name: string | null
+  parentAccountId: number | null
+  parentRegistered: boolean
+  language: Language | null
+  messages: ThreadMessage[]
+}
+
+export interface SendThreadReplyRequest {
+  channel: MessageChannel
+  body: string
+}
+
 export interface InboundMessage {
   id: number
   channel: MessageChannel

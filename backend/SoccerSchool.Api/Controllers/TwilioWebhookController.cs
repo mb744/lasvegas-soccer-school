@@ -160,11 +160,23 @@ public class TwilioWebhookController : ControllerBase
             .CountAsync(ct);
         if (recent > 1) return; // 1 = this very inbound we just inserted.
 
+        // Skip auto-reply for known parents — they get a personal response from admin. The auto-
+        // reply is just to acknowledge inbounds from unrecognized numbers (curious prospects, wrong
+        // numbers, etc.) so they don't think the line is dead.
         var parent = await _db.ParentAccounts.FirstOrDefaultAsync(p => p.CellPhone == from, ct);
-        var lang = parent?.Language ?? Language.English;
-        var body = lang == Language.Spanish
-            ? (settings?.AutoReplyTextEs ?? "¡Gracias por escribirnos! Un administrador le responderá pronto.")
-            : (settings?.AutoReplyTextEn ?? "Thanks for your message! An admin will reply soon.");
+        if (parent is not null) return;
+
+        // We don't know the language of an unknown sender, so stack both. Trim to avoid empty
+        // strings when one side is somehow blank.
+        var en = settings?.AutoReplyTextEn?.Trim();
+        var es = settings?.AutoReplyTextEs?.Trim();
+        var body = (en, es) switch
+        {
+            ({ Length: > 0 }, { Length: > 0 }) => $"{en}\n\n{es}",
+            ({ Length: > 0 }, _) => en!,
+            (_, { Length: > 0 }) => es!,
+            _ => "Thanks for your message! An admin will reply soon."
+        };
 
         var result = await _sender.SendAsync(channel, from, body, ct);
         if (!result.Success)
