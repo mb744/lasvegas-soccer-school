@@ -37,6 +37,7 @@ import type {
   ScheduledGame,
   SignupRequest,
   SubmitRegistrationRequest,
+  UpdateRegistrationRequest,
   TeamDetail,
   TeamSummary,
   TemplatePreviewRequest,
@@ -121,6 +122,10 @@ export const Api = {
   },
   async getRegistration(id: number) {
     const r = await api.get<RegistrationDetail>(`/registrations/${id}`)
+    return r.data
+  },
+  async updateRegistration(id: number, payload: UpdateRegistrationRequest) {
+    const r = await api.put<RegistrationDetail>(`/registrations/${id}`, payload)
     return r.data
   },
   async deleteRegistration(id: number) {

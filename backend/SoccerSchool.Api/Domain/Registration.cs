@@ -46,6 +46,11 @@ public class Registration
 
     public Language Language { get; set; } = Language.English;
 
+    /// <summary>Whether the parent has WhatsApp installed on the cell phone they provided. Snapshotted
+    /// per registration so historical sends know which channel was viable at submit time, and the
+    /// admin can flip it later if a parent installs/removes WhatsApp.</summary>
+    public bool HasWhatsApp { get; set; }
+
     public bool WaiverConsent { get; set; }
 
     public DateTime? WaiverSignedAt { get; set; }

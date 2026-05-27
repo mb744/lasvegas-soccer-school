@@ -68,6 +68,7 @@ public class RegistrationsController : ControllerBase
             CellPhone = request.CellPhone.Trim(),
             Email = request.Email.Trim(),
             Language = request.Language,
+            HasWhatsApp = request.HasWhatsApp,
             WaiverConsent = request.WaiverConsent,
             WaiverSignedAt = now,
             CreatedAt = now,
@@ -83,6 +84,7 @@ public class RegistrationsController : ControllerBase
         account.PostalCode = registration.PostalCode;
         account.CellPhone = registration.CellPhone;
         account.Language = registration.Language;
+        account.HasWhatsApp = registration.HasWhatsApp;
 
         foreach (var input in request.Players)
         {
@@ -147,7 +149,7 @@ public class RegistrationsController : ControllerBase
             .OrderByDescending(r => r.CreatedAt)
             .Select(r => new RegistrationSummary(
                 r.Id, r.Season, r.ParentFirstName, r.ParentLastName, r.Email, r.CellPhone,
-                r.Language, r.Players.Count, r.CreatedAt))
+                r.Language, r.HasWhatsApp, r.Players.Count, r.CreatedAt))
             .ToListAsync(ct);
         return Ok(items);
     }
@@ -164,10 +166,55 @@ public class RegistrationsController : ControllerBase
             .OrderByDescending(r => r.CreatedAt)
             .Select(r => new RegistrationSummary(
                 r.Id, r.Season, r.ParentFirstName, r.ParentLastName, r.Email, r.CellPhone,
-                r.Language, r.Players.Count, r.CreatedAt))
+                r.Language, r.HasWhatsApp, r.Players.Count, r.CreatedAt))
             .Take(500)
             .ToListAsync(ct);
         return Ok(items);
+    }
+
+    /// <summary>Admin-only patch of registration contact info + flags. Waiver consent, signatures,
+    /// and the player roster are intentionally immutable here — those are the legally-binding
+    /// submission artifacts.</summary>
+    [HttpPut("{id:int}")]
+    [Authorize(Roles = Roles.Admin)]
+    public async Task<ActionResult<RegistrationDetail>> Update(
+        int id, [FromBody] UpdateRegistrationRequest request, CancellationToken ct)
+    {
+        var registration = await _db.Registrations
+            .Include(r => r.ParentAccount)
+            .Include(r => r.Players).ThenInclude(rp => rp.Player)
+            .FirstOrDefaultAsync(r => r.Id == id, ct);
+        if (registration is null) return NotFound();
+
+        registration.ParentFirstName = request.ParentFirstName.Trim();
+        registration.ParentLastName = request.ParentLastName.Trim();
+        registration.AddressLine1 = request.AddressLine1?.Trim() ?? "";
+        registration.AddressLine2 = request.AddressLine2?.Trim();
+        registration.City = request.City?.Trim() ?? "";
+        registration.State = request.State?.Trim() ?? "";
+        registration.PostalCode = request.PostalCode?.Trim() ?? "";
+        registration.CellPhone = request.CellPhone.Trim();
+        registration.Email = request.Email.Trim();
+        registration.Language = request.Language;
+        registration.HasWhatsApp = request.HasWhatsApp;
+
+        // Mirror the same fields onto the live ParentAccount profile so prefill stays in sync.
+        if (registration.ParentAccount is not null)
+        {
+            registration.ParentAccount.FirstName = registration.ParentFirstName;
+            registration.ParentAccount.LastName = registration.ParentLastName;
+            registration.ParentAccount.AddressLine1 = registration.AddressLine1;
+            registration.ParentAccount.AddressLine2 = registration.AddressLine2;
+            registration.ParentAccount.City = registration.City;
+            registration.ParentAccount.State = registration.State;
+            registration.ParentAccount.PostalCode = registration.PostalCode;
+            registration.ParentAccount.CellPhone = registration.CellPhone;
+            registration.ParentAccount.Language = registration.Language;
+            registration.ParentAccount.HasWhatsApp = registration.HasWhatsApp;
+        }
+
+        await _db.SaveChangesAsync(ct);
+        return Ok(ToDetail(registration));
     }
 
     [HttpGet("{id:int}")]
@@ -252,7 +299,7 @@ public class RegistrationsController : ControllerBase
         r.Id, r.Season,
         r.ParentFirstName, r.ParentLastName, r.AddressLine1, r.AddressLine2,
         r.City, r.State, r.PostalCode, r.CellPhone, r.Email, r.Language,
-        r.WaiverConsent, r.WaiverSignedAt, r.CreatedAt,
+        r.HasWhatsApp, r.WaiverConsent, r.WaiverSignedAt, r.CreatedAt,
         r.Players.Select(rp => new RegistrationPlayerDetail(
             rp.Id,
             rp.PlayerId,

@@ -71,8 +71,23 @@ export interface SubmitRegistrationRequest {
   cellPhone: string
   email: string
   language: Language
+  hasWhatsApp: boolean
   waiverConsent: boolean
   players: RegistrationPlayerInput[]
+}
+
+export interface UpdateRegistrationRequest {
+  parentFirstName: string
+  parentLastName: string
+  addressLine1?: string | null
+  addressLine2?: string | null
+  city?: string | null
+  state?: string | null
+  postalCode?: string | null
+  cellPhone: string
+  email: string
+  language: Language
+  hasWhatsApp: boolean
 }
 
 export interface RegistrationSummary {
@@ -83,6 +98,7 @@ export interface RegistrationSummary {
   email: string
   cellPhone: string
   language: Language
+  hasWhatsApp: boolean
   playerCount: number
   createdAt: string
 }
@@ -119,6 +135,7 @@ export interface RegistrationDetail {
   cellPhone: string
   email: string
   language: Language
+  hasWhatsApp: boolean
   waiverConsent: boolean
   waiverSignedAt: string | null
   createdAt: string

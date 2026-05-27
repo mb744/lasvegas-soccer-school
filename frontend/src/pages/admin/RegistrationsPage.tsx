@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Layout } from '../../components/Layout'
 import { Api } from '../../api/client'
-import type { RegistrationDetail, RegistrationPlayerDetail, RegistrationSummary } from '../../api/types'
+import type { Language, RegistrationDetail, RegistrationPlayerDetail, RegistrationSummary, UpdateRegistrationRequest } from '../../api/types'
 
 export function AdminRegistrationsPage() {
   const { t } = useTranslation()
@@ -46,6 +46,21 @@ export function AdminRegistrationsPage() {
     } catch (e: any) { setError(e?.message ?? 'Error') }
   }
 
+  const onSaved = (updated: RegistrationDetail) => {
+    setDetails(prev => ({ ...prev, [updated.id]: updated }))
+    setRegistrations(prev => prev.map(r => r.id === updated.id
+      ? {
+          ...r,
+          parentFirstName: updated.parentFirstName,
+          parentLastName: updated.parentLastName,
+          email: updated.email,
+          cellPhone: updated.cellPhone,
+          language: updated.language,
+          hasWhatsApp: updated.hasWhatsApp,
+        }
+      : r))
+  }
+
   return (
     <Layout>
       <div className="max-w-5xl mx-auto px-4 py-10 space-y-8">
@@ -85,6 +100,8 @@ export function AdminRegistrationsPage() {
                     loading={loadingDetail === r.id}
                     onToggle={() => toggleDetail(r.id)}
                     onDelete={() => deleteRegistration(r.id)}
+                    onSaved={onSaved}
+                    onError={(e) => setError(e)}
                   />
                 ))}
                 {registrations.length === 0 && (
@@ -100,7 +117,7 @@ export function AdminRegistrationsPage() {
 }
 
 function RegistrationRow({
-  r, expanded, detail, loading, onToggle, onDelete,
+  r, expanded, detail, loading, onToggle, onDelete, onSaved, onError,
 }: {
   r: RegistrationSummary
   expanded: boolean
@@ -108,6 +125,8 @@ function RegistrationRow({
   loading: boolean
   onToggle: () => void
   onDelete: () => void
+  onSaved: (updated: RegistrationDetail) => void
+  onError: (msg: string) => void
 }) {
   const { t } = useTranslation()
   return (
@@ -132,7 +151,7 @@ function RegistrationRow({
         <tr className="border-b last:border-0 bg-slate-50">
           <td colSpan={8} className="p-4">
             {loading && <span className="text-slate-500">{t('common.loading')}</span>}
-            {!loading && detail && <RegistrationDetailPanel detail={detail} />}
+            {!loading && detail && <RegistrationDetailPanel detail={detail} onSaved={onSaved} onError={onError} />}
           </td>
         </tr>
       )}
@@ -140,8 +159,15 @@ function RegistrationRow({
   )
 }
 
-function RegistrationDetailPanel({ detail }: { detail: RegistrationDetail }) {
+function RegistrationDetailPanel({
+  detail, onSaved, onError,
+}: {
+  detail: RegistrationDetail
+  onSaved: (updated: RegistrationDetail) => void
+  onError: (msg: string) => void
+}) {
   const { t } = useTranslation()
+  const [editing, setEditing] = useState(false)
   const r = detail
   const fullAddress = [
     r.addressLine1,
@@ -152,19 +178,37 @@ function RegistrationDetailPanel({ detail }: { detail: RegistrationDetail }) {
   return (
     <div className="space-y-4">
       <div className="bg-white rounded-md border border-slate-200 p-4">
-        <h3 className="font-bold text-emerald-800 mb-2">{t('admin.parentInfo')}</h3>
-        <dl className="grid sm:grid-cols-2 gap-x-6 gap-y-1 text-sm">
-          <Definition label={t('admin.parentInfo')} value={`${r.parentFirstName} ${r.parentLastName}`} />
-          <Definition label={t('admin.address')} value={fullAddress} />
-          <Definition label={t('admin.phone')} value={r.cellPhone} />
-          <Definition label={t('admin.emailLbl')} value={r.email} />
-          <Definition label="Season" value={r.season} />
-          <Definition label={t('admin.submitted')} value={new Date(r.createdAt).toLocaleString()} />
-          <Definition
-            label={t('admin.waiverSignedAt')}
-            value={r.waiverSignedAt ? new Date(r.waiverSignedAt).toLocaleString() : '—'}
+        <div className="flex items-start justify-between mb-2">
+          <h3 className="font-bold text-emerald-800">{t('admin.parentInfo')}</h3>
+          {!editing && (
+            <button onClick={() => setEditing(true)} className="text-sm text-emerald-700 hover:underline">
+              {t('admin.edit')}
+            </button>
+          )}
+        </div>
+        {editing ? (
+          <EditRegistrationForm
+            detail={r}
+            onCancel={() => setEditing(false)}
+            onSaved={(updated) => { onSaved(updated); setEditing(false) }}
+            onError={onError}
           />
-        </dl>
+        ) : (
+          <dl className="grid sm:grid-cols-2 gap-x-6 gap-y-1 text-sm">
+            <Definition label={t('admin.parentInfo')} value={`${r.parentFirstName} ${r.parentLastName}`} />
+            <Definition label={t('admin.address')} value={fullAddress} />
+            <Definition label={t('admin.phone')} value={r.cellPhone} />
+            <Definition label={t('admin.emailLbl')} value={r.email} />
+            <Definition label={t('admin.language')} value={r.language === 1 ? 'Español' : 'English'} />
+            <Definition label={t('admin.hasWhatsApp')} value={r.hasWhatsApp ? t('common.yes') : t('common.no')} />
+            <Definition label="Season" value={r.season} />
+            <Definition label={t('admin.submitted')} value={new Date(r.createdAt).toLocaleString()} />
+            <Definition
+              label={t('admin.waiverSignedAt')}
+              value={r.waiverSignedAt ? new Date(r.waiverSignedAt).toLocaleString() : '—'}
+            />
+          </dl>
+        )}
         <div className="mt-3">
           <div className="flex flex-wrap gap-2">
             <button
@@ -193,6 +237,129 @@ function RegistrationDetailPanel({ detail }: { detail: RegistrationDetail }) {
         </div>
       </div>
     </div>
+  )
+}
+
+function EditRegistrationForm({
+  detail, onCancel, onSaved, onError,
+}: {
+  detail: RegistrationDetail
+  onCancel: () => void
+  onSaved: (updated: RegistrationDetail) => void
+  onError: (msg: string) => void
+}) {
+  const { t } = useTranslation()
+  const [form, setForm] = useState<UpdateRegistrationRequest>({
+    parentFirstName: detail.parentFirstName,
+    parentLastName: detail.parentLastName,
+    addressLine1: detail.addressLine1 ?? '',
+    addressLine2: detail.addressLine2 ?? '',
+    city: detail.city ?? '',
+    state: detail.state ?? '',
+    postalCode: detail.postalCode ?? '',
+    cellPhone: detail.cellPhone,
+    email: detail.email,
+    language: detail.language,
+    hasWhatsApp: detail.hasWhatsApp,
+  })
+  const [saving, setSaving] = useState(false)
+
+  const set = <K extends keyof UpdateRegistrationRequest>(key: K, value: UpdateRegistrationRequest[K]) =>
+    setForm(prev => ({ ...prev, [key]: value }))
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!form.parentFirstName.trim() || !form.parentLastName.trim()) {
+      onError(t('common.required')); return
+    }
+    if (!form.cellPhone.trim() || !form.email.trim()) {
+      onError(t('common.required')); return
+    }
+    setSaving(true)
+    try {
+      const updated = await Api.updateRegistration(detail.id, form)
+      onSaved(updated)
+    } catch (e: any) {
+      onError(e?.response?.data?.title || e?.response?.data || e?.message || 'Error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const inputCls = 'border border-slate-300 rounded-md px-2 py-1 text-sm w-full'
+
+  return (
+    <form onSubmit={submit} className="grid sm:grid-cols-2 gap-3 text-sm">
+      <label className="block">
+        <span className="text-slate-600 text-xs">{t('register.parent.firstName')}</span>
+        <input className={inputCls} value={form.parentFirstName}
+          onChange={e => set('parentFirstName', e.target.value)} />
+      </label>
+      <label className="block">
+        <span className="text-slate-600 text-xs">{t('register.parent.lastName')}</span>
+        <input className={inputCls} value={form.parentLastName}
+          onChange={e => set('parentLastName', e.target.value)} />
+      </label>
+      <label className="block sm:col-span-2">
+        <span className="text-slate-600 text-xs">{t('register.parent.address1')}</span>
+        <input className={inputCls} value={form.addressLine1 ?? ''}
+          onChange={e => set('addressLine1', e.target.value)} />
+      </label>
+      <label className="block sm:col-span-2">
+        <span className="text-slate-600 text-xs">{t('register.parent.address2')}</span>
+        <input className={inputCls} value={form.addressLine2 ?? ''}
+          onChange={e => set('addressLine2', e.target.value)} />
+      </label>
+      <label className="block">
+        <span className="text-slate-600 text-xs">{t('register.parent.city')}</span>
+        <input className={inputCls} value={form.city ?? ''}
+          onChange={e => set('city', e.target.value)} />
+      </label>
+      <label className="block">
+        <span className="text-slate-600 text-xs">{t('register.parent.state')}</span>
+        <input className={inputCls} value={form.state ?? ''}
+          onChange={e => set('state', e.target.value)} />
+      </label>
+      <label className="block">
+        <span className="text-slate-600 text-xs">{t('register.parent.postal')}</span>
+        <input className={inputCls} value={form.postalCode ?? ''}
+          onChange={e => set('postalCode', e.target.value)} />
+      </label>
+      <label className="block">
+        <span className="text-slate-600 text-xs">{t('register.parent.cell')}</span>
+        <input type="tel" className={inputCls} value={form.cellPhone}
+          onChange={e => set('cellPhone', e.target.value)} />
+      </label>
+      <label className="block sm:col-span-2">
+        <span className="text-slate-600 text-xs">{t('register.parent.email')}</span>
+        <input type="email" className={inputCls} value={form.email}
+          onChange={e => set('email', e.target.value)} />
+      </label>
+      <label className="block">
+        <span className="text-slate-600 text-xs">{t('admin.language')}</span>
+        <select className={inputCls} value={form.language}
+          onChange={e => set('language', Number(e.target.value) as Language)}>
+          <option value={0}>English</option>
+          <option value={1}>Español</option>
+        </select>
+      </label>
+      <label className="block">
+        <span className="text-slate-600 text-xs">{t('admin.hasWhatsApp')}</span>
+        <select className={inputCls} value={form.hasWhatsApp ? 'yes' : 'no'}
+          onChange={e => set('hasWhatsApp', e.target.value === 'yes')}>
+          <option value="yes">{t('common.yes')}</option>
+          <option value="no">{t('common.no')}</option>
+        </select>
+      </label>
+      <div className="sm:col-span-2 flex gap-2 pt-2 border-t border-slate-100">
+        <button type="submit" disabled={saving}
+          className="bg-emerald-700 text-white text-sm font-semibold px-4 py-1.5 rounded-md hover:bg-emerald-800 disabled:opacity-60">
+          {saving ? t('register.submitting') : t('admin.save')}
+        </button>
+        <button type="button" onClick={onCancel}
+          className="text-sm text-slate-600 hover:underline">{t('admin.cancel')}</button>
+      </div>
+    </form>
   )
 }
 

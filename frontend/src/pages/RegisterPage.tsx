@@ -36,6 +36,10 @@ const formSchema = z.object({
   postalCode: z.string().optional(),
   cellPhone: z.string().min(7),
   email: z.string().email(),
+  // Required tri-state: the form default is `undefined`, so plain z.boolean() rejects it
+  // until the user picks a radio. We don't customize the message — the form just shows
+  // common.required when the field is invalid.
+  hasWhatsApp: z.boolean(),
   smsConsent: z.boolean().refine(v => v === true, { message: 'sms-required' }),
   waiverConsent: z.boolean().refine(v => v === true, { message: 'required' }),
   players: z.array(playerSchema).min(1),
@@ -82,6 +86,7 @@ export function RegisterPage() {
       postalCode: '',
       cellPhone: '',
       email: '',
+      hasWhatsApp: undefined as unknown as boolean,
       smsConsent: false,
       waiverConsent: false,
       players: [emptyPlayer],
@@ -142,6 +147,7 @@ export function RegisterPage() {
       cellPhone: values.cellPhone,
       email: values.email,
       language: i18n.resolvedLanguage?.startsWith('es') ? 1 : 0,
+      hasWhatsApp: values.hasWhatsApp,
       waiverConsent: values.waiverConsent,
       players: values.players.map(p => ({
         playerId: p.playerId ?? null,
@@ -309,6 +315,32 @@ function ParentSection({ form }: { form: any }) {
       <Field label={t('register.parent.email')} error={errors.email && t('common.required')} span={2} required>
         <input type="email" className={inputCls} {...form.register('email')} />
       </Field>
+      <div className="sm:col-span-2">
+        <span className="text-sm text-slate-700 font-medium">
+          {t('register.parent.hasWhatsApp')}
+          <span aria-hidden className="text-rose-600 ml-0.5">*</span>
+        </span>
+        <p className="text-xs text-slate-500 mt-0.5">{t('register.parent.hasWhatsAppHint')}</p>
+        <div className="mt-2 flex gap-4">
+          <label className="inline-flex items-center gap-2 text-sm">
+            <input type="radio" value="yes" className="w-4 h-4"
+              onChange={() => form.setValue('hasWhatsApp', true, { shouldValidate: true })}
+              checked={form.watch('hasWhatsApp') === true}
+            />
+            {t('common.yes')}
+          </label>
+          <label className="inline-flex items-center gap-2 text-sm">
+            <input type="radio" value="no" className="w-4 h-4"
+              onChange={() => form.setValue('hasWhatsApp', false, { shouldValidate: true })}
+              checked={form.watch('hasWhatsApp') === false}
+            />
+            {t('common.no')}
+          </label>
+        </div>
+        {errors.hasWhatsApp && (
+          <p className="text-rose-600 text-xs mt-1">{t('common.required')}</p>
+        )}
+      </div>
       <div className="sm:col-span-2">
         <label className="flex items-start gap-2 text-xs text-slate-700">
           <input

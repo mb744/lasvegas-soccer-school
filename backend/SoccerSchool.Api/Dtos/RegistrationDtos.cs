@@ -42,10 +42,31 @@ public record SubmitRegistrationRequest
 
     public Language Language { get; init; } = Language.English;
 
+    /// <summary>Whether the parent confirmed WhatsApp is installed on the cell they provided. Required.</summary>
+    public bool HasWhatsApp { get; init; }
+
     [Required] public bool WaiverConsent { get; init; }
 
     [Required, MinLength(1)]
     public List<RegistrationPlayerInput> Players { get; init; } = new();
+}
+
+/// <summary>Admin-only edit. Updates contact info + flags on an existing registration. Does NOT
+/// touch waiver consent, signatures, or the player list — those are immutable artifacts of the
+/// original submission.</summary>
+public record UpdateRegistrationRequest
+{
+    [Required, MaxLength(80)] public string ParentFirstName { get; init; } = string.Empty;
+    [Required, MaxLength(80)] public string ParentLastName { get; init; } = string.Empty;
+    [MaxLength(200)] public string? AddressLine1 { get; init; }
+    [MaxLength(200)] public string? AddressLine2 { get; init; }
+    [MaxLength(80)] public string? City { get; init; }
+    [MaxLength(40)] public string? State { get; init; }
+    [MaxLength(20)] public string? PostalCode { get; init; }
+    [Required, MaxLength(32)] public string CellPhone { get; init; } = string.Empty;
+    [Required, EmailAddress, MaxLength(256)] public string Email { get; init; } = string.Empty;
+    public Language Language { get; init; } = Language.English;
+    public bool HasWhatsApp { get; init; }
 }
 
 public record RegistrationSummary(
@@ -56,6 +77,7 @@ public record RegistrationSummary(
     string Email,
     string CellPhone,
     Language Language,
+    bool HasWhatsApp,
     int PlayerCount,
     DateTime CreatedAt
 );
@@ -73,6 +95,7 @@ public record RegistrationDetail(
     string CellPhone,
     string Email,
     Language Language,
+    bool HasWhatsApp,
     bool WaiverConsent,
     DateTime? WaiverSignedAt,
     DateTime CreatedAt,

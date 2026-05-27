@@ -36,6 +36,10 @@ public class ParentAccount
 
     public Language Language { get; set; } = Language.English;
 
+    /// <summary>Mirrors the latest <see cref="Registration.HasWhatsApp"/> the parent submitted. Lets
+    /// the messaging layer route between SMS and WhatsApp without joining through registrations.</summary>
+    public bool HasWhatsApp { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public List<Player> Players { get; set; } = new();
