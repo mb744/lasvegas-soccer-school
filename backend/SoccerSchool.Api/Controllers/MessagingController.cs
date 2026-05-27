@@ -756,9 +756,10 @@ public class MessagingController : ControllerBase
             .Select(v => new WhatsAppTemplateVariableDto(v.Id, v.Position, v.Label, v.Example))
             .ToList() ?? new List<WhatsAppTemplateVariableDto>();
 
-        // Suggest sensible defaults for the two common variables on the monthly-fee template:
-        // a "date" variable gets the first of next month; a "phone" / "zelle" variable gets the
-        // admin-configured Zelle phone. Admin can override either in the UI before sending.
+        // Suggest sensible defaults for the two variables on the monthly-fee template. The
+        // approved templates use positional placeholders ({{1}} = date, {{2}} = phone), so
+        // positional matching is the primary rule; label-keyword matching is the backup in case
+        // the admin renamed labels in the Templates tab.
         var settings = await _db.MessagingSettings.AsNoTracking().FirstOrDefaultAsync(ct);
         var suggested = new Dictionary<string, string>();
         var firstOfNextMonth = FirstOfNextMonth(DateTime.UtcNow);
@@ -766,9 +767,16 @@ public class MessagingController : ControllerBase
         {
             var label = v.Label?.ToLowerInvariant() ?? string.Empty;
             var key = v.Position.ToString(CultureInfo.InvariantCulture);
-            if (label.Contains("date") || label.Contains("month") || label.Contains("due"))
+            var isDate = v.Position == 1
+                || label.Contains("date") || label.Contains("month") || label.Contains("due");
+            var isPhone = v.Position == 2
+                || label.Contains("zelle") || label.Contains("phone")
+                || label.Contains("teléfono") || label.Contains("telefono");
+            if (isDate)
+            {
                 suggested[key] = firstOfNextMonth;
-            else if (label.Contains("zelle") || label.Contains("phone") || label.Contains("teléfono") || label.Contains("telefono"))
+            }
+            else if (isPhone)
             {
                 if (!string.IsNullOrWhiteSpace(settings?.ZellePhone))
                     suggested[key] = settings.ZellePhone!;
