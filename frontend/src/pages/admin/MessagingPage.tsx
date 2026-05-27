@@ -28,6 +28,7 @@ import type {
   EmailTemplate,
   ThreadSummary,
   ThreadDetail,
+  MonthlyFeePreview,
 } from '../../api/types'
 
 // Soccer-school-specific business strings for the practice_or_game template's "wear" variable.
@@ -48,7 +49,7 @@ import {
   MESSAGE_DELIVERY_LABELS,
 } from '../../api/types'
 
-type Tab = 'compose' | 'inbox' | 'groups' | 'conversations' | 'templates' | 'teams' | 'dictionary' | 'history' | 'settings'
+type Tab = 'compose' | 'inbox' | 'groups' | 'conversations' | 'templates' | 'teams' | 'dictionary' | 'history' | 'settings' | 'monthly-fee'
 type RecipientMode = 'individual' | 'curated' | 'dynamic' | 'list'
 type SendMode = 'broadcast' | 'group-chat'
 type ComposeBodyMode = 'free-form' | 'template'
@@ -152,6 +153,7 @@ export function AdminMessagingPage() {
           {tabBtn('teams', t('admin.msgTabTeams'))}
           {tabBtn('dictionary', t('admin.msgTabDictionary'))}
           {tabBtn('history', t('admin.msgTabHistory'))}
+          {tabBtn('monthly-fee', t('admin.msgTabMonthlyFee'))}
           {tabBtn('settings', t('admin.msgTabSettings'))}
         </div>
 
@@ -243,6 +245,14 @@ export function AdminMessagingPage() {
 
         {tab === 'inbox' && (
           <InboxTab
+            config={config}
+            onError={(e) => setError(e)}
+            onNotice={(n) => setNotice(n)}
+          />
+        )}
+
+        {tab === 'monthly-fee' && (
+          <MonthlyFeeTab
             config={config}
             onError={(e) => setError(e)}
             onNotice={(n) => setNotice(n)}
@@ -1407,6 +1417,151 @@ function InboxTab({
   )
 }
 
+// --- Monthly fee tab (one-click trial-over broadcast) ----------------------
+
+function MonthlyFeeTab({
+  config, onError, onNotice,
+}: {
+  config: MessagingConfig | null
+  onError: (e: string) => void
+  onNotice: (n: string) => void
+}) {
+  const { t } = useTranslation()
+  const [preview, setPreview] = useState<MonthlyFeePreview | null>(null)
+  const [loaded, setLoaded] = useState(false)
+  const [values, setValues] = useState<Record<string, string>>({})
+  const [sending, setSending] = useState(false)
+
+  const refresh = async () => {
+    try {
+      const p = await Api.previewMonthlyFee()
+      setPreview(p)
+      // Pre-fill the variable inputs from the server's suggested values (first-of-next-month for
+      // a "date" var, configured Zelle phone for a "phone" var). Admin can edit either before
+      // sending. Only sets fields that aren't already populated so we don't clobber edits.
+      setValues(prev => {
+        const next = { ...prev }
+        for (const [k, v] of Object.entries(p.suggestedValues ?? {})) {
+          if (!next[k] || next[k].trim() === '') next[k] = v
+        }
+        return next
+      })
+      setLoaded(true)
+    } catch (e: any) { onError(extractError(e)) }
+  }
+
+  useEffect(() => { refresh() }, [])
+
+  const canSend = preview
+    && preview.recipientCount > 0
+    && (preview.englishTemplateConfigured || preview.spanishTemplateConfigured)
+    && config?.whatsApp
+    && preview.variables.every(v => (values[v.position.toString()] ?? '').trim() !== '')
+
+  const send = async () => {
+    if (!preview) return
+    if (!confirm(t('admin.monthlyFeeConfirm', { count: preview.recipientCount }))) return
+    setSending(true)
+    try {
+      const detail = await Api.sendMonthlyFee({ templateVariables: values })
+      const ok = detail.recipients.filter(r => r.status !== 4 && r.status !== 5).length
+      onNotice(t('admin.monthlyFeeSent', { ok, total: detail.recipients.length }))
+      setValues({})
+      await refresh()
+    } catch (e: any) {
+      onError(extractError(e))
+    } finally {
+      setSending(false)
+    }
+  }
+
+  if (!loaded) return <div className="text-sm text-slate-500">{t('common.loading')}</div>
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-lg p-6 space-y-4 max-w-3xl">
+      <div>
+        <h2 className="font-bold text-emerald-800">{t('admin.monthlyFeeHeader')}</h2>
+        <p className="text-xs text-slate-500 mt-1">{t('admin.monthlyFeeHelp')}</p>
+      </div>
+
+      <div className="grid sm:grid-cols-3 gap-4">
+        <div className="bg-emerald-50 border border-emerald-200 rounded-md p-3 text-center">
+          <div className="text-2xl font-bold text-emerald-800">{preview?.recipientCount ?? 0}</div>
+          <div className="text-xs text-slate-600">{t('admin.monthlyFeeRecipients')}</div>
+        </div>
+        <div className="bg-slate-50 border border-slate-200 rounded-md p-3 text-center">
+          <div className="text-2xl font-bold text-slate-700">{preview?.englishCount ?? 0}</div>
+          <div className="text-xs text-slate-600">{t('admin.monthlyFeeEnglish')}</div>
+        </div>
+        <div className="bg-slate-50 border border-slate-200 rounded-md p-3 text-center">
+          <div className="text-2xl font-bold text-slate-700">{preview?.spanishCount ?? 0}</div>
+          <div className="text-xs text-slate-600">{t('admin.monthlyFeeSpanish')}</div>
+        </div>
+      </div>
+
+      <div className="text-sm">
+        <h3 className="font-medium text-slate-700">{t('admin.monthlyFeeTemplates')}</h3>
+        <ul className="mt-1 space-y-1 text-xs">
+          <li className="flex items-center gap-2">
+            <span className={`inline-block w-2 h-2 rounded-full ${preview?.englishTemplateConfigured ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+            <span className="text-slate-700">English:</span>
+            <code className="text-slate-600 font-mono">{preview?.englishTemplateName ?? t('admin.monthlyFeeTemplateMissing')}</code>
+          </li>
+          <li className="flex items-center gap-2">
+            <span className={`inline-block w-2 h-2 rounded-full ${preview?.spanishTemplateConfigured ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+            <span className="text-slate-700">Spanish:</span>
+            <code className="text-slate-600 font-mono">{preview?.spanishTemplateName ?? t('admin.monthlyFeeTemplateMissing')}</code>
+          </li>
+        </ul>
+        {!preview?.englishTemplateConfigured && !preview?.spanishTemplateConfigured && (
+          <p className="mt-2 text-xs text-rose-700">{t('admin.monthlyFeeNoTemplates')}</p>
+        )}
+      </div>
+
+      {preview && preview.variables.length > 0 && (
+        <div className="space-y-2">
+          <h3 className="text-sm font-medium text-slate-700">{t('admin.msgFillVariables')}</h3>
+          {preview.variables.map(v => {
+            const key = v.position.toString()
+            return (
+              <div key={v.id} className="grid grid-cols-[8rem_1fr] items-center gap-2">
+                <label className="text-sm text-slate-700">{v.label} <span className="text-slate-400">{`{{${v.position}}}`}</span></label>
+                <input type="text"
+                  value={values[key] ?? ''}
+                  placeholder={v.example ?? ''}
+                  onChange={e => setValues(prev => ({ ...prev, [key]: e.target.value }))}
+                  className="border border-slate-300 rounded-md px-3 py-2 text-sm" />
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {preview && (preview.englishPreviewText || preview.spanishPreviewText) && (
+        <details className="text-xs">
+          <summary className="cursor-pointer text-emerald-700 hover:underline">{t('admin.monthlyFeePreviewText')}</summary>
+          <div className="grid sm:grid-cols-2 gap-2 mt-2">
+            {preview.englishPreviewText && (
+              <pre className="bg-slate-50 border border-slate-200 rounded p-2 whitespace-pre-wrap">{preview.englishPreviewText}</pre>
+            )}
+            {preview.spanishPreviewText && (
+              <pre className="bg-slate-50 border border-slate-200 rounded p-2 whitespace-pre-wrap">{preview.spanishPreviewText}</pre>
+            )}
+          </div>
+        </details>
+      )}
+
+      <div className="pt-3 border-t border-slate-100 flex items-center gap-3">
+        <button type="button" onClick={send} disabled={!canSend || sending}
+          className="bg-emerald-700 text-white text-sm font-semibold px-4 py-2 rounded-md hover:bg-emerald-800 disabled:opacity-50">
+          {sending ? t('admin.sending') : t('admin.monthlyFeeSendButton', { count: preview?.recipientCount ?? 0 })}
+        </button>
+        <button type="button" onClick={refresh} className="text-sm text-emerald-700 hover:underline">↻ {t('admin.refresh')}</button>
+      </div>
+    </div>
+  )
+}
+
 // --- Settings tab ----------------------------------------------------------
 
 function SettingsTab({
@@ -1419,6 +1574,7 @@ function SettingsTab({
   const [autoReplyEnabled, setAutoReplyEnabled] = useState(true)
   const [autoReplyTextEn, setAutoReplyTextEn] = useState('')
   const [autoReplyTextEs, setAutoReplyTextEs] = useState('')
+  const [zellePhone, setZellePhone] = useState('')
   const [updatedAt, setUpdatedAt] = useState<string | null>(null)
   const [loaded, setLoaded] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -1429,6 +1585,7 @@ function SettingsTab({
         setAutoReplyEnabled(s.autoReplyEnabled)
         setAutoReplyTextEn(s.autoReplyTextEn)
         setAutoReplyTextEs(s.autoReplyTextEs)
+        setZellePhone(s.zellePhone ?? '')
         setUpdatedAt(s.updatedAt)
         setLoaded(true)
       })
@@ -1447,8 +1604,10 @@ function SettingsTab({
         autoReplyEnabled,
         autoReplyTextEn: autoReplyTextEn.trim(),
         autoReplyTextEs: autoReplyTextEs.trim(),
+        zellePhone: zellePhone.trim() || null,
       })
       setUpdatedAt(s.updatedAt)
+      setZellePhone(s.zellePhone ?? '')
       onNotice(t('admin.msgSettingsSaved'))
     } catch (e: any) {
       onError(extractError(e))
@@ -1492,6 +1651,20 @@ function SettingsTab({
           maxLength={2000}
           className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
         <span className="block text-xs text-slate-500 mt-0.5">{autoReplyTextEs.length} / 2000</span>
+      </label>
+
+      <div className="pt-3 border-t border-slate-100">
+        <h2 className="font-bold text-emerald-800">{t('admin.msgSettingsZelleHeader')}</h2>
+        <p className="text-xs text-slate-500 mt-1">{t('admin.msgSettingsZelleHelp')}</p>
+      </div>
+
+      <label className="block text-sm">
+        <span className="font-medium text-slate-700">{t('admin.msgSettingsZellePhone')}</span>
+        <input type="tel" value={zellePhone}
+          onChange={e => setZellePhone(e.target.value)}
+          maxLength={32}
+          placeholder="+17025551234"
+          className="mt-1 w-full sm:w-96 border border-slate-300 rounded-md px-3 py-2 text-sm" />
       </label>
 
       <div className="flex items-center justify-between pt-2 border-t border-slate-100">

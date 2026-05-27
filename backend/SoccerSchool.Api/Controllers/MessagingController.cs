@@ -733,6 +733,162 @@ public class MessagingController : ControllerBase
             broadcast.Id));
     }
 
+    // --- Monthly-fee one-click broadcast ----------------------------------
+
+    private const string MonthlyFeeTemplateBaseName = "monthlyfee";
+
+    /// <summary>Preview the monthly-fee broadcast: counts, template availability, and required
+    /// variable shape so the admin UI knows what inputs to show before firing.</summary>
+    [HttpGet("monthly-fee/preview")]
+    public async Task<ActionResult<MonthlyFeePreviewDto>> MonthlyFeePreview(CancellationToken ct)
+    {
+        var target = new RecipientTarget(RecipientTargetKind.DynamicGroup, DynamicGroupKey: RecipientResolver.DynamicTrialOverParents);
+        var resolved = await _resolver.ResolveAsync(target, ct);
+
+        var enTemplate = await FindMonthlyFeeTemplateAsync(Language.English, ct);
+        var esTemplate = await FindMonthlyFeeTemplateAsync(Language.Spanish, ct);
+
+        // Variable shape is taken from whichever template exists. Spanish version is expected to
+        // share the same positional variable layout.
+        var sourceForVars = enTemplate ?? esTemplate;
+        var variables = sourceForVars?.Variables
+            .OrderBy(v => v.Position)
+            .Select(v => new WhatsAppTemplateVariableDto(v.Id, v.Position, v.Label, v.Example))
+            .ToList() ?? new List<WhatsAppTemplateVariableDto>();
+
+        // Suggest sensible defaults for the two common variables on the monthly-fee template:
+        // a "date" variable gets the first of next month; a "phone" / "zelle" variable gets the
+        // admin-configured Zelle phone. Admin can override either in the UI before sending.
+        var settings = await _db.MessagingSettings.AsNoTracking().FirstOrDefaultAsync(ct);
+        var suggested = new Dictionary<string, string>();
+        var firstOfNextMonth = FirstOfNextMonth(DateTime.UtcNow);
+        foreach (var v in variables)
+        {
+            var label = v.Label?.ToLowerInvariant() ?? string.Empty;
+            var key = v.Position.ToString(CultureInfo.InvariantCulture);
+            if (label.Contains("date") || label.Contains("month") || label.Contains("due"))
+                suggested[key] = firstOfNextMonth;
+            else if (label.Contains("zelle") || label.Contains("phone") || label.Contains("teléfono") || label.Contains("telefono"))
+            {
+                if (!string.IsNullOrWhiteSpace(settings?.ZellePhone))
+                    suggested[key] = settings.ZellePhone!;
+            }
+        }
+
+        return Ok(new MonthlyFeePreviewDto(
+            RecipientCount: resolved.Recipients.Count,
+            EnglishCount: resolved.Recipients.Count(r => (r.Language ?? Language.English) == Language.English),
+            SpanishCount: resolved.Recipients.Count(r => r.Language == Language.Spanish),
+            EnglishTemplateConfigured: enTemplate is not null,
+            SpanishTemplateConfigured: esTemplate is not null,
+            Variables: variables,
+            SuggestedValues: suggested,
+            EnglishTemplateName: enTemplate?.Name,
+            SpanishTemplateName: esTemplate?.Name,
+            EnglishPreviewText: enTemplate?.PreviewText,
+            SpanishPreviewText: esTemplate?.PreviewText));
+    }
+
+    /// <summary>"MM/DD/YYYY" string for the first day of the month following <paramref name="now"/>.
+    /// Used as the default due-date suggestion on the monthly-fee form.</summary>
+    private static string FirstOfNextMonth(DateTime now)
+    {
+        var d = new DateTime(now.Year, now.Month, 1).AddMonths(1);
+        return d.ToString("MM/dd/yyyy", CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>Fire the monthly-fee broadcast: pulls trial-over parents in the active season,
+    /// routes each one to the language-matching <c>monthlyfee_*</c> template, and returns the
+    /// broadcast detail. Same fan-out pipeline as the regular Compose-tab template sends.</summary>
+    [HttpPost("monthly-fee/send")]
+    public async Task<ActionResult<BroadcastDetail>> SendMonthlyFee(
+        [FromBody] SendMonthlyFeeRequest request, CancellationToken ct)
+    {
+        if (!_sender.IsAvailable(MessageChannel.WhatsApp))
+            return BadRequest("WhatsApp not configured on this server.");
+
+        var enTemplate = await FindMonthlyFeeTemplateAsync(Language.English, ct);
+        var esTemplate = await FindMonthlyFeeTemplateAsync(Language.Spanish, ct);
+        if (enTemplate is null && esTemplate is null)
+            return BadRequest($"No {MonthlyFeeTemplateBaseName} templates configured. Add `{MonthlyFeeTemplateBaseName}_english` and `{MonthlyFeeTemplateBaseName}_spanish` under the Templates tab.");
+
+        // Pick the primary (English by default; falls back to Spanish if only that one exists).
+        // The send loop pairs to the other language automatically via FindPairAsync's base-name match.
+        var primary = enTemplate ?? esTemplate!;
+        var paired = primary == enTemplate ? esTemplate : enTemplate;
+
+        var templateVars = (request.TemplateVariables ?? new())
+            .Where(kv => !string.IsNullOrEmpty(kv.Key))
+            .ToDictionary(kv => kv.Key, kv => kv.Value ?? string.Empty);
+        var missing = primary.Variables
+            .Select(v => v.Position.ToString(CultureInfo.InvariantCulture))
+            .Where(key => !templateVars.ContainsKey(key) || string.IsNullOrWhiteSpace(templateVars[key]))
+            .ToList();
+        if (missing.Count > 0)
+            return BadRequest($"Template variables missing: {string.Join(", ", missing)}.");
+
+        var target = new RecipientTarget(RecipientTargetKind.DynamicGroup, DynamicGroupKey: RecipientResolver.DynamicTrialOverParents);
+        var resolved = await _resolver.ResolveAsync(target, ct);
+        if (resolved.Recipients.Count == 0)
+            return BadRequest("No parents with the free-trial-over flag set; nothing to send.");
+
+        var broadcast = new Broadcast
+        {
+            Channel = MessageChannel.WhatsApp,
+            BodyEn = RenderTemplatePreview(primary.PreviewText, primary.Name, templateVars),
+            BodyEs = paired is null ? null : RenderTemplatePreview(paired.PreviewText, paired.Name, templateVars),
+            TargetLabel = $"Monthly fee — {resolved.Recipients.Count} parents (trial over)",
+            WhatsAppTemplateId = primary.Id,
+            TemplateVariablesJson = JsonSerializer.Serialize(templateVars),
+        };
+        foreach (var r in resolved.Recipients)
+        {
+            broadcast.Recipients.Add(new BroadcastRecipient
+            {
+                Name = r.Name,
+                Phone = r.Phone,
+                Email = string.IsNullOrWhiteSpace(r.Email) ? null : r.Email,
+                Language = r.Language ?? Language.English,
+                Status = MessageDeliveryStatus.Pending
+            });
+        }
+        _db.Broadcasts.Add(broadcast);
+        await _db.SaveChangesAsync(ct);
+
+        // Skip recipients we know don't have WhatsApp, mirroring CreateBroadcast.
+        var hasWhatsAppByPhone = resolved.Recipients
+            .Where(r => r.HasWhatsApp.HasValue && !string.IsNullOrWhiteSpace(r.Phone))
+            .GroupBy(r => r.Phone)
+            .ToDictionary(g => g.Key, g => g.First().HasWhatsApp!.Value);
+
+        foreach (var recipient in broadcast.Recipients)
+        {
+            if (hasWhatsAppByPhone.TryGetValue(recipient.Phone, out var has) && !has)
+            {
+                recipient.Status = MessageDeliveryStatus.Failed;
+                recipient.StatusMessage = "Skipped: recipient does not have WhatsApp on file.";
+                continue;
+            }
+            await SendWhatsAppTemplateRecipientAsync(recipient, primary, paired, templateVars, ct);
+        }
+        await _db.SaveChangesAsync(ct);
+
+        return Ok(ToDetail(broadcast));
+    }
+
+    private async Task<WhatsAppTemplate?> FindMonthlyFeeTemplateAsync(Language language, CancellationToken ct)
+    {
+        // Match the user-defined templates by base name + language. Allows any suffix the admin
+        // happened to use (_english, _en, _spanish, _es) — same matcher the regular pair logic uses.
+        var suffix = language == Language.English ? new[] { "_english", "_en" } : new[] { "_spanish", "_es" };
+        var candidates = suffix.Select(s => MonthlyFeeTemplateBaseName + s)
+            .Concat(new[] { MonthlyFeeTemplateBaseName })
+            .ToList();
+        return await _db.WhatsAppTemplates
+            .Include(t => t.Variables)
+            .FirstOrDefaultAsync(t => t.Language == language && candidates.Contains(t.Name), ct);
+    }
+
     [HttpGet("broadcasts")]
     public async Task<ActionResult<IEnumerable<BroadcastSummary>>> ListBroadcasts(CancellationToken ct)
     {
@@ -1052,7 +1208,7 @@ public class MessagingController : ControllerBase
     public async Task<ActionResult<MessagingSettingsDto>> GetSettings(CancellationToken ct)
     {
         var s = await GetOrCreateSettingsAsync(ct);
-        return Ok(new MessagingSettingsDto(s.AutoReplyEnabled, s.AutoReplyTextEn, s.AutoReplyTextEs, s.UpdatedAt));
+        return Ok(new MessagingSettingsDto(s.AutoReplyEnabled, s.AutoReplyTextEn, s.AutoReplyTextEs, s.ZellePhone, s.UpdatedAt));
     }
 
     [HttpPut("settings")]
@@ -1066,9 +1222,10 @@ public class MessagingController : ControllerBase
         s.AutoReplyEnabled = request.AutoReplyEnabled;
         s.AutoReplyTextEn = request.AutoReplyTextEn.Trim();
         s.AutoReplyTextEs = request.AutoReplyTextEs.Trim();
+        s.ZellePhone = string.IsNullOrWhiteSpace(request.ZellePhone) ? null : request.ZellePhone.Trim();
         s.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
-        return Ok(new MessagingSettingsDto(s.AutoReplyEnabled, s.AutoReplyTextEn, s.AutoReplyTextEs, s.UpdatedAt));
+        return Ok(new MessagingSettingsDto(s.AutoReplyEnabled, s.AutoReplyTextEn, s.AutoReplyTextEs, s.ZellePhone, s.UpdatedAt));
     }
 
     private async Task<MessagingSettings> GetOrCreateSettingsAsync(CancellationToken ct)

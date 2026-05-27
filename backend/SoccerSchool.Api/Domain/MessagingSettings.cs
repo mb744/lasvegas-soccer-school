@@ -26,5 +26,11 @@ public class MessagingSettings
     public string AutoReplyTextEs { get; set; } =
         "¡Gracias por escribirnos! Un administrador le responderá pronto. Si es urgente, llame al equipo. — Las Vegas Soccer School";
 
+    /// <summary>Phone number parents should send Zelle payments to. Stored once here so the
+    /// monthly-fee notification can fill the template's phone variable automatically. E.164 or
+    /// any format the parents can read — we don't normalize here since it's a display string.</summary>
+    [MaxLength(32)]
+    public string? ZellePhone { get; set; }
+
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

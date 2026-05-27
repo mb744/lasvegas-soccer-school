@@ -137,6 +137,26 @@ export interface AgeClassification {
   updatedAt: string
 }
 
+// --- Monthly fee one-click broadcast ---
+
+export interface MonthlyFeePreview {
+  recipientCount: number
+  englishCount: number
+  spanishCount: number
+  englishTemplateConfigured: boolean
+  spanishTemplateConfigured: boolean
+  variables: WhatsAppTemplateVariable[]
+  suggestedValues: Record<string, string>
+  englishTemplateName: string | null
+  spanishTemplateName: string | null
+  englishPreviewText: string | null
+  spanishPreviewText: string | null
+}
+
+export interface SendMonthlyFeeRequest {
+  templateVariables?: Record<string, string> | null
+}
+
 export interface SaveAgeClassificationRequest {
   name: string
   description?: string | null
@@ -635,6 +655,7 @@ export interface MessagingSettings {
   autoReplyEnabled: boolean
   autoReplyTextEn: string
   autoReplyTextEs: string
+  zellePhone: string | null
   updatedAt: string
 }
 
@@ -642,6 +663,7 @@ export interface SaveMessagingSettingsRequest {
   autoReplyEnabled: boolean
   autoReplyTextEn: string
   autoReplyTextEs: string
+  zellePhone?: string | null
 }
 
 // --- Threaded view (per-phone inbox) ---

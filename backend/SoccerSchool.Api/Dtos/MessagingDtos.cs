@@ -422,6 +422,31 @@ public record SendThreadReplyRequest
     public string Body { get; init; } = string.Empty;
 }
 
+// --- Monthly fee notification (admin one-click broadcast) ---
+
+/// <summary>Summary of who the monthly-fee broadcast would hit, returned by the preview endpoint
+/// so the admin can sanity-check before firing.</summary>
+public record MonthlyFeePreviewDto(
+    int RecipientCount,
+    int EnglishCount,
+    int SpanishCount,
+    bool EnglishTemplateConfigured,
+    bool SpanishTemplateConfigured,
+    IReadOnlyList<WhatsAppTemplateVariableDto> Variables,
+    IReadOnlyDictionary<string, string> SuggestedValues,
+    string? EnglishTemplateName,
+    string? SpanishTemplateName,
+    string? EnglishPreviewText,
+    string? SpanishPreviewText);
+
+public record SendMonthlyFeeRequest
+{
+    /// <summary>Optional values for template variables, keyed by position as string ("1", "2", ...).
+    /// Empty if both templates have no variables; otherwise must cover every variable on the
+    /// English template (the Spanish template is expected to share the same variable shape).</summary>
+    public Dictionary<string, string>? TemplateVariables { get; init; }
+}
+
 // --- Inbound replies (received via Twilio webhook) ---
 
 // --- Messaging settings (singleton row used by inbound auto-reply) ---
@@ -430,6 +455,7 @@ public record MessagingSettingsDto(
     bool AutoReplyEnabled,
     string AutoReplyTextEn,
     string AutoReplyTextEs,
+    string? ZellePhone,
     DateTime UpdatedAt);
 
 public record SaveMessagingSettingsRequest
@@ -441,6 +467,9 @@ public record SaveMessagingSettingsRequest
 
     [Required, MaxLength(2000)]
     public string AutoReplyTextEs { get; init; } = string.Empty;
+
+    [MaxLength(32)]
+    public string? ZellePhone { get; init; }
 }
 
 public record InboundMessageDto(

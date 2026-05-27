@@ -55,6 +55,7 @@ public class RecipientResolver : IRecipientResolver
 {
     public const string DynamicAllParents = "all-parents";
     public const string DynamicActiveSeasonParents = "active-season-parents";
+    public const string DynamicTrialOverParents = "trial-over-parents";
 
     private readonly AppDbContext _db;
     private readonly AppOptions _app;
@@ -78,10 +79,23 @@ public class RecipientResolver : IRecipientResolver
             .Distinct()
             .CountAsync(ct);
 
+        // Distinct parents in the active season with at least one player whose free trial is over.
+        // Drives the monthly-fee notification.
+        var trialOverCount = await _db.RegistrationPlayers
+            .Where(rp => rp.FreeTrialOver
+                && rp.Registration!.Season == season
+                && rp.Registration.ParentAccount != null
+                && rp.Registration.ParentAccount.CellPhone != null
+                && rp.Registration.ParentAccount.CellPhone != "")
+            .Select(rp => rp.Registration!.ParentAccountId)
+            .Distinct()
+            .CountAsync(ct);
+
         return new[]
         {
             new DynamicGroupSummary(DynamicAllParents, "All parents with a phone on file", allCount),
-            new DynamicGroupSummary(DynamicActiveSeasonParents, $"Parents registered in {season}", activeCount)
+            new DynamicGroupSummary(DynamicActiveSeasonParents, $"Parents registered in {season}", activeCount),
+            new DynamicGroupSummary(DynamicTrialOverParents, "Parents whose free trial is over", trialOverCount)
         };
     }
 
@@ -138,6 +152,8 @@ public class RecipientResolver : IRecipientResolver
                         new RecipientList("All parents with a phone on file", await LoadAllParentsAsync(ct)),
                     DynamicActiveSeasonParents =>
                         new RecipientList($"Parents registered in {_app.ActiveSeason}", await LoadActiveSeasonParentsAsync(ct)),
+                    DynamicTrialOverParents =>
+                        new RecipientList("Parents whose free trial is over", await LoadTrialOverParentsAsync(ct)),
                     _ => new RecipientList("Unknown group", Array.Empty<ResolvedRecipient>())
                 };
 
@@ -209,6 +225,41 @@ public class RecipientResolver : IRecipientResolver
             .ToListAsync(ct);
         return rows
             .Select(r => new ResolvedRecipient(r.CellPhone ?? string.Empty, $"{r.FirstName} {r.LastName}".Trim(), r.Id, r.Language, r.Email, r.HasWhatsApp))
+            .ToList();
+    }
+
+    private async Task<IReadOnlyList<ResolvedRecipient>> LoadTrialOverParentsAsync(CancellationToken ct)
+    {
+        // Distinct parents in the active season whose at-least-one player has FreeTrialOver = true.
+        // Joining through RegistrationPlayer → Registration → ParentAccount; dedupe on parent id so
+        // a family with multiple post-trial kids only gets one fee notification.
+        var season = _app.ActiveSeason;
+        var rows = await _db.RegistrationPlayers
+            .Where(rp => rp.FreeTrialOver
+                && rp.Registration!.Season == season
+                && rp.Registration.ParentAccount != null
+                && ((rp.Registration.ParentAccount.CellPhone != null && rp.Registration.ParentAccount.CellPhone != "")
+                    || (rp.Registration.ParentAccount.User != null && rp.Registration.ParentAccount.User.Email != null && rp.Registration.ParentAccount.User.Email != "")))
+            .Select(rp => new
+            {
+                rp.Registration!.ParentAccount!.Id,
+                rp.Registration.ParentAccount.CellPhone,
+                rp.Registration.ParentAccount.FirstName,
+                rp.Registration.ParentAccount.LastName,
+                rp.Registration.ParentAccount.Language,
+                rp.Registration.ParentAccount.HasWhatsApp,
+                Email = rp.Registration.ParentAccount.User!.Email
+            })
+            .Distinct()
+            .ToListAsync(ct);
+        return rows
+            .Select(r => new ResolvedRecipient(
+                r.CellPhone ?? string.Empty,
+                $"{r.FirstName} {r.LastName}".Trim(),
+                r.Id,
+                r.Language,
+                r.Email,
+                r.HasWhatsApp))
             .ToList();
     }
 

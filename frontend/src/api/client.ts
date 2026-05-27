@@ -47,6 +47,8 @@ import type {
   UpdateRegistrationRequest,
   AgeClassification,
   SaveAgeClassificationRequest,
+  MonthlyFeePreview,
+  SendMonthlyFeeRequest,
   TeamDetail,
   TeamSummary,
   TemplatePreviewRequest,
@@ -334,6 +336,14 @@ export const Api = {
   },
   async sendThreadReply(phone: string, payload: SendThreadReplyRequest) {
     const r = await api.post<ThreadMessage>(`/messaging/threads/${encodeURIComponent(phone)}/reply`, payload)
+    return r.data
+  },
+  async previewMonthlyFee() {
+    const r = await api.get<MonthlyFeePreview>('/messaging/monthly-fee/preview')
+    return r.data
+  },
+  async sendMonthlyFee(payload: SendMonthlyFeeRequest) {
+    const r = await api.post<BroadcastDetail>('/messaging/monthly-fee/send', payload)
     return r.data
   },
 
