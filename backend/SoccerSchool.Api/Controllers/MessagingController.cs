@@ -570,11 +570,20 @@ public class MessagingController : ControllerBase
             .GroupBy(x => x.FromPhone)
             .ToList();
 
-        // Look up parent records in one shot for name + registered flag.
+        // Look up parents by every common form variant of each thread phone so a parent stored
+        // as +18317568859 still matches inbounds/outbounds recorded as 8317568859 (or vice versa).
         var phones = byPhone.Select(g => g.Key).ToList();
-        var parents = await _db.ParentAccounts
-            .Where(p => p.CellPhone != null && phones.Contains(p.CellPhone))
+        var allCandidates = phones.SelectMany(PhoneVariants).Distinct().ToList();
+        var parentsByForm = await _db.ParentAccounts
+            .Where(p => p.CellPhone != null && allCandidates.Contains(p.CellPhone))
             .ToDictionaryAsync(p => p.CellPhone!, p => p, ct);
+
+        ParentAccount? FindParent(string phone)
+        {
+            foreach (var v in PhoneVariants(phone))
+                if (parentsByForm.TryGetValue(v, out var p)) return p;
+            return null;
+        }
 
         var summaries = byPhone
             .Select(g =>
@@ -582,7 +591,7 @@ public class MessagingController : ControllerBase
                 var last = g.OrderByDescending(x => x.At).First();
                 var inboundCount = g.Count(x => x.Direction == ThreadDirection.Inbound);
                 var outboundCount = g.Count(x => x.Direction == ThreadDirection.Outbound);
-                parents.TryGetValue(g.Key, out var parent);
+                var parent = FindParent(g.Key);
                 return new ThreadSummaryDto(
                     g.Key,
                     parent is null ? null : $"{parent.FirstName} {parent.LastName}".Trim(),
@@ -599,6 +608,23 @@ public class MessagingController : ControllerBase
             .ToList();
 
         return Ok(summaries);
+    }
+
+    /// <summary>Common form variants for a phone so DB lookups against ParentAccount.CellPhone
+    /// succeed regardless of which format the parent record was saved in. Mirrors the helper in
+    /// <see cref="RecipientResolver"/> — kept in sync by hand because there's only two of them.</summary>
+    private static IReadOnlyList<string> PhoneVariants(string raw)
+    {
+        var trimmed = raw?.Trim() ?? string.Empty;
+        var set = new HashSet<string>(StringComparer.Ordinal);
+        if (!string.IsNullOrEmpty(trimmed)) set.Add(trimmed);
+        var digits = new string(trimmed.Where(char.IsDigit).ToArray());
+        if (digits.Length == 10) set.Add("+1" + digits);
+        if (digits.Length == 11 && digits.StartsWith('1')) set.Add("+" + digits);
+        if (digits.Length >= 10 && !trimmed.StartsWith('+')) set.Add("+" + digits);
+        // Also add the bare-digits form in case the parent saved phone without any +.
+        if (!string.IsNullOrEmpty(digits)) set.Add(digits);
+        return set.ToList();
     }
 
     /// <summary>Full chronological thread for one phone — inbounds + outbounds interleaved.</summary>
@@ -635,7 +661,10 @@ public class MessagingController : ControllerBase
 
         var messages = inbound.Concat(outbound).OrderBy(m => m.At).ToList();
 
-        var parent = await _db.ParentAccounts.FirstOrDefaultAsync(p => p.CellPhone == phone, ct);
+        var variants = PhoneVariants(phone);
+        var parent = await _db.ParentAccounts
+            .Where(p => p.CellPhone != null && variants.Contains(p.CellPhone))
+            .FirstOrDefaultAsync(ct);
         return Ok(new ThreadDetailDto(
             phone,
             parent is null ? null : $"{parent.FirstName} {parent.LastName}".Trim(),
@@ -656,7 +685,10 @@ public class MessagingController : ControllerBase
         if (!_sender.IsAvailable(request.Channel))
             return BadRequest($"{request.Channel} not configured on this server.");
 
-        var parent = await _db.ParentAccounts.FirstOrDefaultAsync(p => p.CellPhone == phone, ct);
+        var variants = PhoneVariants(phone);
+        var parent = await _db.ParentAccounts
+            .Where(p => p.CellPhone != null && variants.Contains(p.CellPhone))
+            .FirstOrDefaultAsync(ct);
         var name = parent is null ? null : $"{parent.FirstName} {parent.LastName}".Trim();
         var lang = parent?.Language ?? Language.English;
 
