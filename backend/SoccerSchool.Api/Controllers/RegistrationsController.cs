@@ -86,6 +86,9 @@ public class RegistrationsController : ControllerBase
         account.Language = registration.Language;
         account.HasWhatsApp = registration.HasWhatsApp;
 
+        // Cache the classification list once — we'll look up each player's DOB against it below.
+        var classifications = await _db.AgeClassifications.ToListAsync(ct);
+
         foreach (var input in request.Players)
         {
             Player player;
@@ -109,6 +112,11 @@ public class RegistrationsController : ControllerBase
                 _db.Players.Add(player);
             }
 
+            // Auto-assign the age bracket the player's DOB falls into. Null when no defined bracket
+            // covers the DOB; admin can add or widen one and re-save the registration to fix.
+            var classification = classifications
+                .FirstOrDefault(c => c.DobStart <= player.DateOfBirth && player.DateOfBirth <= c.DobEnd);
+
             registration.Players.Add(new RegistrationPlayer
             {
                 Player = player,
@@ -127,6 +135,7 @@ public class RegistrationsController : ControllerBase
                 WaiverEmail = string.IsNullOrWhiteSpace(input.WaiverEmail) ? registration.Email : input.WaiverEmail!.Trim(),
                 SignatureDataUrl = input.SignatureDataUrl,
                 SignedAt = now,
+                AgeClassificationId = classification?.Id,
             });
         }
 
@@ -264,6 +273,8 @@ public class RegistrationsController : ControllerBase
         var registration = await _db.Registrations
             .Include(x => x.Players)
                 .ThenInclude(rp => rp.Player)
+            .Include(x => x.Players)
+                .ThenInclude(rp => rp.AgeClassification)
             .FirstOrDefaultAsync(x => x.Id == id, ct);
         if (registration is null) return (null, NotFound());
 
@@ -274,6 +285,32 @@ public class RegistrationsController : ControllerBase
             return (null, Forbid());
 
         return (registration, null);
+    }
+
+    /// <summary>Admin-only toggle of a single player's free-trial-over flag. Per-player rather than
+    /// per-registration so families with mixed trial status are handled correctly.</summary>
+    [HttpPatch("{id:int}/players/{rpId:int}/trial")]
+    [Authorize(Roles = Roles.Admin)]
+    public async Task<ActionResult<RegistrationPlayerDetail>> UpdatePlayerTrial(
+        int id, int rpId, [FromBody] UpdatePlayerTrialRequest request, CancellationToken ct)
+    {
+        var rp = await _db.RegistrationPlayers
+            .Include(p => p.Player)
+            .Include(p => p.AgeClassification)
+            .FirstOrDefaultAsync(p => p.Id == rpId && p.RegistrationId == id, ct);
+        if (rp is null) return NotFound();
+
+        rp.FreeTrialOver = request.FreeTrialOver;
+        await _db.SaveChangesAsync(ct);
+
+        return Ok(new RegistrationPlayerDetail(
+            rp.Id, rp.PlayerId,
+            rp.Player!.FirstName, rp.Player.LastName, rp.Player.DateOfBirth,
+            rp.SchoolGrade, rp.UniformSize, rp.ShoeSize, rp.HeardFrom,
+            rp.WaiverParticipantName, rp.WaiverTeamName, rp.WaiverParentGuardianName,
+            rp.WaiverPhone, rp.WaiverEmail,
+            !string.IsNullOrEmpty(rp.SignatureDataUrl), rp.SignedAt,
+            rp.FreeTrialOver, rp.AgeClassificationId, rp.AgeClassification?.Name));
     }
 
     private async Task<ParentAccount?> GetAccountAsync(CancellationToken ct)
@@ -307,7 +344,8 @@ public class RegistrationsController : ControllerBase
             rp.SchoolGrade, rp.UniformSize, rp.ShoeSize, rp.HeardFrom,
             rp.WaiverParticipantName, rp.WaiverTeamName, rp.WaiverParentGuardianName,
             rp.WaiverPhone, rp.WaiverEmail,
-            !string.IsNullOrEmpty(rp.SignatureDataUrl), rp.SignedAt
+            !string.IsNullOrEmpty(rp.SignatureDataUrl), rp.SignedAt,
+            rp.FreeTrialOver, rp.AgeClassificationId, rp.AgeClassification?.Name
         )).ToList()
     );
 }

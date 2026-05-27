@@ -366,6 +366,22 @@ function EditRegistrationForm({
 function PlayerCard({ regId, idx, p }: { regId: number; idx: number; p: RegistrationPlayerDetail }) {
   const { t } = useTranslation()
   const stem = `${regId}-${p.lastName}-${p.firstName}`.replace(/[^a-zA-Z0-9-_]/g, '')
+  const [trialOver, setTrialOver] = useState(p.freeTrialOver)
+  const [saving, setSaving] = useState(false)
+
+  const toggleTrial = async () => {
+    const next = !trialOver
+    setSaving(true)
+    try {
+      const updated = await Api.updatePlayerTrial(regId, p.id, next)
+      setTrialOver(updated.freeTrialOver)
+    } catch {
+      // Revert on failure — no toast infra here.
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <div className="bg-white rounded-md border border-slate-200 p-4 text-sm">
       <div className="flex items-center justify-between mb-2">
@@ -382,9 +398,18 @@ function PlayerCard({ regId, idx, p }: { regId: number; idx: number; p: Registra
         <Definition label={t('admin.dob')} value={p.dateOfBirth} />
         <Definition label={t('admin.grade')} value={p.schoolGrade} />
         <Definition label={t('admin.sizes')} value={`${p.uniformSize} / ${p.shoeSize}`} />
+        <Definition label={t('admin.ageClassification')} value={p.ageClassificationName ?? '—'} />
         {p.waiverTeamName && <Definition label={t('admin.teamLbl')} value={p.waiverTeamName} />}
         {p.heardFrom && <Definition label={t('admin.heardFromLbl')} value={p.heardFrom} />}
       </dl>
+      <label className="mt-3 flex items-center gap-2 text-xs text-slate-700">
+        <input type="checkbox" className="w-4 h-4"
+          checked={trialOver}
+          disabled={saving}
+          onChange={toggleTrial} />
+        <span>{t('admin.freeTrialOver')}</span>
+        {saving && <span className="text-slate-400">…</span>}
+      </label>
       <div className="mt-3 flex flex-wrap gap-2">
         <button
           onClick={() => Api.viewPlayerWaiver(regId, p.id)}

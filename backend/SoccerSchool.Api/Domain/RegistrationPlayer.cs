@@ -49,4 +49,15 @@ public class RegistrationPlayer
     public string? SignatureDataUrl { get; set; }
 
     public DateTime? SignedAt { get; set; }
+
+    /// <summary>Admin-managed flag indicating the player has used up their free trial period.
+    /// Defaults false at registration; admin toggles it from the Registrations detail view once
+    /// the free month is up so future communications and team assignment can act on it.</summary>
+    public bool FreeTrialOver { get; set; }
+
+    /// <summary>Auto-assigned at registration time from <see cref="AgeClassification"/> based on
+    /// the player's DOB falling within a classification's date range. Null when no classification
+    /// covers the DOB; admin can fix by adding/widening a classification.</summary>
+    public int? AgeClassificationId { get; set; }
+    public AgeClassification? AgeClassification { get; set; }
 }

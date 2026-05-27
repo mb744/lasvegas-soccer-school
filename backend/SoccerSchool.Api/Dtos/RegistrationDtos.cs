@@ -118,5 +118,36 @@ public record RegistrationPlayerDetail(
     string? WaiverPhone,
     string? WaiverEmail,
     bool HasSignature,
-    DateTime? SignedAt
+    DateTime? SignedAt,
+    bool FreeTrialOver,
+    int? AgeClassificationId,
+    string? AgeClassificationName
 );
+
+public record UpdatePlayerTrialRequest
+{
+    public bool FreeTrialOver { get; init; }
+}
+
+// --- Age classifications (admin-managed DOB buckets) ---
+
+public record AgeClassificationDto(
+    int Id,
+    string Name,
+    string? Description,
+    DateOnly DobStart,
+    DateOnly DobEnd,
+    DateTime CreatedAt,
+    DateTime UpdatedAt);
+
+public record SaveAgeClassificationRequest
+{
+    [Required, MaxLength(64)]
+    public string Name { get; init; } = string.Empty;
+
+    [MaxLength(256)]
+    public string? Description { get; init; }
+
+    public DateOnly DobStart { get; init; }
+    public DateOnly DobEnd { get; init; }
+}

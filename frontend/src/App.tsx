@@ -6,6 +6,7 @@ import { AdminOutreachPage } from './pages/admin/OutreachPage'
 import { AdminRegistrationsPage } from './pages/admin/RegistrationsPage'
 import { AdminUsersPage } from './pages/admin/UsersPage'
 import { AdminMessagingPage } from './pages/admin/MessagingPage'
+import { AdminAgeClassificationsPage } from './pages/admin/AgeClassificationsPage'
 import { LoginPage } from './pages/LoginPage'
 import { SignupPage } from './pages/SignupPage'
 import { PrivacyPage } from './pages/PrivacyPage'
@@ -52,6 +53,10 @@ export default function App() {
           <Route
             path="/admin/messaging"
             element={<RequireAuth adminOnly><AdminMessagingPage /></RequireAuth>}
+          />
+          <Route
+            path="/admin/age-classifications"
+            element={<RequireAuth adminOnly><AdminAgeClassificationsPage /></RequireAuth>}
           />
           <Route path="*" element={<LandingPage />} />
         </Routes>

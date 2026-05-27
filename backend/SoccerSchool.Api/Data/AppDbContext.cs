@@ -61,6 +61,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<PhraseTranslation> PhraseTranslations => Set<PhraseTranslation>();
     public DbSet<InboundMessage> InboundMessages => Set<InboundMessage>();
     public DbSet<MessagingSettings> MessagingSettings => Set<MessagingSettings>();
+    public DbSet<AgeClassification> AgeClassifications => Set<AgeClassification>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -106,9 +107,18 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
                 .WithMany()
                 .HasForeignKey(rp => rp.PlayerId)
                 .OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(rp => rp.AgeClassification)
+                .WithMany()
+                .HasForeignKey(rp => rp.AgeClassificationId)
+                .OnDelete(DeleteBehavior.SetNull);
             b.HasIndex(rp => new { rp.RegistrationId, rp.PlayerId }).IsUnique();
             // Base64 PNG can be hundreds of KB.
             b.Property(rp => rp.SignatureDataUrl).HasColumnType("nvarchar(max)");
+        });
+
+        modelBuilder.Entity<AgeClassification>(b =>
+        {
+            b.HasIndex(c => c.Name).IsUnique();
         });
 
         modelBuilder.Entity<Outreach>(b =>

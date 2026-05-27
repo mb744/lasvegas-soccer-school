@@ -18,6 +18,7 @@ import type {
   OutreachResponse,
   PlayerSummary,
   RegistrationDetail,
+  RegistrationPlayerDetail,
   RegistrationSummary,
   PhraseTranslation,
   EventRecipient,
@@ -44,6 +45,8 @@ import type {
   SignupRequest,
   SubmitRegistrationRequest,
   UpdateRegistrationRequest,
+  AgeClassification,
+  SaveAgeClassificationRequest,
   TeamDetail,
   TeamSummary,
   TemplatePreviewRequest,
@@ -133,6 +136,27 @@ export const Api = {
   async updateRegistration(id: number, payload: UpdateRegistrationRequest) {
     const r = await api.put<RegistrationDetail>(`/registrations/${id}`, payload)
     return r.data
+  },
+  async updatePlayerTrial(regId: number, rpId: number, freeTrialOver: boolean) {
+    const r = await api.patch<RegistrationPlayerDetail>(
+      `/registrations/${regId}/players/${rpId}/trial`,
+      { freeTrialOver })
+    return r.data
+  },
+  async listAgeClassifications() {
+    const r = await api.get<AgeClassification[]>('/age-classifications')
+    return r.data
+  },
+  async createAgeClassification(payload: SaveAgeClassificationRequest) {
+    const r = await api.post<AgeClassification>('/age-classifications', payload)
+    return r.data
+  },
+  async updateAgeClassification(id: number, payload: SaveAgeClassificationRequest) {
+    const r = await api.put<AgeClassification>(`/age-classifications/${id}`, payload)
+    return r.data
+  },
+  async deleteAgeClassification(id: number) {
+    await api.delete(`/age-classifications/${id}`)
   },
   async deleteRegistration(id: number) {
     await api.delete(`/registrations/${id}`)

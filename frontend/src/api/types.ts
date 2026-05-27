@@ -120,6 +120,28 @@ export interface RegistrationPlayerDetail {
   waiverEmail: string | null
   hasSignature: boolean
   signedAt: string | null
+  freeTrialOver: boolean
+  ageClassificationId: number | null
+  ageClassificationName: string | null
+}
+
+// --- Age classifications (admin-managed DOB buckets) ---
+
+export interface AgeClassification {
+  id: number
+  name: string
+  description: string | null
+  dobStart: string   // YYYY-MM-DD
+  dobEnd: string     // YYYY-MM-DD
+  createdAt: string
+  updatedAt: string
+}
+
+export interface SaveAgeClassificationRequest {
+  name: string
+  description?: string | null
+  dobStart: string
+  dobEnd: string
 }
 
 export interface RegistrationDetail {
