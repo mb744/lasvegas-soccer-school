@@ -60,6 +60,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<ScheduledGame> ScheduledGames => Set<ScheduledGame>();
     public DbSet<PhraseTranslation> PhraseTranslations => Set<PhraseTranslation>();
     public DbSet<InboundMessage> InboundMessages => Set<InboundMessage>();
+    public DbSet<MessagingSettings> MessagingSettings => Set<MessagingSettings>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

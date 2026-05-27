@@ -607,6 +607,21 @@ export interface TemplatePreviewRequest {
   values: Record<string, string>
 }
 
+// --- Messaging settings (auto-reply text + toggle) ---
+
+export interface MessagingSettings {
+  autoReplyEnabled: boolean
+  autoReplyTextEn: string
+  autoReplyTextEs: string
+  updatedAt: string
+}
+
+export interface SaveMessagingSettingsRequest {
+  autoReplyEnabled: boolean
+  autoReplyTextEn: string
+  autoReplyTextEs: string
+}
+
 export interface InboundMessage {
   id: number
   channel: MessageChannel

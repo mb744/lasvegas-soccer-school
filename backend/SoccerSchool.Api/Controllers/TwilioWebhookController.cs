@@ -139,13 +139,17 @@ public class TwilioWebhookController : ControllerBase
         return Content("<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response></Response>", "application/xml");
     }
 
-    /// <summary>Sends a short bilingual "we got your message" reply on the same channel the parent
-    /// used. Rate-limited to once per hour per phone so a back-and-forth conversation doesn't get
-    /// auto-spammed. Picks the parent's stored language when we can match them by phone.</summary>
+    /// <summary>Sends an admin-configured bilingual "we got your message" reply on the same
+    /// channel the parent used. Rate-limited to once per hour per phone so a back-and-forth
+    /// conversation doesn't get auto-spammed. Picks the parent's stored language when we can
+    /// match them by phone; falls back to English. Reads body and on/off from MessagingSettings.</summary>
     private async Task MaybeAutoReplyAsync(MessageChannel channel, string from, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(from)) return;
         if (!_sender.IsAvailable(channel)) return;
+
+        var settings = await _db.MessagingSettings.AsNoTracking().FirstOrDefaultAsync(ct);
+        if (settings is { AutoReplyEnabled: false }) return;
 
         // Skip if we already auto-replied (or the parent sent another inbound) within the last hour.
         // The check is loose by design: any inbound in the last hour suppresses the auto-reply, so
@@ -159,8 +163,8 @@ public class TwilioWebhookController : ControllerBase
         var parent = await _db.ParentAccounts.FirstOrDefaultAsync(p => p.CellPhone == from, ct);
         var lang = parent?.Language ?? Language.English;
         var body = lang == Language.Spanish
-            ? "¡Gracias por escribirnos! Un administrador le responderá pronto. Si es urgente, llame al equipo. — Las Vegas Soccer School"
-            : "Thanks for your message! An admin will reply soon. For urgent matters, please call the team. — Las Vegas Soccer School";
+            ? (settings?.AutoReplyTextEs ?? "¡Gracias por escribirnos! Un administrador le responderá pronto.")
+            : (settings?.AutoReplyTextEn ?? "Thanks for your message! An admin will reply soon.");
 
         var result = await _sender.SendAsync(channel, from, body, ct);
         if (!result.Success)

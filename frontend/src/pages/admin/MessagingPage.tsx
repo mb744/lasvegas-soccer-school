@@ -46,7 +46,7 @@ import {
   MESSAGE_DELIVERY_LABELS,
 } from '../../api/types'
 
-type Tab = 'compose' | 'groups' | 'conversations' | 'templates' | 'teams' | 'dictionary' | 'history'
+type Tab = 'compose' | 'groups' | 'conversations' | 'templates' | 'teams' | 'dictionary' | 'history' | 'settings'
 type RecipientMode = 'individual' | 'curated' | 'dynamic' | 'list'
 type SendMode = 'broadcast' | 'group-chat'
 type ComposeBodyMode = 'free-form' | 'template'
@@ -149,6 +149,7 @@ export function AdminMessagingPage() {
           {tabBtn('teams', t('admin.msgTabTeams'))}
           {tabBtn('dictionary', t('admin.msgTabDictionary'))}
           {tabBtn('history', t('admin.msgTabHistory'))}
+          {tabBtn('settings', t('admin.msgTabSettings'))}
         </div>
 
         {error && (
@@ -227,6 +228,13 @@ export function AdminMessagingPage() {
           <HistoryTab
             broadcasts={broadcasts}
             onRefresh={refreshHistory}
+          />
+        )}
+
+        {tab === 'settings' && (
+          <SettingsTab
+            onError={(e) => setError(e)}
+            onNotice={(n) => setNotice(n)}
           />
         )}
       </div>
@@ -1206,6 +1214,108 @@ function ConversationsTab({
         )}
       </section>
     </div>
+  )
+}
+
+// --- Settings tab ----------------------------------------------------------
+
+function SettingsTab({
+  onError, onNotice,
+}: {
+  onError: (e: string) => void
+  onNotice: (n: string) => void
+}) {
+  const { t } = useTranslation()
+  const [autoReplyEnabled, setAutoReplyEnabled] = useState(true)
+  const [autoReplyTextEn, setAutoReplyTextEn] = useState('')
+  const [autoReplyTextEs, setAutoReplyTextEs] = useState('')
+  const [updatedAt, setUpdatedAt] = useState<string | null>(null)
+  const [loaded, setLoaded] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    Api.getMessagingSettings()
+      .then(s => {
+        setAutoReplyEnabled(s.autoReplyEnabled)
+        setAutoReplyTextEn(s.autoReplyTextEn)
+        setAutoReplyTextEs(s.autoReplyTextEs)
+        setUpdatedAt(s.updatedAt)
+        setLoaded(true)
+      })
+      .catch(e => onError(extractError(e)))
+  }, [])
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!autoReplyTextEn.trim() || !autoReplyTextEs.trim()) {
+      onError(t('admin.msgSettingsBodiesRequired'))
+      return
+    }
+    setSaving(true)
+    try {
+      const s = await Api.updateMessagingSettings({
+        autoReplyEnabled,
+        autoReplyTextEn: autoReplyTextEn.trim(),
+        autoReplyTextEs: autoReplyTextEs.trim(),
+      })
+      setUpdatedAt(s.updatedAt)
+      onNotice(t('admin.msgSettingsSaved'))
+    } catch (e: any) {
+      onError(extractError(e))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!loaded) {
+    return <div className="text-sm text-slate-500">{t('common.loading')}</div>
+  }
+
+  return (
+    <form onSubmit={save} className="bg-white border border-slate-200 rounded-lg p-6 space-y-4 max-w-3xl">
+      <div>
+        <h2 className="font-bold text-emerald-800">{t('admin.msgSettingsAutoReplyHeader')}</h2>
+        <p className="text-xs text-slate-500 mt-1">{t('admin.msgSettingsAutoReplyHelp')}</p>
+      </div>
+
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" className="w-4 h-4"
+          checked={autoReplyEnabled}
+          onChange={e => setAutoReplyEnabled(e.target.checked)}
+        />
+        <span className="text-slate-700">{t('admin.msgSettingsAutoReplyEnabled')}</span>
+      </label>
+
+      <label className="block text-sm">
+        <span className="font-medium text-slate-700">{t('admin.msgSettingsAutoReplyEn')}</span>
+        <textarea rows={4} value={autoReplyTextEn}
+          onChange={e => setAutoReplyTextEn(e.target.value)}
+          maxLength={2000}
+          className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+        <span className="block text-xs text-slate-500 mt-0.5">{autoReplyTextEn.length} / 2000</span>
+      </label>
+
+      <label className="block text-sm">
+        <span className="font-medium text-slate-700">{t('admin.msgSettingsAutoReplyEs')}</span>
+        <textarea rows={4} value={autoReplyTextEs}
+          onChange={e => setAutoReplyTextEs(e.target.value)}
+          maxLength={2000}
+          className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+        <span className="block text-xs text-slate-500 mt-0.5">{autoReplyTextEs.length} / 2000</span>
+      </label>
+
+      <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+        <button type="submit" disabled={saving}
+          className="bg-emerald-700 text-white text-sm font-semibold px-4 py-2 rounded-md hover:bg-emerald-800 disabled:opacity-60">
+          {saving ? t('register.submitting') : t('admin.save')}
+        </button>
+        {updatedAt && (
+          <span className="text-xs text-slate-500">
+            {t('admin.msgSettingsLastUpdated', { when: new Date(updatedAt).toLocaleString() })}
+          </span>
+        )}
+      </div>
+    </form>
   )
 }
 

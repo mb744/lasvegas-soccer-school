@@ -377,6 +377,25 @@ public record TemplatePreviewResponse(TemplatePreviewSide English, TemplatePrevi
 
 // --- Inbound replies (received via Twilio webhook) ---
 
+// --- Messaging settings (singleton row used by inbound auto-reply) ---
+
+public record MessagingSettingsDto(
+    bool AutoReplyEnabled,
+    string AutoReplyTextEn,
+    string AutoReplyTextEs,
+    DateTime UpdatedAt);
+
+public record SaveMessagingSettingsRequest
+{
+    public bool AutoReplyEnabled { get; init; }
+
+    [Required, MaxLength(2000)]
+    public string AutoReplyTextEn { get; init; } = string.Empty;
+
+    [Required, MaxLength(2000)]
+    public string AutoReplyTextEs { get; init; } = string.Empty;
+}
+
 public record InboundMessageDto(
     int Id,
     MessageChannel Channel,

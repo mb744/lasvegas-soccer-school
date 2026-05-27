@@ -854,6 +854,43 @@ public class MessagingController : ControllerBase
         return NoContent();
     }
 
+    // --- Messaging settings (auto-reply text + toggle) ---
+
+    [HttpGet("settings")]
+    public async Task<ActionResult<MessagingSettingsDto>> GetSettings(CancellationToken ct)
+    {
+        var s = await GetOrCreateSettingsAsync(ct);
+        return Ok(new MessagingSettingsDto(s.AutoReplyEnabled, s.AutoReplyTextEn, s.AutoReplyTextEs, s.UpdatedAt));
+    }
+
+    [HttpPut("settings")]
+    public async Task<ActionResult<MessagingSettingsDto>> UpdateSettings(
+        [FromBody] SaveMessagingSettingsRequest request, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.AutoReplyTextEn) || string.IsNullOrWhiteSpace(request.AutoReplyTextEs))
+            return BadRequest("Both English and Spanish auto-reply texts are required.");
+
+        var s = await GetOrCreateSettingsAsync(ct);
+        s.AutoReplyEnabled = request.AutoReplyEnabled;
+        s.AutoReplyTextEn = request.AutoReplyTextEn.Trim();
+        s.AutoReplyTextEs = request.AutoReplyTextEs.Trim();
+        s.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        return Ok(new MessagingSettingsDto(s.AutoReplyEnabled, s.AutoReplyTextEn, s.AutoReplyTextEs, s.UpdatedAt));
+    }
+
+    private async Task<MessagingSettings> GetOrCreateSettingsAsync(CancellationToken ct)
+    {
+        var existing = await _db.MessagingSettings.FirstOrDefaultAsync(ct);
+        if (existing is not null) return existing;
+        // Race-safe enough for the singleton: only Admin endpoints write here, and the migration
+        // pre-seeds Id=1, so this fallback path mostly handles fresh-db edge cases.
+        var fresh = new MessagingSettings();
+        _db.MessagingSettings.Add(fresh);
+        await _db.SaveChangesAsync(ct);
+        return fresh;
+    }
+
     // --- Phrase translation dictionary ---
 
     [HttpGet("translations")]
