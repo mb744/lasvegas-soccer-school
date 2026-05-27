@@ -8,6 +8,7 @@ using SoccerSchool.Api.Data;
 using SoccerSchool.Api.Domain;
 using SoccerSchool.Api.Dtos;
 using SoccerSchool.Api.Options;
+using SoccerSchool.Api.Services;
 
 namespace SoccerSchool.Api.Controllers;
 
@@ -68,7 +69,7 @@ public class AuthController : ControllerBase
             UserId = user.Id,
             FirstName = req.FirstName.Trim(),
             LastName = req.LastName.Trim(),
-            CellPhone = req.Phone?.Trim(),
+            CellPhone = PhoneNormalizer.Normalize(req.Phone),
             Language = req.Language
         };
         _db.ParentAccounts.Add(account);

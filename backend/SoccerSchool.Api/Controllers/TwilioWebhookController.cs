@@ -162,8 +162,12 @@ public class TwilioWebhookController : ControllerBase
 
         // Skip auto-reply for known parents — they get a personal response from admin. The auto-
         // reply is just to acknowledge inbounds from unrecognized numbers (curious prospects, wrong
-        // numbers, etc.) so they don't think the line is dead.
-        var parent = await _db.ParentAccounts.FirstOrDefaultAsync(p => p.CellPhone == from, ct);
+        // numbers, etc.) so they don't think the line is dead. Look up by all common phone-form
+        // variants so a parent stored as 8317568859 still matches the +18317568859 Twilio sent.
+        var variants = PhoneNormalizer.Variants(from);
+        var parent = await _db.ParentAccounts
+            .Where(p => p.CellPhone != null && variants.Contains(p.CellPhone))
+            .FirstOrDefaultAsync(ct);
         if (parent is not null) return;
 
         // We don't know the language of an unknown sender, so stack both. Trim to avoid empty

@@ -65,7 +65,7 @@ public class RegistrationsController : ControllerBase
             City = request.City?.Trim() ?? "",
             State = request.State?.Trim() ?? "",
             PostalCode = request.PostalCode?.Trim() ?? "",
-            CellPhone = request.CellPhone.Trim(),
+            CellPhone = PhoneNormalizer.Normalize(request.CellPhone) ?? string.Empty,
             Email = request.Email.Trim(),
             Language = request.Language,
             HasWhatsApp = request.HasWhatsApp,
@@ -193,7 +193,7 @@ public class RegistrationsController : ControllerBase
         registration.City = request.City?.Trim() ?? "";
         registration.State = request.State?.Trim() ?? "";
         registration.PostalCode = request.PostalCode?.Trim() ?? "";
-        registration.CellPhone = request.CellPhone.Trim();
+        registration.CellPhone = PhoneNormalizer.Normalize(request.CellPhone) ?? string.Empty;
         registration.Email = request.Email.Trim();
         registration.Language = request.Language;
         registration.HasWhatsApp = request.HasWhatsApp;

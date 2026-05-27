@@ -138,7 +138,7 @@ public class MessagingController : ControllerBase
     {
         var g = await _db.MessageGroups.FindAsync(new object?[] { id }, ct);
         if (g is null) return NotFound();
-        var phone = request.Phone.Trim();
+        var phone = PhoneNormalizer.Normalize(request.Phone) ?? string.Empty;
         if (string.IsNullOrWhiteSpace(phone)) return BadRequest("Phone is required.");
         if (await _db.MessageGroupMembers.AnyAsync(m => m.MessageGroupId == id && m.Phone == phone, ct))
             return Conflict("This phone is already in the group.");
@@ -573,14 +573,14 @@ public class MessagingController : ControllerBase
         // Look up parents by every common form variant of each thread phone so a parent stored
         // as +18317568859 still matches inbounds/outbounds recorded as 8317568859 (or vice versa).
         var phones = byPhone.Select(g => g.Key).ToList();
-        var allCandidates = phones.SelectMany(PhoneVariants).Distinct().ToList();
+        var allCandidates = phones.SelectMany(PhoneNormalizer.Variants).Distinct().ToList();
         var parentsByForm = await _db.ParentAccounts
             .Where(p => p.CellPhone != null && allCandidates.Contains(p.CellPhone))
             .ToDictionaryAsync(p => p.CellPhone!, p => p, ct);
 
         ParentAccount? FindParent(string phone)
         {
-            foreach (var v in PhoneVariants(phone))
+            foreach (var v in PhoneNormalizer.Variants(phone))
                 if (parentsByForm.TryGetValue(v, out var p)) return p;
             return null;
         }
@@ -610,22 +610,6 @@ public class MessagingController : ControllerBase
         return Ok(summaries);
     }
 
-    /// <summary>Common form variants for a phone so DB lookups against ParentAccount.CellPhone
-    /// succeed regardless of which format the parent record was saved in. Mirrors the helper in
-    /// <see cref="RecipientResolver"/> — kept in sync by hand because there's only two of them.</summary>
-    private static IReadOnlyList<string> PhoneVariants(string raw)
-    {
-        var trimmed = raw?.Trim() ?? string.Empty;
-        var set = new HashSet<string>(StringComparer.Ordinal);
-        if (!string.IsNullOrEmpty(trimmed)) set.Add(trimmed);
-        var digits = new string(trimmed.Where(char.IsDigit).ToArray());
-        if (digits.Length == 10) set.Add("+1" + digits);
-        if (digits.Length == 11 && digits.StartsWith('1')) set.Add("+" + digits);
-        if (digits.Length >= 10 && !trimmed.StartsWith('+')) set.Add("+" + digits);
-        // Also add the bare-digits form in case the parent saved phone without any +.
-        if (!string.IsNullOrEmpty(digits)) set.Add(digits);
-        return set.ToList();
-    }
 
     /// <summary>Full chronological thread for one phone — inbounds + outbounds interleaved.</summary>
     [HttpGet("threads/{phone}")]
@@ -661,7 +645,7 @@ public class MessagingController : ControllerBase
 
         var messages = inbound.Concat(outbound).OrderBy(m => m.At).ToList();
 
-        var variants = PhoneVariants(phone);
+        var variants = PhoneNormalizer.Variants(phone);
         var parent = await _db.ParentAccounts
             .Where(p => p.CellPhone != null && variants.Contains(p.CellPhone))
             .FirstOrDefaultAsync(ct);
@@ -685,7 +669,7 @@ public class MessagingController : ControllerBase
         if (!_sender.IsAvailable(request.Channel))
             return BadRequest($"{request.Channel} not configured on this server.");
 
-        var variants = PhoneVariants(phone);
+        var variants = PhoneNormalizer.Variants(phone);
         var parent = await _db.ParentAccounts
             .Where(p => p.CellPhone != null && variants.Contains(p.CellPhone))
             .FirstOrDefaultAsync(ct);

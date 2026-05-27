@@ -155,7 +155,7 @@ public class RecipientResolver : IRecipientResolver
                 // typed form, the +1-prefixed form, or the bare-10-digit form.
                 var allCandidates = listInputs
                     .Where(r => !string.IsNullOrWhiteSpace(r.Phone))
-                    .SelectMany(r => PhoneVariants(r.Phone))
+                    .SelectMany(r => PhoneNormalizer.Variants(r.Phone))
                     .Distinct()
                     .ToList();
                 var adHocLookup = allCandidates.Count == 0
@@ -212,13 +212,13 @@ public class RecipientResolver : IRecipientResolver
             .ToList();
     }
 
-    /// <summary>One-shot lookup for a single typed phone. Tries common variants (as-typed,
-    /// `+1`-prefixed, bare-10-digit) so the match works whether the admin pasted the E.164 form
-    /// or just the digits.</summary>
+    /// <summary>One-shot lookup for a single typed phone. Uses <see cref="PhoneNormalizer.Variants"/>
+    /// so the match works whether the admin pasted the E.164 form, the bare 10 digits, or anything
+    /// in between.</summary>
     private async Task<bool?> LookupHasWhatsAppAsync(string phone, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(phone)) return null;
-        var candidates = PhoneVariants(phone);
+        var candidates = PhoneNormalizer.Variants(phone);
         var match = await _db.ParentAccounts
             .Where(p => p.CellPhone != null && candidates.Contains(p.CellPhone))
             .Select(p => (bool?)p.HasWhatsApp)
@@ -229,23 +229,8 @@ public class RecipientResolver : IRecipientResolver
     private static bool? ResolveHasWhatsAppFromLookup(string phone, IReadOnlyDictionary<string, bool> lookup)
     {
         if (string.IsNullOrWhiteSpace(phone)) return null;
-        foreach (var v in PhoneVariants(phone))
+        foreach (var v in PhoneNormalizer.Variants(phone))
             if (lookup.TryGetValue(v, out var has)) return has;
         return null;
-    }
-
-    /// <summary>Common form variants for a typed phone so DB equality matches stored E.164 numbers.
-    /// Returns at most the as-typed value, a `+1`-prefixed variant for 10-digit US numbers, and a
-    /// `+`-prefixed variant for 11-digit numbers starting with `1`.</summary>
-    private static IReadOnlyList<string> PhoneVariants(string raw)
-    {
-        var trimmed = raw.Trim();
-        var set = new HashSet<string>(StringComparer.Ordinal);
-        if (!string.IsNullOrEmpty(trimmed)) set.Add(trimmed);
-        var digits = new string(trimmed.Where(char.IsDigit).ToArray());
-        if (digits.Length == 10) set.Add("+1" + digits);
-        if (digits.Length == 11 && digits.StartsWith('1')) set.Add("+" + digits);
-        if (digits.Length >= 10 && !trimmed.StartsWith('+')) set.Add("+" + digits);
-        return set.ToList();
     }
 }
