@@ -543,27 +543,49 @@ public class MessagingController : ControllerBase
 
     // --- Threaded view: list distinct phones, fetch full thread, reply --------
 
-    /// <summary>One row per distinct phone we've exchanged messages with. Powers the admin Inbox.</summary>
+    /// <summary>One row per distinct phone we've exchanged messages with. Powers the admin Inbox.
+    /// Scoped to inbounds that came to a currently-configured sender number (SMS or WhatsApp), so
+    /// legacy history from retired sender numbers drops off automatically when the env var rolls.</summary>
     [HttpGet("threads")]
     public async Task<ActionResult<IEnumerable<ThreadSummaryDto>>> ListThreads(CancellationToken ct)
     {
+        // Build the set of "our active receivers" — every configured sender number, in both raw
+        // and variant form, so Twilio's E.164 ToPhone matches regardless of stored format.
+        var ourNumbers = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var v in PhoneNormalizer.Variants(_twilio.SmsFromNumber)) ourNumbers.Add(v);
+        foreach (var v in PhoneNormalizer.Variants(_twilio.WhatsAppFromNumber)) ourNumbers.Add(v);
+
+        if (ourNumbers.Count == 0)
+            return Ok(Array.Empty<ThreadSummaryDto>());
+
         // Pull last 6 months of activity into memory and group there — keeps the SQL simple and
         // works against both InboundMessages and BroadcastRecipients without a complex union join.
         var since = DateTime.UtcNow.AddMonths(-6);
         var inbound = await _db.InboundMessages
-            .Where(m => m.ReceivedAt >= since)
+            .Where(m => m.ReceivedAt >= since && m.ToPhone != null && ourNumbers.Contains(m.ToPhone))
             .Select(m => new { m.FromPhone, m.Body, At = m.ReceivedAt, Direction = ThreadDirection.Inbound })
             .ToListAsync(ct);
-        var outbound = await _db.BroadcastRecipients
-            .Where(r => r.Broadcast!.CreatedAt >= since)
-            .Select(r => new
-            {
-                FromPhone = r.Phone,
-                Body = r.Broadcast!.BodyEn ?? r.Broadcast.BodyEs ?? r.Broadcast.SubjectEn ?? r.Broadcast.SubjectEs,
-                At = r.Broadcast.CreatedAt,
-                Direction = ThreadDirection.Outbound
-            })
-            .ToListAsync(ct);
+
+        // Only show outbound history for phones that have actually replied to a current sender —
+        // that's the "Inbox" semantics. Sends to parents who never replied stay in the History
+        // tab; they're not conversations.
+        var activePhones = inbound
+            .Where(x => !string.IsNullOrWhiteSpace(x.FromPhone))
+            .Select(x => x.FromPhone)
+            .Distinct()
+            .ToList();
+        var outbound = activePhones.Count == 0
+            ? new List<dynamic>().Select(_ => new { FromPhone = "", Body = (string?)null, At = DateTime.MinValue, Direction = ThreadDirection.Outbound }).ToList()
+            : await _db.BroadcastRecipients
+                .Where(r => r.Broadcast!.CreatedAt >= since && activePhones.Contains(r.Phone))
+                .Select(r => new
+                {
+                    FromPhone = r.Phone,
+                    Body = r.Broadcast!.BodyEn ?? r.Broadcast.BodyEs ?? r.Broadcast.SubjectEn ?? r.Broadcast.SubjectEs,
+                    At = r.Broadcast.CreatedAt,
+                    Direction = ThreadDirection.Outbound
+                })
+                .ToListAsync(ct);
 
         var byPhone = inbound.Concat(outbound)
             .Where(x => !string.IsNullOrWhiteSpace(x.FromPhone))
