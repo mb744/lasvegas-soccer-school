@@ -350,11 +350,30 @@ public class MessagingController : ControllerBase
         _db.Broadcasts.Add(broadcast);
         await _db.SaveChangesAsync(ct);
 
+        // Build a phone → HasWhatsApp lookup from the resolved recipients so the WhatsApp skip
+        // below has O(1) access to each recipient's stored flag. Recipients with an unknown flag
+        // (individual sends, ad-hoc list, group members not linked to a ParentAccount) are absent
+        // from the dict and fall through to the normal send path.
+        var hasWhatsAppByPhone = resolved.Recipients
+            .Where(r => r.HasWhatsApp.HasValue && !string.IsNullOrWhiteSpace(r.Phone))
+            .GroupBy(r => r.Phone)
+            .ToDictionary(g => g.Key, g => g.First().HasWhatsApp!.Value);
+
         // Synchronous fan-out. Branches by channel: SMS/WhatsApp go through IMessageSender,
         // Email goes through IEmailSender. Each recipient gets the language-matching content;
         // for templates we use the paired template when the recipient's language differs.
         foreach (var recipient in broadcast.Recipients)
         {
+            // Skip WhatsApp sends to recipients we know don't have WhatsApp. Saves a guaranteed
+            // Twilio failure and surfaces the reason cleanly in the History row.
+            if (request.Channel == MessageChannel.WhatsApp
+                && hasWhatsAppByPhone.TryGetValue(recipient.Phone, out var has) && !has)
+            {
+                recipient.Status = MessageDeliveryStatus.Failed;
+                recipient.StatusMessage = "Skipped: recipient does not have WhatsApp on file. Use SMS or Email instead.";
+                continue;
+            }
+
             if (request.Channel == MessageChannel.Email)
             {
                 await SendEmailRecipientAsync(recipient, broadcast, emailTemplate, pairedEmailTemplate, templateVars, ct);

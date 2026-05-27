@@ -22,8 +22,11 @@ public interface IRecipientResolver
 /// (ad-hoc paste list, individual phone, dynamic group). The broadcast layer fills nulls with
 /// the request's default language at send time. <see cref="Email"/> is populated for curated
 /// group members who have one set, and for active-season parents from <c>ApplicationUser.Email</c>;
-/// it's required when the broadcast channel is Email and is ignored on SMS/WhatsApp sends.</summary>
-public record ResolvedRecipient(string Phone, string? Name, int? ParentAccountId, Language? Language = null, string? Email = null);
+/// it's required when the broadcast channel is Email and is ignored on SMS/WhatsApp sends.
+/// <see cref="HasWhatsApp"/> mirrors the parent's stored flag — <c>null</c> when unknown
+/// (ad-hoc/individual). The broadcast send loop skips WhatsApp sends to recipients with
+/// <c>HasWhatsApp == false</c>.</summary>
+public record ResolvedRecipient(string Phone, string? Name, int? ParentAccountId, Language? Language = null, string? Email = null, bool? HasWhatsApp = null);
 
 public record RecipientList(string Label, IReadOnlyList<ResolvedRecipient> Recipients);
 
@@ -100,12 +103,27 @@ public class RecipientResolver : IRecipientResolver
                     .Include(g => g.Members)
                     .FirstOrDefaultAsync(g => g.Id == target.CustomGroupId, ct);
                 if (group is null) return new RecipientList("Group", Array.Empty<ResolvedRecipient>());
+                // Look up HasWhatsApp from the linked ParentAccount for any member that has one.
+                // Members added manually (no parent account) stay null = unknown.
+                var memberParentIds = group.Members
+                    .Where(m => m.ParentAccountId.HasValue)
+                    .Select(m => m.ParentAccountId!.Value)
+                    .Distinct()
+                    .ToList();
+                var whatsAppLookup = memberParentIds.Count == 0
+                    ? new Dictionary<int, bool>()
+                    : await _db.ParentAccounts
+                        .Where(p => memberParentIds.Contains(p.Id))
+                        .ToDictionaryAsync(p => p.Id, p => p.HasWhatsApp, ct);
                 // Language is per-member (a group can mix EN and ES parents). The group's
                 // own Language field is just the default we apply when adding new members.
                 // Email is also per-member; broadcasts on the email channel skip members without one.
                 var members = group.Members
                     .Where(m => !string.IsNullOrWhiteSpace(m.Phone) || !string.IsNullOrWhiteSpace(m.Email))
-                    .Select(m => new ResolvedRecipient(m.Phone, m.Name, m.ParentAccountId, m.Language, m.Email))
+                    .Select(m => new ResolvedRecipient(
+                        m.Phone, m.Name, m.ParentAccountId, m.Language, m.Email,
+                        m.ParentAccountId.HasValue && whatsAppLookup.TryGetValue(m.ParentAccountId.Value, out var has)
+                            ? (bool?)has : null))
                     .ToList();
                 return new RecipientList($"Group: {group.Name}", members);
 
@@ -142,10 +160,10 @@ public class RecipientResolver : IRecipientResolver
         // phone and email are excluded outright — there's no way to reach them.
         var rows = await _db.ParentAccounts
             .Where(p => (p.CellPhone != null && p.CellPhone != "") || (p.User != null && p.User.Email != null && p.User.Email != ""))
-            .Select(p => new { p.Id, p.CellPhone, p.FirstName, p.LastName, p.Language, Email = p.User!.Email })
+            .Select(p => new { p.Id, p.CellPhone, p.FirstName, p.LastName, p.Language, p.HasWhatsApp, Email = p.User!.Email })
             .ToListAsync(ct);
         return rows
-            .Select(r => new ResolvedRecipient(r.CellPhone ?? string.Empty, $"{r.FirstName} {r.LastName}".Trim(), r.Id, r.Language, r.Email))
+            .Select(r => new ResolvedRecipient(r.CellPhone ?? string.Empty, $"{r.FirstName} {r.LastName}".Trim(), r.Id, r.Language, r.Email, r.HasWhatsApp))
             .ToList();
     }
 
@@ -163,12 +181,13 @@ public class RecipientResolver : IRecipientResolver
                 r.ParentAccount.FirstName,
                 r.ParentAccount.LastName,
                 r.ParentAccount.Language,
+                r.ParentAccount.HasWhatsApp,
                 Email = r.ParentAccount.User!.Email
             })
             .Distinct()
             .ToListAsync(ct);
         return rows
-            .Select(r => new ResolvedRecipient(r.CellPhone ?? string.Empty, $"{r.FirstName} {r.LastName}".Trim(), r.Id, r.Language, r.Email))
+            .Select(r => new ResolvedRecipient(r.CellPhone ?? string.Empty, $"{r.FirstName} {r.LastName}".Trim(), r.Id, r.Language, r.Email, r.HasWhatsApp))
             .ToList();
     }
 }
