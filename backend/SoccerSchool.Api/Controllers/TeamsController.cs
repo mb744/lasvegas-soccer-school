@@ -6,6 +6,7 @@ using SoccerSchool.Api.Data;
 using SoccerSchool.Api.Domain;
 using SoccerSchool.Api.Dtos;
 using SoccerSchool.Api.Options;
+using SoccerSchool.Api.Services;
 
 namespace SoccerSchool.Api.Controllers;
 
@@ -136,7 +137,22 @@ public class TeamsController : ControllerBase
             team.Id, team.Name, team.MessageGroupId, team.MessageGroup?.Name,
             team.GotSportEventId > 0 && team.GotSportTeamId > 0,
             team.GotSportEventId, team.GotSportTeamId, team.LastSyncedAt, team.LastSyncMessage,
+            team.CoachName, team.CoachEmail, team.CoachPhone,
             team.CreatedAt, roster, games));
+    }
+
+    [HttpPut("{id:int}/coach")]
+    public async Task<ActionResult<RosterTeamDetail>> SaveCoach(
+        int id, [FromBody] SaveCoachRequest request, CancellationToken ct)
+    {
+        var team = await _db.Teams.FindAsync(new object?[] { id }, ct);
+        if (team is null) return NotFound();
+
+        team.CoachName = string.IsNullOrWhiteSpace(request.CoachName) ? null : request.CoachName.Trim();
+        team.CoachEmail = string.IsNullOrWhiteSpace(request.CoachEmail) ? null : request.CoachEmail.Trim();
+        team.CoachPhone = string.IsNullOrWhiteSpace(request.CoachPhone) ? null : PhoneNormalizer.Normalize(request.CoachPhone);
+        await _db.SaveChangesAsync(ct);
+        return await Get(id, ct);
     }
 
     /// <summary>Registered players (in <paramref name="season"/>, default = active season) not yet

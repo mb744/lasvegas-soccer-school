@@ -26,6 +26,9 @@ public record RosterTeamDetail(
     int GotSportTeamId,
     DateTime? LastSyncedAt,
     string? LastSyncMessage,
+    string? CoachName,
+    string? CoachEmail,
+    string? CoachPhone,
     DateTime CreatedAt,
     IReadOnlyList<RosterMemberDto> Roster,
     IReadOnlyList<ScheduledGameDto> UpcomingGames);
@@ -67,4 +70,12 @@ public record RenameTeamRequest
 public record AddRosterMembersRequest
 {
     public int[] PlayerIds { get; init; } = Array.Empty<int>();
+}
+
+/// <summary>Coach contact for a team. All optional; the phone is E.164-normalized on save.</summary>
+public record SaveCoachRequest
+{
+    [MaxLength(160)] public string? CoachName { get; init; }
+    [MaxLength(256)] public string? CoachEmail { get; init; }
+    [MaxLength(32)] public string? CoachPhone { get; init; }
 }

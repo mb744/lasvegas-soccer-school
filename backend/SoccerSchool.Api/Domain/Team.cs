@@ -34,6 +34,18 @@ public class Team
     [MaxLength(512)]
     public string? LastSyncMessage { get; set; }
 
+    // --- Coach contact (optional) ---
+
+    [MaxLength(160)]
+    public string? CoachName { get; set; }
+
+    [MaxLength(256)]
+    public string? CoachEmail { get; set; }
+
+    /// <summary>E.164-normalized on write, like parent cell numbers.</summary>
+    [MaxLength(32)]
+    public string? CoachPhone { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public List<ScheduledGame> Games { get; set; } = new();

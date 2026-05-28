@@ -662,9 +662,18 @@ export interface RosterTeamDetail {
   gotSportTeamId: number
   lastSyncedAt: string | null
   lastSyncMessage: string | null
+  coachName: string | null
+  coachEmail: string | null
+  coachPhone: string | null
   createdAt: string
   roster: RosterMember[]
   upcomingGames: ScheduledGame[]
+}
+
+export interface SaveCoachRequest {
+  coachName?: string | null
+  coachEmail?: string | null
+  coachPhone?: string | null
 }
 
 export interface AvailablePlayer {

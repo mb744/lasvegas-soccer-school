@@ -58,6 +58,7 @@ import type {
   CreateRosterTeamRequest,
   RenameTeamRequest,
   AddRosterMembersRequest,
+  SaveCoachRequest,
   TemplatePreviewRequest,
   TemplatePreviewResponse,
   TranslateRequest,
@@ -459,6 +460,10 @@ export const Api = {
   },
   async removeRosterMember(id: number, playerId: number) {
     await api.delete(`/teams/${id}/roster/${playerId}`)
+  },
+  async updateTeamCoach(id: number, payload: SaveCoachRequest) {
+    const r = await api.put<RosterTeamDetail>(`/teams/${id}/coach`, payload)
+    return r.data
   },
 
   // --- Phrase translation dictionary ---

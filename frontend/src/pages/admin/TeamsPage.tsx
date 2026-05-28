@@ -39,6 +39,10 @@ export function AdminTeamsPage() {
   const [scheduleUrl, setScheduleUrl] = useState('')
   const [syncing, setSyncing] = useState(false)
 
+  const [coachName, setCoachName] = useState('')
+  const [coachEmail, setCoachEmail] = useState('')
+  const [coachPhone, setCoachPhone] = useState('')
+
   const refreshTeams = async () => {
     try { setTeams(await Api.listRosterTeams()) }
     catch (e: any) { setError(errMsg(e)) }
@@ -54,6 +58,7 @@ export function AdminTeamsPage() {
       const [d, avail] = await Promise.all([Api.getRosterTeam(id), Api.listAvailablePlayers(id)])
       setDetail(d); setAvailable(avail)
       setScheduleUrl(d.gotSportLinked ? gotSportUrl(d.gotSportEventId, d.gotSportTeamId) : '')
+      setCoachName(d.coachName ?? ''); setCoachEmail(d.coachEmail ?? ''); setCoachPhone(d.coachPhone ?? '')
     } catch (e: any) { setError(errMsg(e)) }
   }
 
@@ -155,6 +160,24 @@ export function AdminTeamsPage() {
     finally { setSyncing(false) }
   }
 
+  const saveCoach = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!detail) return
+    setError(null); setNotice(null); setBusy(true)
+    try {
+      const updated = await Api.updateTeamCoach(detail.id, {
+        coachName: coachName.trim() || null,
+        coachEmail: coachEmail.trim() || null,
+        coachPhone: coachPhone.trim() || null,
+      })
+      setDetail(updated)
+      // Reflect the server-normalized values (e.g. E.164 phone) back into the inputs.
+      setCoachName(updated.coachName ?? ''); setCoachEmail(updated.coachEmail ?? ''); setCoachPhone(updated.coachPhone ?? '')
+      setNotice(t('admin.teamSaved'))
+    } catch (e: any) { setError(errMsg(e)) }
+    finally { setBusy(false) }
+  }
+
   const brackets = useMemo(() => {
     const s = new Set<string>()
     for (const p of available) if (p.ageBracket) s.add(p.ageBracket)
@@ -247,6 +270,37 @@ export function AdminTeamsPage() {
             ) : (
               <>
                 <h2 className="text-xl font-bold text-emerald-800">{detail.name}</h2>
+
+                {/* Coach */}
+                <CollapsibleSection
+                  title={t('admin.teamCoachHeading')}
+                  subtitle={detail.coachName
+                    ? [detail.coachName, detail.coachPhone, detail.coachEmail].filter(Boolean).join(' · ')
+                    : t('admin.teamCoachNone')}>
+                  <form onSubmit={saveCoach} className="grid sm:grid-cols-2 gap-3">
+                    <label className="block text-sm">
+                      <span className="font-medium text-slate-700">{t('admin.teamCoachName')}</span>
+                      <input type="text" value={coachName} onChange={e => setCoachName(e.target.value)}
+                        className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+                    </label>
+                    <label className="block text-sm">
+                      <span className="font-medium text-slate-700">{t('admin.teamCoachPhone')}</span>
+                      <input type="tel" value={coachPhone} onChange={e => setCoachPhone(e.target.value)}
+                        className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+                    </label>
+                    <label className="block text-sm sm:col-span-2">
+                      <span className="font-medium text-slate-700">{t('admin.teamCoachEmail')}</span>
+                      <input type="email" value={coachEmail} onChange={e => setCoachEmail(e.target.value)}
+                        className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+                    </label>
+                    <div className="sm:col-span-2">
+                      <button type="submit" disabled={busy}
+                        className="bg-emerald-700 text-white text-sm font-semibold px-4 py-2 rounded-md hover:bg-emerald-800 disabled:opacity-60">
+                        {t('admin.save')}
+                      </button>
+                    </div>
+                  </form>
+                </CollapsibleSection>
 
                 {/* Roster */}
                 <CollapsibleSection
