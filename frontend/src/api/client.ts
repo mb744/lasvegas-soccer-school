@@ -16,6 +16,7 @@ import type {
   MessageGroupSummary,
   MessagingConfig,
   OutreachResponse,
+  ParentContact,
   PlayerSummary,
   RegistrationDetail,
   RegistrationPlayerDetail,
@@ -120,6 +121,12 @@ export const Api = {
   },
   async deletePlayer(id: number) {
     await api.delete(`/players/${id}`)
+  },
+
+  // --- Additional parent/guardian contacts (parent prefill) ---
+  async listParentContacts() {
+    const r = await api.get<ParentContact[]>('/parent-contacts')
+    return r.data
   },
 
   // --- Registration ---

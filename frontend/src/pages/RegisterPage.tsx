@@ -7,7 +7,7 @@ import { Layout } from '../components/Layout'
 import { SignaturePad } from '../components/SignaturePad'
 import { Api } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
-import type { PlayerSummary, SubmitRegistrationRequest } from '../api/types'
+import type { ParentContactInput, PlayerSummary, SubmitRegistrationRequest } from '../api/types'
 
 const playerSchema = z.object({
   playerId: z.number().int().positive().nullable().optional(),
@@ -24,6 +24,16 @@ const playerSchema = z.object({
   waiverPhone: z.string().min(7),
   waiverEmail: z.string().email(),
   signatureDataUrl: z.string().refine(v => v.startsWith('data:image/'), { message: 'signature required' }),
+})
+
+// Optional extra guardians. A row counts only if it has a first name + at least one contact
+// method; the backend skips anything that doesn't meet that bar, so the form stays lenient.
+const additionalParentSchema = z.object({
+  firstName: z.string().optional(),
+  lastName: z.string().optional(),
+  email: z.string().optional(),
+  cellPhone: z.string().optional(),
+  hasWhatsApp: z.boolean().optional(),
 })
 
 const formSchema = z.object({
@@ -43,6 +53,7 @@ const formSchema = z.object({
   smsConsent: z.boolean().refine(v => v === true, { message: 'sms-required' }),
   waiverConsent: z.boolean().refine(v => v === true, { message: 'required' }),
   players: z.array(playerSchema).min(1),
+  additionalParents: z.array(additionalParentSchema),
 })
 
 type FormValues = z.infer<typeof formSchema>
@@ -90,10 +101,12 @@ export function RegisterPage() {
       smsConsent: false,
       waiverConsent: false,
       players: [emptyPlayer],
+      additionalParents: [],
     },
   })
 
   const { fields, append, remove } = useFieldArray({ control: form.control, name: 'players' })
+  const parentsArray = useFieldArray({ control: form.control, name: 'additionalParents' })
 
   // Load roster + prefill parent profile from auth.
   useEffect(() => {
@@ -108,6 +121,19 @@ export function RegisterPage() {
 
   useEffect(() => {
     Api.listPlayers().then(setRoster).catch(() => {})
+    // Prefill previously-entered guardians so a returning parent can edit them instead of re-typing.
+    Api.listParentContacts()
+      .then(cs => {
+        if (cs.length === 0) return
+        form.setValue('additionalParents', cs.map(c => ({
+          firstName: c.firstName,
+          lastName: c.lastName,
+          email: c.email ?? '',
+          cellPhone: c.cellPhone ?? '',
+          hasWhatsApp: c.hasWhatsApp,
+        })))
+      })
+      .catch(() => {})
   }, [])
 
   // Sync prepopulated waiver fields whenever parent info or player name/DOB change.
@@ -165,6 +191,13 @@ export function RegisterPage() {
         waiverEmail: p.waiverEmail,
         signatureDataUrl: p.signatureDataUrl,
       })),
+      additionalParents: (values.additionalParents ?? []).map(c => ({
+        firstName: c.firstName ?? '',
+        lastName: c.lastName ?? '',
+        email: c.email || null,
+        cellPhone: c.cellPhone || null,
+        hasWhatsApp: !!c.hasWhatsApp,
+      } satisfies ParentContactInput)),
     }
     try {
       await Api.submitRegistration(payload)
@@ -196,6 +229,13 @@ export function RegisterPage() {
 
         <form onSubmit={form.handleSubmit(onSubmit)} className="mt-8 space-y-8">
           <ParentSection form={form} />
+
+          <AdditionalParentsSection
+            fields={parentsArray.fields}
+            form={form}
+            onAdd={() => parentsArray.append({ firstName: '', lastName: '', email: '', cellPhone: '', hasWhatsApp: false })}
+            onRemove={(i) => parentsArray.remove(i)}
+          />
 
           <PlayersSection
             fields={fields}
@@ -365,6 +405,78 @@ function ParentSection({ form }: { form: any }) {
         {errors.smsConsent && <p className="text-rose-600 text-xs mt-1">{t('auth.smsConsentRequired')}</p>}
       </div>
     </Section>
+  )
+}
+
+function AdditionalParentsSection({
+  fields,
+  form,
+  onAdd,
+  onRemove,
+}: {
+  fields: any[]
+  form: any
+  onAdd: () => void
+  onRemove: (i: number) => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <fieldset className="bg-white border border-slate-200 rounded-lg p-6">
+      <legend className="px-2 text-emerald-800 font-bold">{t('register.additionalParents.heading')}</legend>
+      <p className="text-sm text-slate-500 mt-1">{t('register.additionalParents.hint')}</p>
+
+      <div className="space-y-4 mt-4">
+        {fields.map((field, idx) => (
+          <div key={field.id} className="border border-slate-200 rounded-md p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="font-semibold text-slate-700 text-sm">{t('register.additionalParents.guardian', { n: idx + 1 })}</h4>
+              <button type="button" onClick={() => onRemove(idx)} className="text-sm text-rose-600 hover:underline">
+                {t('register.additionalParents.remove')}
+              </button>
+            </div>
+            <div className="grid sm:grid-cols-2 gap-4">
+              <Field label={t('register.additionalParents.firstName')}>
+                <input className={inputCls} {...form.register(`additionalParents.${idx}.firstName`)} />
+              </Field>
+              <Field label={t('register.additionalParents.lastName')}>
+                <input className={inputCls} {...form.register(`additionalParents.${idx}.lastName`)} />
+              </Field>
+              <Field label={t('register.additionalParents.cell')}>
+                <input type="tel" className={inputCls} {...form.register(`additionalParents.${idx}.cellPhone`)} />
+              </Field>
+              <Field label={t('register.additionalParents.email')}>
+                <input type="email" className={inputCls} {...form.register(`additionalParents.${idx}.email`)} />
+              </Field>
+              <div className="sm:col-span-2">
+                <span className="text-sm text-slate-700 font-medium">{t('register.parent.hasWhatsApp')}</span>
+                <div className="mt-2 flex gap-4">
+                  <label className="inline-flex items-center gap-2 text-sm">
+                    <input type="radio" className="w-4 h-4"
+                      onChange={() => form.setValue(`additionalParents.${idx}.hasWhatsApp`, true)}
+                      checked={form.watch(`additionalParents.${idx}.hasWhatsApp`) === true} />
+                    {t('common.yes')}
+                  </label>
+                  <label className="inline-flex items-center gap-2 text-sm">
+                    <input type="radio" className="w-4 h-4"
+                      onChange={() => form.setValue(`additionalParents.${idx}.hasWhatsApp`, false)}
+                      checked={form.watch(`additionalParents.${idx}.hasWhatsApp`) === false} />
+                    {t('common.no')}
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <button
+        type="button"
+        onClick={onAdd}
+        className="mt-4 w-full bg-emerald-50 border-2 border-emerald-400 text-emerald-800 hover:bg-emerald-100 hover:border-emerald-600 font-semibold py-2.5 rounded-md transition"
+      >
+        + {t('register.additionalParents.add')}
+      </button>
+    </fieldset>
   )
 }
 

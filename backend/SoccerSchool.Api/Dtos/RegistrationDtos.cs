@@ -28,6 +28,28 @@ public record RegistrationPlayerInput
     public string SignatureDataUrl { get; init; } = string.Empty;
 }
 
+/// <summary>An additional parent/guardian contact submitted with a registration or admin edit.
+/// At least a name plus one of Email/CellPhone should be present; fully-blank rows are ignored.</summary>
+public record ParentContactInput
+{
+    [MaxLength(80)] public string? FirstName { get; init; }
+    [MaxLength(80)] public string? LastName { get; init; }
+    [MaxLength(256)] public string? Email { get; init; }
+    [MaxLength(32)] public string? CellPhone { get; init; }
+    public bool HasWhatsApp { get; init; }
+    /// <summary>When null, defaults to the registration's language on sync.</summary>
+    public Language? Language { get; init; }
+}
+
+public record ParentContactDto(
+    int Id,
+    string FirstName,
+    string LastName,
+    string? Email,
+    string? CellPhone,
+    bool HasWhatsApp,
+    Language Language);
+
 public record SubmitRegistrationRequest
 {
     [Required, MaxLength(80)] public string ParentFirstName { get; init; } = string.Empty;
@@ -49,6 +71,9 @@ public record SubmitRegistrationRequest
 
     [Required, MinLength(1)]
     public List<RegistrationPlayerInput> Players { get; init; } = new();
+
+    /// <summary>Additional parent/guardian contacts. Replace-all synced onto the family account.</summary>
+    public List<ParentContactInput> AdditionalParents { get; init; } = new();
 }
 
 /// <summary>Admin-only edit. Updates contact info + flags on an existing registration. Does NOT
@@ -67,6 +92,9 @@ public record UpdateRegistrationRequest
     [Required, EmailAddress, MaxLength(256)] public string Email { get; init; } = string.Empty;
     public Language Language { get; init; } = Language.English;
     public bool HasWhatsApp { get; init; }
+
+    /// <summary>Additional parent/guardian contacts. Replace-all synced onto the family account.</summary>
+    public List<ParentContactInput> AdditionalParents { get; init; } = new();
 }
 
 public record RegistrationSummary(
@@ -99,7 +127,8 @@ public record RegistrationDetail(
     bool WaiverConsent,
     DateTime? WaiverSignedAt,
     DateTime CreatedAt,
-    List<RegistrationPlayerDetail> Players
+    List<RegistrationPlayerDetail> Players,
+    List<ParentContactDto> AdditionalParents
 );
 
 public record RegistrationPlayerDetail(

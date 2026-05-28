@@ -42,6 +42,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     }
 
     public DbSet<ParentAccount> ParentAccounts => Set<ParentAccount>();
+    public DbSet<ParentContact> ParentContacts => Set<ParentContact>();
     public DbSet<Player> Players => Set<Player>();
     public DbSet<Registration> Registrations => Set<Registration>();
     public DbSet<RegistrationPlayer> RegistrationPlayers => Set<RegistrationPlayer>();
@@ -79,6 +80,15 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
         modelBuilder.Entity<ParentAccount>(b =>
         {
             b.HasIndex(p => p.UserId).IsUnique();
+        });
+
+        modelBuilder.Entity<ParentContact>(b =>
+        {
+            b.HasOne(c => c.ParentAccount)
+                .WithMany(a => a.Contacts)
+                .HasForeignKey(c => c.ParentAccountId)
+                .OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(c => c.ParentAccountId);
         });
 
         modelBuilder.Entity<Player>(b =>

@@ -41,6 +41,27 @@ export interface SavePlayerRequest {
   dateOfBirth: string
 }
 
+// --- Additional parent/guardian contacts ---
+
+export interface ParentContact {
+  id: number
+  firstName: string
+  lastName: string
+  email: string | null
+  cellPhone: string | null
+  hasWhatsApp: boolean
+  language: Language
+}
+
+export interface ParentContactInput {
+  firstName: string
+  lastName: string
+  email?: string | null
+  cellPhone?: string | null
+  hasWhatsApp: boolean
+  language?: Language | null
+}
+
 // --- Registration ---
 
 export interface RegistrationPlayerInput {
@@ -74,6 +95,7 @@ export interface SubmitRegistrationRequest {
   hasWhatsApp: boolean
   waiverConsent: boolean
   players: RegistrationPlayerInput[]
+  additionalParents?: ParentContactInput[]
 }
 
 export interface UpdateRegistrationRequest {
@@ -88,6 +110,7 @@ export interface UpdateRegistrationRequest {
   email: string
   language: Language
   hasWhatsApp: boolean
+  additionalParents?: ParentContactInput[]
 }
 
 export interface RegistrationSummary {
@@ -182,6 +205,7 @@ export interface RegistrationDetail {
   waiverSignedAt: string | null
   createdAt: string
   players: RegistrationPlayerDetail[]
+  additionalParents: ParentContact[]
 }
 
 // --- Outreach (admin tracking) ---

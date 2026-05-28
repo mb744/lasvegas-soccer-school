@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Layout } from '../../components/Layout'
 import { Api } from '../../api/client'
-import type { Language, RegistrationDetail, RegistrationPlayerDetail, RegistrationSummary, UpdateRegistrationRequest } from '../../api/types'
+import type { Language, ParentContactInput, RegistrationDetail, RegistrationPlayerDetail, RegistrationSummary, UpdateRegistrationRequest } from '../../api/types'
 
 export function AdminRegistrationsPage() {
   const { t } = useTranslation()
@@ -209,6 +209,21 @@ function RegistrationDetailPanel({
             />
           </dl>
         )}
+        {!editing && r.additionalParents.length > 0 && (
+          <div className="mt-3 pt-3 border-t border-slate-100">
+            <h4 className="text-sm font-semibold text-slate-700 mb-1">{t('admin.additionalParents')}</h4>
+            <ul className="text-sm text-slate-600 space-y-0.5">
+              {r.additionalParents.map(c => (
+                <li key={c.id}>
+                  {c.firstName} {c.lastName}
+                  {c.cellPhone ? ` · ${c.cellPhone}` : ''}
+                  {c.email ? ` · ${c.email}` : ''}
+                  {c.hasWhatsApp ? ` · ${t('admin.hasWhatsApp')}` : ''}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         <div className="mt-3">
           <div className="flex flex-wrap gap-2">
             <button
@@ -262,10 +277,23 @@ function EditRegistrationForm({
     language: detail.language,
     hasWhatsApp: detail.hasWhatsApp,
   })
+  const [contacts, setContacts] = useState<ParentContactInput[]>(
+    detail.additionalParents.map(c => ({
+      firstName: c.firstName, lastName: c.lastName,
+      email: c.email ?? '', cellPhone: c.cellPhone ?? '',
+      hasWhatsApp: c.hasWhatsApp, language: c.language,
+    })))
   const [saving, setSaving] = useState(false)
 
   const set = <K extends keyof UpdateRegistrationRequest>(key: K, value: UpdateRegistrationRequest[K]) =>
     setForm(prev => ({ ...prev, [key]: value }))
+
+  const setContact = (idx: number, patch: Partial<ParentContactInput>) =>
+    setContacts(prev => prev.map((c, i) => i === idx ? { ...c, ...patch } : c))
+  const addContact = () =>
+    setContacts(prev => [...prev, { firstName: '', lastName: '', email: '', cellPhone: '', hasWhatsApp: false, language: form.language }])
+  const removeContact = (idx: number) =>
+    setContacts(prev => prev.filter((_, i) => i !== idx))
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -277,7 +305,7 @@ function EditRegistrationForm({
     }
     setSaving(true)
     try {
-      const updated = await Api.updateRegistration(detail.id, form)
+      const updated = await Api.updateRegistration(detail.id, { ...form, additionalParents: contacts })
       onSaved(updated)
     } catch (e: any) {
       onError(e?.response?.data?.title || e?.response?.data || e?.message || 'Error')
@@ -351,6 +379,45 @@ function EditRegistrationForm({
           <option value="no">{t('common.no')}</option>
         </select>
       </label>
+      <div className="sm:col-span-2 pt-2 border-t border-slate-100">
+        <div className="flex items-center justify-between">
+          <span className="text-slate-600 text-xs font-semibold">{t('admin.additionalParents')}</span>
+          <button type="button" onClick={addContact} className="text-xs text-emerald-700 hover:underline">
+            + {t('admin.addParent')}
+          </button>
+        </div>
+        <div className="space-y-2 mt-2">
+          {contacts.map((c, idx) => (
+            <div key={idx} className="grid sm:grid-cols-2 gap-2 border border-slate-200 rounded-md p-2">
+              <input className={inputCls} placeholder={t('register.parent.firstName')}
+                value={c.firstName} onChange={e => setContact(idx, { firstName: e.target.value })} />
+              <input className={inputCls} placeholder={t('register.parent.lastName')}
+                value={c.lastName} onChange={e => setContact(idx, { lastName: e.target.value })} />
+              <input type="tel" className={inputCls} placeholder={t('register.parent.cell')}
+                value={c.cellPhone ?? ''} onChange={e => setContact(idx, { cellPhone: e.target.value })} />
+              <input type="email" className={inputCls} placeholder={t('register.parent.email')}
+                value={c.email ?? ''} onChange={e => setContact(idx, { email: e.target.value })} />
+              <select className={inputCls} value={c.hasWhatsApp ? 'yes' : 'no'}
+                onChange={e => setContact(idx, { hasWhatsApp: e.target.value === 'yes' })}>
+                <option value="no">{t('admin.hasWhatsApp')}: {t('common.no')}</option>
+                <option value="yes">{t('admin.hasWhatsApp')}: {t('common.yes')}</option>
+              </select>
+              <div className="flex items-center justify-between gap-2">
+                <select className={inputCls} value={c.language ?? 0}
+                  onChange={e => setContact(idx, { language: Number(e.target.value) as Language })}>
+                  <option value={0}>English</option>
+                  <option value={1}>Español</option>
+                </select>
+                <button type="button" onClick={() => removeContact(idx)} className="text-xs text-rose-600 hover:underline whitespace-nowrap">
+                  {t('admin.delete')}
+                </button>
+              </div>
+            </div>
+          ))}
+          {contacts.length === 0 && <p className="text-xs text-slate-400">—</p>}
+        </div>
+      </div>
+
       <div className="sm:col-span-2 flex gap-2 pt-2 border-t border-slate-100">
         <button type="submit" disabled={saving}
           className="bg-emerald-700 text-white text-sm font-semibold px-4 py-1.5 rounded-md hover:bg-emerald-800 disabled:opacity-60">

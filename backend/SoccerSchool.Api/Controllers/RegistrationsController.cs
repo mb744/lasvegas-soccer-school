@@ -139,6 +139,9 @@ public class RegistrationsController : ControllerBase
             });
         }
 
+        await SyncAdditionalParentsAsync(account, request.AdditionalParents, registration.Language, ct);
+        registration.ParentAccount = account;
+
         _db.Registrations.Add(registration);
         await _db.SaveChangesAsync(ct);
 
@@ -190,7 +193,7 @@ public class RegistrationsController : ControllerBase
         int id, [FromBody] UpdateRegistrationRequest request, CancellationToken ct)
     {
         var registration = await _db.Registrations
-            .Include(r => r.ParentAccount)
+            .Include(r => r.ParentAccount).ThenInclude(pa => pa!.Contacts)
             .Include(r => r.Players).ThenInclude(rp => rp.Player)
             .FirstOrDefaultAsync(r => r.Id == id, ct);
         if (registration is null) return NotFound();
@@ -220,6 +223,8 @@ public class RegistrationsController : ControllerBase
             registration.ParentAccount.CellPhone = registration.CellPhone;
             registration.ParentAccount.Language = registration.Language;
             registration.ParentAccount.HasWhatsApp = registration.HasWhatsApp;
+
+            await SyncAdditionalParentsAsync(registration.ParentAccount, request.AdditionalParents, registration.Language, ct);
         }
 
         await _db.SaveChangesAsync(ct);
@@ -271,6 +276,7 @@ public class RegistrationsController : ControllerBase
     private async Task<(Registration? registration, ActionResult? denied)> LoadAuthorizedAsync(int id, CancellationToken ct)
     {
         var registration = await _db.Registrations
+            .Include(x => x.ParentAccount).ThenInclude(pa => pa!.Contacts)
             .Include(x => x.Players)
                 .ThenInclude(rp => rp.Player)
             .Include(x => x.Players)
@@ -332,6 +338,46 @@ public class RegistrationsController : ControllerBase
         await _db.SaveChangesAsync(ct);
     }
 
+    /// <summary>Replace-all sync of a family account's additional parent/guardian contacts. Blank
+    /// rows and rows missing both a name and a contact method are skipped; phones are E.164-normalized
+    /// like the primary parent's cell; per-contact language defaults to the registration's language.</summary>
+    private async Task SyncAdditionalParentsAsync(
+        ParentAccount account, List<ParentContactInput> input, Language defaultLanguage, CancellationToken ct)
+    {
+        await _db.Entry(account).Collection(a => a.Contacts).LoadAsync(ct);
+        if (account.Contacts.Count > 0)
+        {
+            _db.ParentContacts.RemoveRange(account.Contacts);
+            account.Contacts.Clear();
+        }
+
+        foreach (var c in input ?? new List<ParentContactInput>())
+        {
+            var first = c.FirstName?.Trim() ?? string.Empty;
+            var last = c.LastName?.Trim() ?? string.Empty;
+            var email = string.IsNullOrWhiteSpace(c.Email) ? null : c.Email.Trim();
+            var phone = string.IsNullOrWhiteSpace(c.CellPhone) ? null : PhoneNormalizer.Normalize(c.CellPhone);
+
+            // Need a name and at least one way to reach them.
+            if (string.IsNullOrWhiteSpace(first)) continue;
+            if (email is null && string.IsNullOrWhiteSpace(phone)) continue;
+
+            account.Contacts.Add(new ParentContact
+            {
+                ParentAccountId = account.Id,
+                FirstName = first,
+                LastName = last,
+                Email = email,
+                CellPhone = phone,
+                HasWhatsApp = c.HasWhatsApp,
+                Language = c.Language ?? defaultLanguage,
+            });
+        }
+    }
+
+    private static ParentContactDto ToContactDto(ParentContact c) =>
+        new(c.Id, c.FirstName, c.LastName, c.Email, c.CellPhone, c.HasWhatsApp, c.Language);
+
     private static RegistrationDetail ToDetail(Registration r) => new(
         r.Id, r.Season,
         r.ParentFirstName, r.ParentLastName, r.AddressLine1, r.AddressLine2,
@@ -346,6 +392,9 @@ public class RegistrationsController : ControllerBase
             rp.WaiverPhone, rp.WaiverEmail,
             !string.IsNullOrEmpty(rp.SignatureDataUrl), rp.SignedAt,
             rp.FreeTrialOver, rp.AgeClassificationId, rp.AgeClassification?.Name
-        )).ToList()
+        )).ToList(),
+        (r.ParentAccount?.Contacts ?? new List<ParentContact>())
+            .OrderBy(c => c.LastName).ThenBy(c => c.FirstName)
+            .Select(ToContactDto).ToList()
     );
 }

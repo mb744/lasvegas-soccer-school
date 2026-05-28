@@ -225,9 +225,12 @@ public class RecipientResolver : IRecipientResolver
             .Where(p => (p.CellPhone != null && p.CellPhone != "") || (p.User != null && p.User.Email != null && p.User.Email != ""))
             .Select(p => new { p.Id, p.CellPhone, p.FirstName, p.LastName, p.Language, p.HasWhatsApp, Email = p.User!.Email })
             .ToListAsync(ct);
-        return rows
+        var parents = rows
             .Select(r => new ResolvedRecipient(r.CellPhone ?? string.Empty, $"{r.FirstName} {r.LastName}".Trim(), r.Id, r.Language, r.Email, r.HasWhatsApp))
             .ToList();
+        // null = every account's contacts, matching the "all parents" scope.
+        var contacts = await LoadContactsAsync(null, ct);
+        return DedupeByReachability(parents.Concat(contacts));
     }
 
     private async Task<IReadOnlyList<ResolvedRecipient>> LoadActiveSeasonParentsAsync(CancellationToken ct)
@@ -249,9 +252,11 @@ public class RecipientResolver : IRecipientResolver
             })
             .Distinct()
             .ToListAsync(ct);
-        return rows
+        var parents = rows
             .Select(r => new ResolvedRecipient(r.CellPhone ?? string.Empty, $"{r.FirstName} {r.LastName}".Trim(), r.Id, r.Language, r.Email, r.HasWhatsApp))
             .ToList();
+        var contacts = await LoadContactsAsync(rows.Select(r => r.Id).Distinct().ToList(), ct);
+        return DedupeByReachability(parents.Concat(contacts));
     }
 
     private async Task<IReadOnlyList<ResolvedRecipient>> LoadTrialOverParentsAsync(CancellationToken ct)
@@ -278,7 +283,7 @@ public class RecipientResolver : IRecipientResolver
             })
             .Distinct()
             .ToListAsync(ct);
-        return rows
+        var parents = rows
             .Select(r => new ResolvedRecipient(
                 r.CellPhone ?? string.Empty,
                 $"{r.FirstName} {r.LastName}".Trim(),
@@ -287,6 +292,8 @@ public class RecipientResolver : IRecipientResolver
                 r.Email,
                 r.HasWhatsApp))
             .ToList();
+        var contacts = await LoadContactsAsync(rows.Select(r => r.Id).Distinct().ToList(), ct);
+        return DedupeByReachability(parents.Concat(contacts));
     }
 
     /// <summary>Parents of a team's roster players (deduped per parent), for the <c>team-{id}</c>
@@ -318,11 +325,50 @@ public class RecipientResolver : IRecipientResolver
             .Distinct()
             .ToListAsync(ct);
 
-        var recipients = rows
+        var parents = rows
             .Select(r => new ResolvedRecipient(
                 r.CellPhone ?? string.Empty, $"{r.FirstName} {r.LastName}".Trim(), r.Id, r.Language, r.Email, r.HasWhatsApp))
             .ToList();
-        return new RecipientList($"Team: {team.Name}", recipients);
+        var contacts = await LoadContactsAsync(rows.Select(r => r.Id).Distinct().ToList(), ct);
+        return new RecipientList($"Team: {team.Name}", DedupeByReachability(parents.Concat(contacts)));
+    }
+
+    /// <summary>Additional parent/guardian contacts as recipients. <paramref name="parentAccountIds"/>
+    /// null = all accounts (the "all parents" scope); otherwise restricts to the given accounts.
+    /// Only contacts reachable by phone or email are emitted.</summary>
+    private async Task<List<ResolvedRecipient>> LoadContactsAsync(IReadOnlyCollection<int>? parentAccountIds, CancellationToken ct)
+    {
+        if (parentAccountIds is { Count: 0 }) return new List<ResolvedRecipient>();
+
+        var q = _db.ParentContacts
+            .Where(c => (c.CellPhone != null && c.CellPhone != "") || (c.Email != null && c.Email != ""));
+        if (parentAccountIds is not null)
+            q = q.Where(c => parentAccountIds.Contains(c.ParentAccountId));
+
+        var rows = await q
+            .Select(c => new { c.ParentAccountId, c.CellPhone, c.FirstName, c.LastName, c.Language, c.HasWhatsApp, c.Email })
+            .ToListAsync(ct);
+        return rows
+            .Select(c => new ResolvedRecipient(
+                c.CellPhone ?? string.Empty, $"{c.FirstName} {c.LastName}".Trim(), c.ParentAccountId, c.Language, c.Email, c.HasWhatsApp))
+            .ToList();
+    }
+
+    /// <summary>Keep the first recipient per reachable identity (normalized phone, else lowercased
+    /// email) so a guardian who shares a number/email with the primary parent isn't double-sent.
+    /// Callers list primary parents before contacts so the primary wins a tie.</summary>
+    private static List<ResolvedRecipient> DedupeByReachability(IEnumerable<ResolvedRecipient> recipients)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var result = new List<ResolvedRecipient>();
+        foreach (var r in recipients)
+        {
+            var key = !string.IsNullOrWhiteSpace(r.Phone) ? r.Phone.Trim()
+                : !string.IsNullOrWhiteSpace(r.Email) ? r.Email!.Trim().ToLowerInvariant()
+                : null;
+            if (key is null || seen.Add(key)) result.Add(r);
+        }
+        return result;
     }
 
     /// <summary>One-shot lookup for a single typed phone. Uses <see cref="PhoneNormalizer.Variants"/>

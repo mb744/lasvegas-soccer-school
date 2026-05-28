@@ -44,4 +44,7 @@ public class ParentAccount
 
     public List<Player> Players { get; set; } = new();
     public List<Registration> Registrations { get; set; } = new();
+
+    /// <summary>Additional parent/guardian contacts (no login) reachable for messaging.</summary>
+    public List<ParentContact> Contacts { get; set; } = new();
 }
