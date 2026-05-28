@@ -601,12 +601,25 @@ public class MessagingController : ControllerBase
         var parentsByForm = await _db.ParentAccounts
             .Where(p => p.CellPhone != null && allCandidates.Contains(p.CellPhone))
             .ToDictionaryAsync(p => p.CellPhone!, p => p, ct);
+        // Also index additional guardians (ParentContact) by phone, so a co-parent texting from
+        // their own number is identified by name even though they have no login of their own.
+        var contactsByForm = (await _db.ParentContacts
+            .Where(c => c.CellPhone != null && allCandidates.Contains(c.CellPhone))
+            .ToListAsync(ct))
+            .GroupBy(c => c.CellPhone!)
+            .ToDictionary(g => g.Key, g => g.First());
 
-        ParentAccount? FindParent(string phone)
+        // Resolve a thread phone to a known person: registered account holder first, then any
+        // additional guardian. "Known" suppresses the inbox's unregistered badge either way.
+        (string? Name, int? ParentAccountId, bool Known) ResolveIdentity(string phone)
         {
             foreach (var v in PhoneNormalizer.Variants(phone))
-                if (parentsByForm.TryGetValue(v, out var p)) return p;
-            return null;
+                if (parentsByForm.TryGetValue(v, out var p))
+                    return ($"{p.FirstName} {p.LastName}".Trim(), p.Id, true);
+            foreach (var v in PhoneNormalizer.Variants(phone))
+                if (contactsByForm.TryGetValue(v, out var c))
+                    return ($"{c.FirstName} {c.LastName}".Trim(), c.ParentAccountId, true);
+            return (null, null, false);
         }
 
         var summaries = byPhone
@@ -615,12 +628,12 @@ public class MessagingController : ControllerBase
                 var last = g.OrderByDescending(x => x.At).First();
                 var inboundCount = g.Count(x => x.Direction == ThreadDirection.Inbound);
                 var outboundCount = g.Count(x => x.Direction == ThreadDirection.Outbound);
-                var parent = FindParent(g.Key);
+                var who = ResolveIdentity(g.Key);
                 return new ThreadSummaryDto(
                     g.Key,
-                    parent is null ? null : $"{parent.FirstName} {parent.LastName}".Trim(),
-                    parent?.Id,
-                    parent is not null,
+                    string.IsNullOrWhiteSpace(who.Name) ? null : who.Name,
+                    who.ParentAccountId,
+                    who.Known,
                     last.At,
                     last.Body,
                     last.Direction,
@@ -673,12 +686,33 @@ public class MessagingController : ControllerBase
         var parent = await _db.ParentAccounts
             .Where(p => p.CellPhone != null && variants.Contains(p.CellPhone))
             .FirstOrDefaultAsync(ct);
+
+        string? name = parent is null ? null : $"{parent.FirstName} {parent.LastName}".Trim();
+        int? parentAccountId = parent?.Id;
+        bool known = parent is not null;
+        Language? language = parent?.Language;
+        if (parent is null)
+        {
+            // Fall back to an additional guardian so the thread is still identified by name and
+            // linked to the family, even though that guardian has no login of their own.
+            var contact = await _db.ParentContacts
+                .Where(c => c.CellPhone != null && variants.Contains(c.CellPhone))
+                .FirstOrDefaultAsync(ct);
+            if (contact is not null)
+            {
+                name = $"{contact.FirstName} {contact.LastName}".Trim();
+                parentAccountId = contact.ParentAccountId;
+                known = true;
+                language = contact.Language;
+            }
+        }
+
         return Ok(new ThreadDetailDto(
             phone,
-            parent is null ? null : $"{parent.FirstName} {parent.LastName}".Trim(),
-            parent?.Id,
-            parent is not null,
-            parent?.Language,
+            string.IsNullOrWhiteSpace(name) ? null : name,
+            parentAccountId,
+            known,
+            language,
             messages));
     }
 
