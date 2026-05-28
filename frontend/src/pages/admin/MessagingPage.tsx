@@ -254,6 +254,24 @@ function Capability({ ok, label }: { ok: boolean; label: string }) {
   )
 }
 
+/** Collapse language pairs to one option each (keeps the first of each pair, by list order). */
+function dedupeTemplatePairs<T extends { id: number; paired: { id: number } | null }>(list: T[]): T[] {
+  const seen = new Set<number>()
+  const out: T[] = []
+  for (const tpl of list) {
+    if (seen.has(tpl.id)) continue
+    out.push(tpl)
+    seen.add(tpl.id)
+    if (tpl.paired) seen.add(tpl.paired.id)
+  }
+  return out
+}
+
+/** Strip a trailing language suffix (e.g. "practice_english" → "practice") for paired templates. */
+function baseTemplateName(name: string): string {
+  return name.replace(/_(english|spanish|en|es)$/i, '')
+}
+
 // --- Compose tab -----------------------------------------------------------
 
 function ComposeTab({
@@ -319,6 +337,44 @@ function ComposeTab({
     c === 0 ? config?.sms : c === 1 ? config?.whatsApp : config?.email
   const isWhatsAppChannel = channel === 1
   const isEmailChannel = channel === 2
+
+  // Curated + dynamic groups carry each recipient's own language, so the send auto-routes to the
+  // paired EN/ES template variant per recipient. Showing both variants would be redundant — collapse
+  // each language pair to a single option for those recipient modes.
+  const perRecipientLang = recipientMode === 'curated' || recipientMode === 'dynamic'
+  const visibleTemplates = useMemo(
+    () => perRecipientLang ? dedupeTemplatePairs(templates) : templates,
+    [perRecipientLang, templates])
+  const visibleEmailTemplates = useMemo(
+    () => perRecipientLang ? dedupeTemplatePairs(emailTemplates) : emailTemplates,
+    [perRecipientLang, emailTemplates])
+
+  // If a now-hidden pair member was selected when switching into a per-recipient-language mode,
+  // remap to its visible counterpart so the dropdown still shows the selection.
+  useEffect(() => {
+    if (!perRecipientLang) return
+    const wa = templates.find(x => x.id === templateId)
+    if (wa?.paired && !visibleTemplates.some(x => x.id === templateId)) setTemplateId(wa.paired.id)
+    const em = emailTemplates.find(x => x.id === emailTemplateId)
+    if (em?.paired && !visibleEmailTemplates.some(x => x.id === emailTemplateId)) setEmailTemplateId(em.paired.id)
+  }, [perRecipientLang])
+
+  // The selected template's event family (Practice=1, Game=0); null when no template or its name
+  // isn't kind-specific. Used to show only matching events in the event picker.
+  const templateKind: 0 | 1 | null = useMemo(() => {
+    const tpl = isEmailChannel ? selectedEmailTemplate : selectedTemplate
+    if (!tpl) return null
+    const n = tpl.name.toLowerCase()
+    if (n.includes('practice')) return 1
+    if (n.includes('game')) return 0
+    return null
+  }, [isEmailChannel, selectedTemplate, selectedEmailTemplate])
+
+  const eventOptions = useMemo(
+    () => (bodyMode === 'template' && templateKind !== null)
+      ? upcomingGames.filter(g => g.kind === templateKind)
+      : upcomingGames,
+    [upcomingGames, templateKind, bodyMode])
 
   // True once the admin has put anything into the recipient picker. Used to suppress the game
   // picker's auto-flip to the linked group — if the admin already picked an individual/group/list,
@@ -617,9 +673,9 @@ function ComposeTab({
                 }}
                 className="border border-slate-300 rounded-md px-3 py-2 text-sm w-full sm:w-96">
                 <option value="">— {t('admin.msgPickTemplate')} —</option>
-                {emailTemplates.map(tpl => (
+                {visibleEmailTemplates.map(tpl => (
                   <option key={tpl.id} value={tpl.id}>
-                    {tpl.name} ({tpl.language === 1 ? 'ES' : 'EN'})
+                    {perRecipientLang && tpl.paired ? baseTemplateName(tpl.name) : `${tpl.name} (${tpl.language === 1 ? 'ES' : 'EN'})`}
                   </option>
                 ))}
               </select>
@@ -638,9 +694,9 @@ function ComposeTab({
               }}
               className="border border-slate-300 rounded-md px-3 py-2 text-sm w-full sm:w-96">
               <option value="">— {t('admin.msgPickTemplate')} —</option>
-              {templates.map(tpl => (
+              {visibleTemplates.map(tpl => (
                 <option key={tpl.id} value={tpl.id}>
-                  {tpl.name} ({tpl.language === 1 ? 'ES' : 'EN'})
+                  {perRecipientLang && tpl.paired ? baseTemplateName(tpl.name) : `${tpl.name} (${tpl.language === 1 ? 'ES' : 'EN'})`}
                 </option>
               ))}
             </select>
@@ -649,7 +705,7 @@ function ComposeTab({
             )}
           </div>
           )}
-          {upcomingGames.length > 0 && (
+          {eventOptions.length > 0 && (
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">{t('admin.msgPickGame')}</label>
               <select value=""
@@ -686,7 +742,7 @@ function ComposeTab({
                 }}
                 className="border border-slate-300 rounded-md px-3 py-2 text-sm w-full sm:w-96">
                 <option value="">— {t('admin.msgPickGameHint')} —</option>
-                {upcomingGames.map(g => (
+                {eventOptions.map(g => (
                   <option key={g.id} value={g.id}>{formatGameOption(g)}</option>
                 ))}
               </select>
@@ -745,7 +801,7 @@ function ComposeTab({
         </div>
       ) : (
         <div className="space-y-3">
-          {upcomingGames.length > 0 && (
+          {eventOptions.length > 0 && (
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">{t('admin.msgPickGame')}</label>
               <select value=""
@@ -765,7 +821,7 @@ function ComposeTab({
                 }}
                 className="border border-slate-300 rounded-md px-3 py-2 text-sm w-full sm:w-96">
                 <option value="">— {t('admin.msgPickGameHint')} —</option>
-                {upcomingGames.map(g => (
+                {eventOptions.map(g => (
                   <option key={g.id} value={g.id}>{formatGameOption(g)}</option>
                 ))}
               </select>
