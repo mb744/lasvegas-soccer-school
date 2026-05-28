@@ -22,6 +22,10 @@ public record RosterTeamDetail(
     int? MessageGroupId,
     string? MessageGroupName,
     bool GotSportLinked,
+    int GotSportEventId,
+    int GotSportTeamId,
+    DateTime? LastSyncedAt,
+    string? LastSyncMessage,
     DateTime CreatedAt,
     IReadOnlyList<RosterMemberDto> Roster,
     IReadOnlyList<ScheduledGameDto> UpcomingGames);

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Layout } from '../../components/Layout'
+import { TeamScheduleSection } from '../../components/TeamScheduleSection'
 import { Api } from '../../api/client'
 import type {
   RosterTeamSummary,
@@ -13,9 +14,8 @@ function errMsg(e: any): string {
   return e?.response?.data?.title || e?.response?.data || e?.message || 'Error'
 }
 
-/** datetime-local value (local time, no tz) → UTC ISO string the schedule API expects. */
-function toIso(local: string): string {
-  return new Date(local).toISOString()
+function gotSportUrl(eventId: number, teamId: number): string {
+  return `https://system.gotsport.com/org_event/events/${eventId}/schedules?team=${teamId}`
 }
 
 export function AdminTeamsPage() {
@@ -36,13 +36,8 @@ export function AdminTeamsPage() {
   const [bracketFilter, setBracketFilter] = useState('')
   const [picked, setPicked] = useState<Set<number>>(new Set())
 
-  const [scheduleForm, setScheduleForm] = useState<null | 'practice' | 'game'>(null)
-  const [startsAt, setStartsAt] = useState('')
-  const [endsAt, setEndsAt] = useState('')
-  const [location, setLocation] = useState('')
-  const [summary, setSummary] = useState('')
-  const [opponent, setOpponent] = useState('')
-  const [homeAway, setHomeAway] = useState<'home' | 'away' | 'unknown'>('unknown')
+  const [scheduleUrl, setScheduleUrl] = useState('')
+  const [syncing, setSyncing] = useState(false)
 
   const refreshTeams = async () => {
     try { setTeams(await Api.listRosterTeams()) }
@@ -54,10 +49,11 @@ export function AdminTeamsPage() {
   const loadTeam = async (id: number) => {
     setError(null); setNotice(null)
     setSelectedId(id)
-    setPicked(new Set()); setSearch(''); setBracketFilter(''); setScheduleForm(null)
+    setPicked(new Set()); setSearch(''); setBracketFilter('')
     try {
       const [d, avail] = await Promise.all([Api.getRosterTeam(id), Api.listAvailablePlayers(id)])
       setDetail(d); setAvailable(avail)
+      setScheduleUrl(d.gotSportLinked ? gotSportUrl(d.gotSportEventId, d.gotSportTeamId) : '')
     } catch (e: any) { setError(errMsg(e)) }
   }
 
@@ -129,39 +125,34 @@ export function AdminTeamsPage() {
     } catch (e: any) { setError(errMsg(e)) }
   }
 
-  const resetScheduleForm = () => {
-    setScheduleForm(null)
-    setStartsAt(''); setEndsAt(''); setLocation(''); setSummary(''); setOpponent(''); setHomeAway('unknown')
-  }
-
-  const submitSchedule = async (e: React.FormEvent) => {
+  // Link this team to its GotSport event so schedule sync can scrape games. The schedule URL
+  // carries both IDs; the backend parses them. Reuses the schedule team-update endpoint, which
+  // operates on the same Team row.
+  const saveScheduleLink = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (selectedId == null) return
-    setError(null); setNotice(null)
-    if (!startsAt) { setError(t('admin.teamStartRequired')); return }
-    setBusy(true)
+    if (!detail) return
+    setError(null); setNotice(null); setBusy(true)
     try {
-      const startsAtIso = toIso(startsAt)
-      const endsAtIso = endsAt ? toIso(endsAt) : null
-      if (scheduleForm === 'game') {
-        await Api.createGame(selectedId, {
-          startsAt: startsAtIso, endsAt: endsAtIso,
-          opponentName: opponent.trim() || null,
-          isHome: homeAway === 'home' ? true : homeAway === 'away' ? false : null,
-          location: location.trim() || null,
-        })
-      } else {
-        await Api.createPractice(selectedId, {
-          startsAt: startsAtIso, endsAt: endsAtIso,
-          location: location.trim() || null,
-          summary: summary.trim() || null,
-        })
-      }
-      resetScheduleForm()
+      await Api.updateTeam(detail.id, {
+        name: detail.name,
+        scheduleUrl: scheduleUrl.trim() || null,
+        messageGroupId: detail.messageGroupId,
+      })
       await reloadSelected()
       setNotice(t('admin.teamSaved'))
     } catch (e: any) { setError(errMsg(e)) }
     finally { setBusy(false) }
+  }
+
+  const runSync = async () => {
+    if (!detail) return
+    setError(null); setNotice(null); setSyncing(true)
+    try {
+      const r = await Api.syncTeam(detail.id)
+      setNotice(r.message)
+      await reloadSelected()
+    } catch (e: any) { setError(errMsg(e)) }
+    finally { setSyncing(false) }
   }
 
   const brackets = useMemo(() => {
@@ -323,84 +314,42 @@ export function AdminTeamsPage() {
                   </table>
                 </section>
 
-                {/* Schedule */}
+                {/* GotSport schedule sync (optional) */}
                 <section className="bg-white border border-slate-200 rounded-lg p-5">
-                  <div className="flex items-center justify-between gap-3 flex-wrap">
-                    <h2 className="font-bold text-emerald-800">{t('admin.teamScheduleHeading')}</h2>
-                    <div className="text-sm">
-                      <button onClick={() => { resetScheduleForm(); setScheduleForm('practice') }}
-                        className="text-emerald-700 hover:underline">+ {t('admin.teamAddPractice')}</button>
-                      <span className="mx-2 text-slate-300">|</span>
-                      <button onClick={() => { resetScheduleForm(); setScheduleForm('game') }}
-                        className="text-emerald-700 hover:underline">+ {t('admin.teamAddGame')}</button>
+                  <h2 className="font-bold text-emerald-800">{t('admin.teamGotSportHeading')}</h2>
+                  <p className="text-xs text-slate-500 mt-1">{t('admin.msgTeamScheduleUrlHelp')}</p>
+                  <form onSubmit={saveScheduleLink} className="mt-3 flex flex-col gap-2">
+                    <input type="url" value={scheduleUrl} onChange={e => setScheduleUrl(e.target.value)}
+                      placeholder="https://system.gotsport.com/org_event/events/48082/schedules?team=3764244"
+                      className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm font-mono" />
+                    <div className="flex items-center gap-3">
+                      <button type="submit" disabled={busy}
+                        className="bg-emerald-700 text-white text-sm font-semibold px-3 py-1.5 rounded-md hover:bg-emerald-800 disabled:opacity-60">
+                        {t('admin.msgSave')}
+                      </button>
+                      <button type="button" onClick={runSync} disabled={syncing || !detail.gotSportLinked}
+                        className="text-sm border border-emerald-300 text-emerald-700 rounded-md px-3 py-1.5 hover:bg-emerald-50 disabled:opacity-50">
+                        {syncing ? t('admin.msgSyncing') : t('admin.msgSyncNow')}
+                      </button>
                     </div>
-                  </div>
+                    {detail.lastSyncedAt && (
+                      <p className="text-xs text-slate-500">
+                        {t('admin.msgLastSynced')}: {new Date(detail.lastSyncedAt).toLocaleString()} — {detail.lastSyncMessage}
+                      </p>
+                    )}
+                  </form>
+                </section>
 
-                  {scheduleForm && (
-                    <form onSubmit={submitSchedule} className="mt-3 grid sm:grid-cols-2 gap-3 border-b border-slate-100 pb-4">
-                      <label className="block text-sm">
-                        <span className="font-medium text-slate-700">{t('admin.teamFldStart')}</span>
-                        <input type="datetime-local" value={startsAt} onChange={e => setStartsAt(e.target.value)}
-                          className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
-                      </label>
-                      <label className="block text-sm">
-                        <span className="font-medium text-slate-700">{t('admin.teamFldEnd')}</span>
-                        <input type="datetime-local" value={endsAt} onChange={e => setEndsAt(e.target.value)}
-                          className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
-                      </label>
-                      {scheduleForm === 'game' && (
-                        <>
-                          <label className="block text-sm">
-                            <span className="font-medium text-slate-700">{t('admin.teamFldOpponent')}</span>
-                            <input type="text" value={opponent} onChange={e => setOpponent(e.target.value)}
-                              className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
-                          </label>
-                          <label className="block text-sm">
-                            <span className="font-medium text-slate-700">{t('admin.teamFldHomeAway')}</span>
-                            <select value={homeAway} onChange={e => setHomeAway(e.target.value as 'home' | 'away' | 'unknown')}
-                              className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm">
-                              <option value="unknown">{t('admin.teamOptUnknown')}</option>
-                              <option value="home">{t('admin.teamOptHome')}</option>
-                              <option value="away">{t('admin.teamOptAway')}</option>
-                            </select>
-                          </label>
-                        </>
-                      )}
-                      <label className="block text-sm">
-                        <span className="font-medium text-slate-700">{t('admin.teamFldLocation')}</span>
-                        <input type="text" value={location} onChange={e => setLocation(e.target.value)}
-                          className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
-                      </label>
-                      {scheduleForm === 'practice' && (
-                        <label className="block text-sm">
-                          <span className="font-medium text-slate-700">{t('admin.teamFldSummary')}</span>
-                          <input type="text" value={summary} onChange={e => setSummary(e.target.value)}
-                            className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
-                        </label>
-                      )}
-                      <div className="sm:col-span-2 flex items-center gap-3">
-                        <button type="submit" disabled={busy}
-                          className="bg-emerald-700 text-white text-sm font-semibold px-4 py-2 rounded-md hover:bg-emerald-800 disabled:opacity-60">
-                          {t('admin.save')}
-                        </button>
-                        <button type="button" onClick={resetScheduleForm} className="text-sm text-slate-600 hover:underline">{t('admin.cancel')}</button>
-                      </div>
-                    </form>
-                  )}
-
-                  <ul className="mt-3 space-y-2 text-sm">
-                    {detail.upcomingGames.map(g => (
-                      <li key={g.id} className={`flex items-center justify-between ${g.isCancelled ? 'text-slate-400 line-through' : 'text-slate-700'}`}>
-                        <span>
-                          <span className="font-medium">{g.kind === 1 ? t('admin.teamPractice') : t('admin.teamGame')}</span>
-                          {' · '}{new Date(g.startsAt).toLocaleString()}
-                          {g.opponentName ? ` · ${g.opponentName}` : ''}
-                          {g.location ? ` · ${g.location}` : ''}
-                        </span>
-                      </li>
-                    ))}
-                    {detail.upcomingGames.length === 0 && <li className="text-slate-400">{t('admin.teamScheduleEmpty')}</li>}
-                  </ul>
+                {/* Schedule (practices + games) */}
+                <section>
+                  <h2 className="font-bold text-emerald-800 mb-2">{t('admin.teamScheduleHeading')}</h2>
+                  <TeamScheduleSection
+                    teamId={detail.id}
+                    games={detail.upcomingGames}
+                    onChanged={reloadSelected}
+                    onError={setError}
+                    onNotice={setNotice}
+                  />
                 </section>
 
                 {/* Communicate */}

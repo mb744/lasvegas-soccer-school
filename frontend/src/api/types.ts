@@ -658,6 +658,10 @@ export interface RosterTeamDetail {
   messageGroupId: number | null
   messageGroupName: string | null
   gotSportLinked: boolean
+  gotSportEventId: number
+  gotSportTeamId: number
+  lastSyncedAt: string | null
+  lastSyncMessage: string | null
   createdAt: string
   roster: RosterMember[]
   upcomingGames: ScheduledGame[]

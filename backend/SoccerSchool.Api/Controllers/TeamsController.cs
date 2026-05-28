@@ -135,6 +135,7 @@ public class TeamsController : ControllerBase
         return Ok(new RosterTeamDetail(
             team.Id, team.Name, team.MessageGroupId, team.MessageGroup?.Name,
             team.GotSportEventId > 0 && team.GotSportTeamId > 0,
+            team.GotSportEventId, team.GotSportTeamId, team.LastSyncedAt, team.LastSyncMessage,
             team.CreatedAt, roster, games));
     }
 

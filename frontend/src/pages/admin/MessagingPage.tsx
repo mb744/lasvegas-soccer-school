@@ -8,7 +8,6 @@ import type {
   BroadcastDetail,
   BroadcastSummary,
   DynamicGroup,
-  EventRecipient,
   GroupConversationDetail,
   GroupConversationSummary,
   InboundMessage,
@@ -20,8 +19,7 @@ import type {
   PhraseTranslation,
   SaveTemplateVariable,
   ScheduledGame,
-  TeamDetail,
-  TeamSummary,
+  RosterTeamSummary,
   TemplatePreviewResponse,
   TemplatePreviewSide,
   WhatsAppTemplate,
@@ -43,7 +41,7 @@ const WEAR_AWAY: Record<Language, string> = {
   1: 'todo azul',
 }
 const GAME_VS_PREFIX: Record<Language, string> = { 0: 'Game vs', 1: 'Partido vs' }
-const PRACTICE_FALLBACK: Record<Language, string> = { 0: 'Practice', 1: 'Práctica' }
+const PRACTICE_FALLBACK: Record<Language, string> = { 0: 'Practice', 1: 'PrÃ¡ctica' }
 import {
   MESSAGE_CHANNEL_LABELS,
   MESSAGE_DELIVERY_LABELS,
@@ -57,7 +55,7 @@ type ComposeBodyMode = 'free-form' | 'template'
 export function AdminMessagingPage() {
   const { t } = useTranslation()
 
-  // Capabilities — driven by what's configured on the server.
+  // Capabilities â€” driven by what's configured on the server.
   const [config, setConfig] = useState<MessagingConfig | null>(null)
 
   // Tab state
@@ -70,10 +68,13 @@ export function AdminMessagingPage() {
   const [conversations, setConversations] = useState<GroupConversationSummary[]>([])
   const [templates, setTemplates] = useState<WhatsAppTemplate[]>([])
   const [emailTemplates, setEmailTemplates] = useState<EmailTemplate[]>([])
-  const [teams, setTeams] = useState<TeamSummary[]>([])
+  const [rosterTeams, setRosterTeams] = useState<RosterTeamSummary[]>([])
   const [upcomingGames, setUpcomingGames] = useState<ScheduledGame[]>([])
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  // When the Teams tab asks to message a team, we stash its dynamic-group key and jump to Compose,
+  // which consumes it on mount to pre-select the recipient.
+  const [composePresetKey, setComposePresetKey] = useState('')
 
   const refreshConfig = async () => {
     try { setConfig(await Api.messagingConfig()) }
@@ -99,7 +100,7 @@ export function AdminMessagingPage() {
     catch (e: any) { setError(extractError(e)) }
   }
   const refreshTeams = async () => {
-    try { setTeams(await Api.listTeams()) }
+    try { setRosterTeams(await Api.listRosterTeams()) }
     catch (e: any) { setError(extractError(e)) }
   }
   const refreshUpcomingGames = async () => {
@@ -130,7 +131,7 @@ export function AdminMessagingPage() {
     <Layout>
       <div className="max-w-6xl mx-auto px-4 py-10 space-y-6">
         <div>
-          <Link to="/admin" className="text-sm text-emerald-700 hover:underline">← {t('admin.backToHub')}</Link>
+          <Link to="/admin" className="text-sm text-emerald-700 hover:underline">â† {t('admin.backToHub')}</Link>
           <h1 className="text-3xl font-bold text-emerald-800 mt-2">{t('admin.messagingTitle')}</h1>
           <p className="text-sm text-slate-600 mt-1">{t('admin.messagingSubtitle')}</p>
         </div>
@@ -172,6 +173,8 @@ export function AdminMessagingPage() {
             templates={templates}
             emailTemplates={emailTemplates}
             upcomingGames={upcomingGames}
+            initialDynamicKey={composePresetKey}
+            onPresetConsumed={() => setComposePresetKey('')}
             onSent={async (msg) => {
               setNotice(msg); setError(null)
               await refreshHistory()
@@ -182,12 +185,9 @@ export function AdminMessagingPage() {
         )}
 
         {tab === 'teams' && (
-          <TeamsTab
-            teams={teams}
-            curated={curated}
-            onChanged={async () => { await refreshTeams(); await refreshUpcomingGames() }}
-            onError={(e) => setError(e)}
-            onNotice={(n) => setNotice(n)}
+          <TeamMessagingTab
+            teams={rosterTeams}
+            onMessageTeam={(key) => { setComposePresetKey(key); setTab('compose'); setError(null); setNotice(null) }}
           />
         )}
 
@@ -278,6 +278,7 @@ function Capability({ ok, label }: { ok: boolean; label: string }) {
 
 function ComposeTab({
   config, curated, dynamicGroups, templates, emailTemplates, upcomingGames, onSent, onError,
+  initialDynamicKey, onPresetConsumed,
 }: {
   config: MessagingConfig | null
   curated: MessageGroupSummary[]
@@ -287,6 +288,9 @@ function ComposeTab({
   upcomingGames: ScheduledGame[]
   onSent: (msg: string) => void | Promise<void>
   onError: (e: string) => void
+  /** When set (e.g. from the Teams tab), pre-selects this dynamic group as the recipient on mount. */
+  initialDynamicKey?: string
+  onPresetConsumed?: () => void
 }) {
   const { t } = useTranslation()
   const [channel, setChannel] = useState<MessageChannel>(0)
@@ -312,6 +316,16 @@ function ComposeTab({
   const [previewStep, setPreviewStep] = useState<'edit' | 'confirm' | null>(null)
   const [templatePreviewOpen, setTemplatePreviewOpen] = useState(false)
   const [sending, setSending] = useState(false)
+
+  // Consume a one-shot preset from the Teams tab: target this team's roster and clear the preset so
+  // re-opening Compose normally doesn't re-apply it. Runs once on mount (Compose remounts per open).
+  useEffect(() => {
+    if (initialDynamicKey) {
+      setRecipientMode('dynamic')
+      setDynamicKey(initialDynamicKey)
+      onPresetConsumed?.()
+    }
+  }, [])
 
   const selectedTemplate = useMemo(
     () => templates.find(t => t.id === templateId) ?? null,
@@ -341,7 +355,7 @@ function ComposeTab({
   const isEmailChannel = channel === 2
 
   // True once the admin has put anything into the recipient picker. Used to suppress the game
-  // picker's auto-flip to the linked group — if the admin already picked an individual/group/list,
+  // picker's auto-flip to the linked group â€” if the admin already picked an individual/group/list,
   // we shouldn't silently override that just because they want the game's variables autofilled.
   const hasRecipientInput = () =>
     phone.trim() !== '' ||
@@ -364,7 +378,7 @@ function ComposeTab({
 
   const target = () => {
     if (recipientMode === 'individual') {
-      // For email channel, route through ad-hoc list so we can carry the email — the Individual
+      // For email channel, route through ad-hoc list so we can carry the email â€” the Individual
       // target only carries a phone.
       if (isEmailChannel) {
         return {
@@ -564,7 +578,7 @@ function ComposeTab({
         {recipientMode === 'curated' && (
           <select value={customGroupId} onChange={e => setCustomGroupId(e.target.value === '' ? '' : Number(e.target.value))}
             className="border border-slate-300 rounded-md px-3 py-2 text-sm w-full sm:w-96">
-            <option value="">— {t('admin.msgPickGroup')} —</option>
+            <option value="">â€” {t('admin.msgPickGroup')} â€”</option>
             {curated.map(g => (
               <option key={g.id} value={g.id}>{g.name} ({g.memberCount})</option>
             ))}
@@ -573,7 +587,7 @@ function ComposeTab({
         {recipientMode === 'dynamic' && (
           <select value={dynamicKey} onChange={e => setDynamicKey(e.target.value)}
             className="border border-slate-300 rounded-md px-3 py-2 text-sm w-full sm:w-96">
-            <option value="">— {t('admin.msgPickGroup')} —</option>
+            <option value="">â€” {t('admin.msgPickGroup')} â€”</option>
             {dynamicGroups.map(d => (
               <option key={d.key} value={d.key}>{d.label} ({d.count})</option>
             ))}
@@ -636,7 +650,7 @@ function ComposeTab({
                   setTemplateValues({})
                 }}
                 className="border border-slate-300 rounded-md px-3 py-2 text-sm w-full sm:w-96">
-                <option value="">— {t('admin.msgPickTemplate')} —</option>
+                <option value="">â€” {t('admin.msgPickTemplate')} â€”</option>
                 {emailTemplates.map(tpl => (
                   <option key={tpl.id} value={tpl.id}>
                     {tpl.name} ({tpl.language === 1 ? 'ES' : 'EN'})
@@ -657,7 +671,7 @@ function ComposeTab({
                 setTemplateValues({})
               }}
               className="border border-slate-300 rounded-md px-3 py-2 text-sm w-full sm:w-96">
-              <option value="">— {t('admin.msgPickTemplate')} —</option>
+              <option value="">â€” {t('admin.msgPickTemplate')} â€”</option>
               {templates.map(tpl => (
                 <option key={tpl.id} value={tpl.id}>
                   {tpl.name} ({tpl.language === 1 ? 'ES' : 'EN'})
@@ -678,7 +692,7 @@ function ComposeTab({
                   if (!gameId) return
                   const g = upcomingGames.find(x => x.id === gameId)
                   if (!g) return
-                  // Auto-select a template by Kind (Practice → practice_*, Game → game_*) if the
+                  // Auto-select a template by Kind (Practice â†’ practice_*, Game â†’ game_*) if the
                   // admin hasn't already picked one, so a single dropdown pick fills variables AND
                   // wires the right template. Use the freshly-picked template for the autofill so
                   // we don't race the React state update.
@@ -693,7 +707,7 @@ function ComposeTab({
                   if (activeTemplate) {
                     applyGameToTemplate(g, activeTemplate, setTemplateValues)
                   }
-                  // Record event-id on this compose state so the broadcast links back to it —
+                  // Record event-id on this compose state so the broadcast links back to it â€”
                   // unlocks the cancellation-notification flow finding "who got reminded".
                   setPickedEventId(g.id)
                   // Auto-target the team's linked group only when the admin hasn't already picked
@@ -705,7 +719,7 @@ function ComposeTab({
                   }
                 }}
                 className="border border-slate-300 rounded-md px-3 py-2 text-sm w-full sm:w-96">
-                <option value="">— {t('admin.msgPickGameHint')} —</option>
+                <option value="">â€” {t('admin.msgPickGameHint')} â€”</option>
                 {upcomingGames.map(g => (
                   <option key={g.id} value={g.id}>{formatGameOption(g)}</option>
                 ))}
@@ -784,7 +798,7 @@ function ComposeTab({
                   }
                 }}
                 className="border border-slate-300 rounded-md px-3 py-2 text-sm w-full sm:w-96">
-                <option value="">— {t('admin.msgPickGameHint')} —</option>
+                <option value="">â€” {t('admin.msgPickGameHint')} â€”</option>
                 {upcomingGames.map(g => (
                   <option key={g.id} value={g.id}>{formatGameOption(g)}</option>
                 ))}
@@ -808,7 +822,7 @@ function ComposeTab({
               maxLength={isEmailChannel ? 8000 : 2000}
               placeholder={t('admin.msgBodyPlaceholder')}
               className="border border-slate-300 rounded-md px-3 py-2 text-sm w-full" />
-            <p className="mt-1 text-xs text-slate-500">{bodyEn.length} / {isEmailChannel ? 8000 : 2000} · {t('admin.msgBodyHint')}</p>
+            <p className="mt-1 text-xs text-slate-500">{bodyEn.length} / {isEmailChannel ? 8000 : 2000} Â· {t('admin.msgBodyHint')}</p>
           </div>
         </div>
       )}
@@ -906,7 +920,7 @@ function GroupsTab({
       })
       await loadGroup(selected.id)
       await onChanged()
-      onNotice(`Group language set to ${lang === 1 ? 'Español' : 'English'}.`)
+      onNotice(`Group language set to ${lang === 1 ? 'EspaÃ±ol' : 'English'}.`)
     } catch (e: any) { onError(extractError(e)) }
   }
 
@@ -1068,9 +1082,9 @@ function GroupsTab({
               <tbody>
                 {selected.members.map(m => (
                   <tr key={m.id} className="border-b last:border-0">
-                    <td className="py-2 pr-4">{m.name ?? '—'}</td>
+                    <td className="py-2 pr-4">{m.name ?? 'â€”'}</td>
                     <td className="py-2 pr-4">{m.phone}</td>
-                    <td className="py-2 pr-4">{m.email ?? '—'}</td>
+                    <td className="py-2 pr-4">{m.email ?? 'â€”'}</td>
                     <td className="py-2 pr-4">
                       <select value={m.language}
                         onChange={e => setMemberLang(m.id, Number(e.target.value) as Language)}
@@ -1086,7 +1100,7 @@ function GroupsTab({
                   </tr>
                 ))}
                 {selected.members.length === 0 && (
-                  <tr><td colSpan={5} className="py-4 text-center text-slate-400">—</td></tr>
+                  <tr><td colSpan={5} className="py-4 text-center text-slate-400">â€”</td></tr>
                 )}
               </tbody>
             </table>
@@ -1156,7 +1170,7 @@ function ConversationsTab({
     )
   }
 
-  // Suppress unused-var warnings for now — curated/dynamicGroups are wired to ComposeTab,
+  // Suppress unused-var warnings for now â€” curated/dynamicGroups are wired to ComposeTab,
   // but we keep them here so future "add existing group to conversation" can reuse them.
   void curated; void dynamicGroups
 
@@ -1171,7 +1185,7 @@ function ConversationsTab({
                 className={`w-full text-left px-2 py-1.5 rounded text-sm hover:bg-emerald-50 ${selected?.id === c.id ? 'bg-emerald-50 text-emerald-800 font-medium' : ''}`}>
                 <div>{c.title}</div>
                 <div className="text-xs text-slate-500">
-                  {MESSAGE_CHANNEL_LABELS[c.channel]} · {c.participantCount} {t('admin.msgMembers')}
+                  {MESSAGE_CHANNEL_LABELS[c.channel]} Â· {c.participantCount} {t('admin.msgMembers')}
                 </div>
               </button>
             </li>
@@ -1192,7 +1206,7 @@ function ConversationsTab({
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h2 className="font-bold text-emerald-800">{selected.title}</h2>
-                <p className="text-xs text-slate-500">{MESSAGE_CHANNEL_LABELS[selected.channel]} · {selected.twilioConversationSid}</p>
+                <p className="text-xs text-slate-500">{MESSAGE_CHANNEL_LABELS[selected.channel]} Â· {selected.twilioConversationSid}</p>
               </div>
               <button onClick={remove}
                 className="text-sm border border-rose-300 text-rose-700 rounded-md px-2 py-1 hover:bg-rose-50">
@@ -1221,7 +1235,7 @@ function ConversationsTab({
               <tbody>
                 {selected.participants.map(p => (
                   <tr key={p.id} className="border-b last:border-0">
-                    <td className="py-2 pr-4">{p.name ?? '—'}</td>
+                    <td className="py-2 pr-4">{p.name ?? 'â€”'}</td>
                     <td className="py-2 pr-4">{p.phone}</td>
                     <td className="py-2 pr-4 text-right">
                       <button onClick={() => removeParticipant(p.id)}
@@ -1308,7 +1322,7 @@ function InboxTab({
       <section className="bg-white border border-slate-200 rounded-lg p-4 lg:col-span-1">
         <div className="flex items-center justify-between mb-2">
           <h2 className="font-bold text-emerald-800">{t('admin.msgInboxHeader')}</h2>
-          <button onClick={refresh} className="text-sm text-emerald-700 hover:underline">↻</button>
+          <button onClick={refresh} className="text-sm text-emerald-700 hover:underline">â†»</button>
         </div>
         <ul className="space-y-1 max-h-[60vh] overflow-y-auto">
           {threads.map(thr => (
@@ -1326,7 +1340,7 @@ function InboxTab({
                 <div className="text-xs text-slate-500 font-mono">{thr.phone}</div>
                 {thr.lastBody && (
                   <div className="text-xs text-slate-600 line-clamp-2 mt-0.5">
-                    <span className="text-slate-400">{thr.lastDirection === 0 ? '← ' : '→ '}</span>
+                    <span className="text-slate-400">{thr.lastDirection === 0 ? 'â† ' : 'â†’ '}</span>
                     {thr.lastBody}
                   </div>
                 )}
@@ -1360,7 +1374,7 @@ function InboxTab({
                   </div>
                 )}
               </div>
-              <button onClick={() => openThread(selectedPhone)} className="text-sm text-emerald-700 hover:underline">↻</button>
+              <button onClick={() => openThread(selectedPhone)} className="text-sm text-emerald-700 hover:underline">â†»</button>
             </div>
 
             <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2 bg-slate-50" style={{ maxHeight: '50vh' }}>
@@ -1370,11 +1384,11 @@ function InboxTab({
                   <div className={`max-w-[75%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap break-words ${m.direction === 1
                     ? 'bg-emerald-600 text-white'
                     : 'bg-white border border-slate-200 text-slate-800'}`}>
-                    <div>{m.body || '—'}</div>
+                    <div>{m.body || 'â€”'}</div>
                     <div className={`text-[10px] mt-1 ${m.direction === 1 ? 'text-emerald-100' : 'text-slate-400'}`}>
-                      {MESSAGE_CHANNEL_LABELS[m.channel]} · {new Date(m.at).toLocaleString()}
+                      {MESSAGE_CHANNEL_LABELS[m.channel]} Â· {new Date(m.at).toLocaleString()}
                       {m.direction === 1 && m.status !== null && m.status !== undefined && (
-                        <span> · {MESSAGE_DELIVERY_LABELS[m.status]}</span>
+                        <span> Â· {MESSAGE_DELIVERY_LABELS[m.status]}</span>
                       )}
                     </div>
                   </div>
@@ -1556,7 +1570,7 @@ function MonthlyFeeTab({
           className="bg-emerald-700 text-white text-sm font-semibold px-4 py-2 rounded-md hover:bg-emerald-800 disabled:opacity-50">
           {sending ? t('admin.sending') : t('admin.monthlyFeeSendButton', { count: preview?.recipientCount ?? 0 })}
         </button>
-        <button type="button" onClick={refresh} className="text-sm text-emerald-700 hover:underline">↻ {t('admin.refresh')}</button>
+        <button type="button" onClick={refresh} className="text-sm text-emerald-700 hover:underline">â†» {t('admin.refresh')}</button>
       </div>
     </div>
   )
@@ -1717,7 +1731,7 @@ function HistoryTab({
     <section className="bg-white border border-slate-200 rounded-lg p-4">
       <div className="flex items-center justify-between">
         <h2 className="font-bold text-emerald-800">{t('admin.msgHistoryHeader')}</h2>
-        <button onClick={onRefresh} className="text-sm text-emerald-700 hover:underline">↻</button>
+        <button onClick={onRefresh} className="text-sm text-emerald-700 hover:underline">â†»</button>
       </div>
       <table className="w-full text-sm mt-3">
         <thead>
@@ -1736,11 +1750,11 @@ function HistoryTab({
               <tr className="border-b last:border-0 align-top">
                 <td className="py-2 pr-4 whitespace-nowrap text-slate-500">{new Date(b.createdAt).toLocaleString()}</td>
                 <td className="py-2 pr-4">{MESSAGE_CHANNEL_LABELS[b.channel]}</td>
-                <td className="py-2 pr-4">{b.targetLabel ?? '—'}</td>
+                <td className="py-2 pr-4">{b.targetLabel ?? 'â€”'}</td>
                 <td className="py-2 pr-4 text-xs">
-                  <span className="text-emerald-700">✓{b.delivered}</span>{' '}
-                  <span className="text-slate-500">…{b.queued}</span>{' '}
-                  <span className="text-rose-700">✕{b.failed}</span>{' '}
+                  <span className="text-emerald-700">âœ“{b.delivered}</span>{' '}
+                  <span className="text-slate-500">â€¦{b.queued}</span>{' '}
+                  <span className="text-rose-700">âœ•{b.failed}</span>{' '}
                   <span className="text-slate-400">/{b.total}</span>
                 </td>
                 <td className="py-2 pr-4 max-w-md">
@@ -1768,7 +1782,7 @@ function HistoryTab({
                       <tbody>
                         {expanded.recipients.map(r => (
                           <tr key={r.id}>
-                            <td className="py-1 pr-4">{r.name ?? '—'}</td>
+                            <td className="py-1 pr-4">{r.name ?? 'â€”'}</td>
                             <td className="py-1 pr-4">{r.phone}</td>
                             <td className="py-1 pr-4">{MESSAGE_DELIVERY_LABELS[r.status]}</td>
                             <td className="py-1 pr-4 text-slate-500">{r.statusMessage ?? ''}</td>
@@ -1782,7 +1796,7 @@ function HistoryTab({
             </Fragment>
           ))}
           {broadcasts.length === 0 && (
-            <tr><td colSpan={6} className="py-4 text-center text-slate-400">—</td></tr>
+            <tr><td colSpan={6} className="py-4 text-center text-slate-400">â€”</td></tr>
           )}
         </tbody>
       </table>
@@ -1790,7 +1804,7 @@ function HistoryTab({
       <div className="mt-6">
         <div className="flex items-center justify-between mb-2">
           <h3 className="font-medium text-slate-700">{t('admin.msgInboundHeader')}</h3>
-          <button onClick={refreshBoth} className="text-sm text-emerald-700 hover:underline">↻</button>
+          <button onClick={refreshBoth} className="text-sm text-emerald-700 hover:underline">â†»</button>
         </div>
         <p className="text-xs text-slate-500 mb-2">{t('admin.msgInboundHelp')}</p>
         <table className="w-full text-sm">
@@ -1809,11 +1823,11 @@ function HistoryTab({
                 <td className="py-2 pr-4 whitespace-nowrap text-slate-500">{new Date(m.receivedAt).toLocaleString()}</td>
                 <td className="py-2 pr-4">{MESSAGE_CHANNEL_LABELS[m.channel]}</td>
                 <td className="py-2 pr-4 font-mono text-xs">{m.fromPhone}</td>
-                <td className="py-2 pr-4 max-w-xl whitespace-pre-wrap break-words">{m.body ?? '—'}</td>
+                <td className="py-2 pr-4 max-w-xl whitespace-pre-wrap break-words">{m.body ?? 'â€”'}</td>
                 <td className="py-2 pr-4 max-w-xs text-xs text-slate-500">
                   {m.broadcastId
-                    ? (<><span className="text-slate-700 font-medium">#{m.broadcastId}</span>{m.broadcastSummary ? <> · <span className="line-clamp-2">{m.broadcastSummary}</span></> : null}</>)
-                    : <span className="text-slate-400">—</span>}
+                    ? (<><span className="text-slate-700 font-medium">#{m.broadcastId}</span>{m.broadcastSummary ? <> Â· <span className="line-clamp-2">{m.broadcastSummary}</span></> : null}</>)
+                    : <span className="text-slate-400">â€”</span>}
                 </td>
               </tr>
             ))}
@@ -1972,7 +1986,7 @@ function TemplatesTab({
                 <select value={language} onChange={e => setLanguage(Number(e.target.value) as Language)}
                   className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm">
                   <option value={0}>English</option>
-                  <option value={1}>Español</option>
+                  <option value={1}>EspaÃ±ol</option>
                 </select>
               </label>
               <label className="block text-sm">
@@ -2010,7 +2024,7 @@ function TemplatesTab({
                     onChange={e => updateVar(idx, { example: e.target.value })}
                     className="border border-slate-300 rounded-md px-2 py-1 text-sm" />
                   <button type="button" onClick={() => removeVar(idx)}
-                    className="text-rose-700 text-sm">✕</button>
+                    className="text-rose-700 text-sm">âœ•</button>
                 </div>
               ))}
             </div>
@@ -2158,7 +2172,7 @@ function EmailTemplatesSection({
                 <select value={language} onChange={e => setLanguage(Number(e.target.value) as Language)}
                   className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm">
                   <option value={0}>English</option>
-                  <option value={1}>Español</option>
+                  <option value={1}>EspaÃ±ol</option>
                 </select>
               </label>
               <label className="block text-sm sm:col-span-2">
@@ -2203,7 +2217,7 @@ function EmailTemplatesSection({
                     onChange={e => updateVar(idx, { example: e.target.value })}
                     className="border border-slate-300 rounded-md px-2 py-1 text-sm" />
                   <button type="button" onClick={() => removeVar(idx)}
-                    className="text-rose-700 text-sm">✕</button>
+                    className="text-rose-700 text-sm">âœ•</button>
                 </div>
               ))}
             </div>
@@ -2291,446 +2305,6 @@ function normalizePhone(input: string): string | null {
   return digits.length >= 11 ? `+${digits}` : null
 }
 
-// --- Team schedule (admin-managed games + practices) --------------------
-
-function TeamScheduleSection({
-  teamId, games, onChanged, onError, onNotice,
-}: {
-  teamId: number
-  games: ScheduledGame[]
-  onChanged: () => Promise<void> | void
-  onError: (e: string) => void
-  onNotice: (n: string) => void
-}) {
-  const { t } = useTranslation()
-  // Unified, time-sorted list. Games and practices show in the same table; admin distinguishes
-  // by the Kind badge on each row.
-  const events = useMemo(
-    () => [...games].sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime()),
-    [games])
-
-  // `editingId` discriminator:
-  //   'new-practice' | 'new-game' | 'series' → opening one of the three new forms
-  //   number → editing an existing row (Kind taken from the row)
-  //   null → no form open
-  const [editingId, setEditingId] = useState<number | 'new-practice' | 'new-game' | 'series' | null>(null)
-  const [editingKind, setEditingKind] = useState<'practice' | 'game'>('practice')
-  // Game-specific fields (only meaningful when the active form is a game form):
-  const [opponentName, setOpponentName] = useState('')
-  const [isHome, setIsHome] = useState<boolean | null>(null)
-  const [startsAt, setStartsAt] = useState('')      // datetime-local format (local time)
-  const [endsAt, setEndsAt] = useState('')
-  const [location, setLocation] = useState('')
-  const [summary, setSummary] = useState('')
-
-  // Recurring-series form state (only used when editingId === 'series'):
-  const [seriesStartDate, setSeriesStartDate] = useState('')
-  const [seriesEndDate, setSeriesEndDate] = useState('')
-  const [seriesStartTime, setSeriesStartTime] = useState('17:00')
-  const [seriesEndTime, setSeriesEndTime] = useState('')
-  const [seriesDays, setSeriesDays] = useState<Set<number>>(new Set())
-
-  const startNewPractice = () => {
-    setEditingId('new-practice'); setEditingKind('practice')
-    setStartsAt(''); setEndsAt(''); setLocation(''); setSummary('')
-    setOpponentName(''); setIsHome(null)
-  }
-  const startNewGame = () => {
-    setEditingId('new-game'); setEditingKind('game')
-    setStartsAt(''); setEndsAt(''); setLocation(''); setSummary('')
-    setOpponentName(''); setIsHome(null)
-  }
-  const startSeries = () => {
-    setEditingId('series'); setEditingKind('practice')
-    setSeriesStartDate(''); setSeriesEndDate('')
-    setSeriesStartTime('17:00'); setSeriesEndTime('')
-    setSeriesDays(new Set()); setLocation(''); setSummary('')
-  }
-  const toggleDay = (d: number) => {
-    setSeriesDays(prev => {
-      const next = new Set(prev)
-      if (next.has(d)) next.delete(d); else next.add(d)
-      return next
-    })
-  }
-  const startEdit = (ev: ScheduledGame) => {
-    setEditingId(ev.id)
-    setEditingKind(ev.kind === 0 ? 'game' : 'practice')
-    // datetime-local wants YYYY-MM-DDTHH:mm in local time (no timezone). Strip seconds/ms.
-    setStartsAt(toDateTimeLocal(ev.startsAt))
-    setEndsAt(ev.endsAt ? toDateTimeLocal(ev.endsAt) : '')
-    setLocation(ev.location ?? '')
-    setSummary(ev.summary ?? '')
-    setOpponentName(ev.opponentName ?? '')
-    setIsHome(ev.isHome)
-  }
-
-  const save = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (editingId === 'series') {
-      if (!seriesStartDate || !seriesEndDate) { onError('Start and end date are required.'); return }
-      if (seriesDays.size === 0) { onError('Pick at least one day of the week.'); return }
-      try {
-        const r = await Api.createPracticeSeries(teamId, {
-          startDate: seriesStartDate,
-          endDate: seriesEndDate,
-          startTime: seriesStartTime,
-          endTime: seriesEndTime || null,
-          daysOfWeek: Array.from(seriesDays).sort(),
-          location: location.trim() || null,
-          summary: summary.trim() || null,
-        })
-        setEditingId(null)
-        await onChanged()
-        onNotice(t('admin.msgPracticeSeriesCreated', { count: r.count }))
-      } catch (e: any) { onError(extractError(e)) }
-      return
-    }
-    if (!startsAt) { onError('Start date/time is required.'); return }
-    try {
-      const startsAtIso = new Date(startsAt).toISOString()
-      const endsAtIso = endsAt ? new Date(endsAt).toISOString() : null
-      const trimmedLocation = location.trim() || null
-      const trimmedSummary = summary.trim() || null
-      if (editingKind === 'game') {
-        const payload = {
-          startsAt: startsAtIso,
-          endsAt: endsAtIso,
-          opponentName: opponentName.trim() || null,
-          isHome,
-          location: trimmedLocation,
-          summary: trimmedSummary,
-        }
-        if (editingId === 'new-game') await Api.createGame(teamId, payload)
-        else if (typeof editingId === 'number') await Api.updateGame(editingId, payload)
-        onNotice(t('admin.msgGameSaved'))
-      } else {
-        const payload = {
-          startsAt: startsAtIso,
-          endsAt: endsAtIso,
-          location: trimmedLocation,
-          summary: trimmedSummary,
-        }
-        if (editingId === 'new-practice') await Api.createPractice(teamId, payload)
-        else if (typeof editingId === 'number') await Api.updatePractice(editingId, payload)
-        onNotice(t('admin.msgPracticeSaved'))
-      }
-      setEditingId(null)
-      await onChanged()
-    } catch (e: any) { onError(extractError(e)) }
-  }
-
-  const remove = async (ev: ScheduledGame) => {
-    const label = ev.kind === 0 ? 'game' : 'practice'
-    if (!confirm(`Delete this ${label} on ${new Date(ev.startsAt).toLocaleString()}?`)) return
-    try {
-      if (ev.kind === 0) await Api.deleteGame(ev.id)
-      else await Api.deletePractice(ev.id)
-      await onChanged()
-    } catch (e: any) { onError(extractError(e)) }
-  }
-
-  const cancel = async (ev: ScheduledGame) => {
-    const label = ev.kind === 0 ? 'game' : 'practice'
-    if (!confirm(`Cancel this ${label} on ${new Date(ev.startsAt).toLocaleString()}? You'll be able to notify parents who already received the reminder.`)) return
-    try {
-      if (ev.kind === 0) await Api.cancelGame(ev.id)
-      else await Api.cancelPractice(ev.id)
-      await onChanged()
-      onNotice(t('admin.msgPracticeCancelled'))
-    } catch (e: any) { onError(extractError(e)) }
-  }
-
-  const [notifyState, setNotifyState] = useState<{
-    practice: ScheduledGame
-    recipients: EventRecipient[]
-    bodyEn: string
-    bodyEs: string
-  } | null>(null)
-  const [sendingNotify, setSendingNotify] = useState(false)
-
-  const startNotify = async (p: ScheduledGame) => {
-    try {
-      const recipients = await Api.listEventRecipients(p.id)
-      const when = new Date(p.startsAt).toLocaleString()
-      const where = p.location ? ` at ${p.location}` : ''
-      setNotifyState({
-        practice: p,
-        recipients,
-        bodyEn: `The practice scheduled for ${when}${where} has been cancelled. Sorry for the late notice.`,
-        bodyEs: `La práctica programada para ${when}${where ? ` en ${p.location}` : ''} ha sido cancelada. Disculpe el aviso tardío.`,
-      })
-    } catch (e: any) { onError(extractError(e)) }
-  }
-
-  const sendNotify = async () => {
-    if (!notifyState) return
-    if (notifyState.recipients.length === 0) {
-      onError(t('admin.msgNotifyNoRecipients'))
-      return
-    }
-    setSendingNotify(true)
-    try {
-      await Api.createBroadcast({
-        channel: 0, // SMS — free-form cancellation works anytime without a template
-        bodyEn: notifyState.bodyEn.trim() || null,
-        bodyEs: notifyState.bodyEs.trim() || null,
-        scheduledGameId: notifyState.practice.id,
-        target: {
-          kind: 3, // AdHocList
-          recipients: notifyState.recipients.map(r => ({ phone: r.phone, name: r.name })),
-        },
-      })
-      onNotice(t('admin.msgCancellationSent', { count: notifyState.recipients.length }))
-      setNotifyState(null)
-    } catch (e: any) { onError(extractError(e)) }
-    finally { setSendingNotify(false) }
-  }
-
-  return (
-    <div className="bg-white border border-slate-200 rounded-lg p-4 space-y-4">
-      <div>
-        <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
-          <h3 className="font-medium text-slate-700">{t('admin.msgTeamScheduleHeader')}</h3>
-          {editingId === null && (
-            <div className="flex gap-3 flex-wrap">
-              <button onClick={startNewGame}
-                className="text-sm text-emerald-700 hover:underline">+ {t('admin.msgAddGame')}</button>
-              <button onClick={startNewPractice}
-                className="text-sm text-emerald-700 hover:underline">+ {t('admin.msgAddPractice')}</button>
-              <button onClick={startSeries}
-                className="text-sm text-emerald-700 hover:underline">+ {t('admin.msgAddPracticeSeries')}</button>
-            </div>
-          )}
-        </div>
-
-        {editingId !== null && editingId !== 'series' && (
-          <form onSubmit={save} className="border border-slate-200 rounded p-3 grid sm:grid-cols-2 gap-2 mb-3">
-            <div className="sm:col-span-2 text-xs uppercase tracking-wide text-slate-500">
-              {editingKind === 'game' ? t('admin.msgFormGame') : t('admin.msgFormPractice')}
-            </div>
-            <label className="block text-sm">
-              <span className="font-medium text-slate-700">{t('admin.msgPracticeStart')}</span>
-              <input type="datetime-local" value={startsAt} onChange={e => setStartsAt(e.target.value)}
-                className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
-            </label>
-            <label className="block text-sm">
-              <span className="font-medium text-slate-700">{t('admin.msgPracticeEnd')}</span>
-              <input type="datetime-local" value={endsAt} onChange={e => setEndsAt(e.target.value)}
-                className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
-            </label>
-            {editingKind === 'game' && (
-              <>
-                <label className="block text-sm">
-                  <span className="font-medium text-slate-700">{t('admin.msgGameOpponent')}</span>
-                  <input type="text" value={opponentName} onChange={e => setOpponentName(e.target.value)}
-                    placeholder="PRIME SC B17 White"
-                    className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
-                </label>
-                <label className="block text-sm">
-                  <span className="font-medium text-slate-700">{t('admin.msgGameHomeAway')}</span>
-                  <select
-                    value={isHome === null ? '' : isHome ? 'home' : 'away'}
-                    onChange={e => setIsHome(e.target.value === '' ? null : e.target.value === 'home')}
-                    className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm">
-                    <option value="">— {t('admin.msgGameHomeAwayUnknown')} —</option>
-                    <option value="home">{t('admin.msgGameHome')}</option>
-                    <option value="away">{t('admin.msgGameAway')}</option>
-                  </select>
-                </label>
-              </>
-            )}
-            <label className="block text-sm sm:col-span-2">
-              <span className="font-medium text-slate-700">{t('admin.msgLocation')}</span>
-              <input type="text" value={location} onChange={e => setLocation(e.target.value)}
-                placeholder="Sunset Park, field 3"
-                className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
-            </label>
-            <label className="block text-sm sm:col-span-2">
-              <span className="font-medium text-slate-700">{t('admin.msgPracticeLabel')}</span>
-              <input type="text" value={summary} onChange={e => setSummary(e.target.value)}
-                placeholder={editingKind === 'game' ? 'Game' : 'Practice'}
-                className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
-            </label>
-            <div className="sm:col-span-2 flex items-center gap-3 pt-2">
-              <button type="submit"
-                className="bg-emerald-700 text-white text-sm font-semibold px-4 py-2 rounded-md hover:bg-emerald-800">
-                {editingId === 'new-practice' ? t('admin.msgAddPractice') :
-                 editingId === 'new-game' ? t('admin.msgAddGame') :
-                 t('admin.msgSave')}
-              </button>
-              <button type="button" onClick={() => setEditingId(null)}
-                className="text-sm text-slate-600 hover:underline">{t('admin.msgCancel')}</button>
-            </div>
-          </form>
-        )}
-
-        {editingId === 'series' && (
-          <form onSubmit={save} className="border border-slate-200 rounded p-3 grid sm:grid-cols-2 gap-2 mb-3">
-            <label className="block text-sm">
-              <span className="font-medium text-slate-700">{t('admin.msgSeriesStartDate')}</span>
-              <input type="date" value={seriesStartDate} onChange={e => setSeriesStartDate(e.target.value)}
-                className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
-            </label>
-            <label className="block text-sm">
-              <span className="font-medium text-slate-700">{t('admin.msgSeriesEndDate')}</span>
-              <input type="date" value={seriesEndDate} onChange={e => setSeriesEndDate(e.target.value)}
-                className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
-            </label>
-            <label className="block text-sm">
-              <span className="font-medium text-slate-700">{t('admin.msgSeriesStartTime')}</span>
-              <input type="time" value={seriesStartTime} onChange={e => setSeriesStartTime(e.target.value)}
-                className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
-            </label>
-            <label className="block text-sm">
-              <span className="font-medium text-slate-700">{t('admin.msgSeriesEndTime')}</span>
-              <input type="time" value={seriesEndTime} onChange={e => setSeriesEndTime(e.target.value)}
-                className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
-            </label>
-            <div className="sm:col-span-2">
-              <span className="block text-sm font-medium text-slate-700 mb-1">{t('admin.msgSeriesDays')}</span>
-              <div className="flex flex-wrap gap-1">
-                {[
-                  { d: 0, label: t('admin.msgDaySun') },
-                  { d: 1, label: t('admin.msgDayMon') },
-                  { d: 2, label: t('admin.msgDayTue') },
-                  { d: 3, label: t('admin.msgDayWed') },
-                  { d: 4, label: t('admin.msgDayThu') },
-                  { d: 5, label: t('admin.msgDayFri') },
-                  { d: 6, label: t('admin.msgDaySat') },
-                ].map(({ d, label }) => (
-                  <button key={d} type="button" onClick={() => toggleDay(d)}
-                    className={`text-xs px-2 py-1 rounded border ${seriesDays.has(d) ? 'bg-emerald-700 text-white border-emerald-700' : 'bg-white border-slate-300 text-slate-700'}`}>
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <label className="block text-sm sm:col-span-2">
-              <span className="font-medium text-slate-700">{t('admin.msgLocation')}</span>
-              <input type="text" value={location} onChange={e => setLocation(e.target.value)}
-                placeholder="Sunset Park, field 3"
-                className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
-            </label>
-            <label className="block text-sm sm:col-span-2">
-              <span className="font-medium text-slate-700">{t('admin.msgPracticeLabel')}</span>
-              <input type="text" value={summary} onChange={e => setSummary(e.target.value)}
-                placeholder="Practice"
-                className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
-            </label>
-            <div className="sm:col-span-2 flex items-center gap-3 pt-2">
-              <button type="submit"
-                className="bg-emerald-700 text-white text-sm font-semibold px-4 py-2 rounded-md hover:bg-emerald-800">
-                {t('admin.msgCreateSeries')}
-              </button>
-              <button type="button" onClick={() => setEditingId(null)}
-                className="text-sm text-slate-600 hover:underline">{t('admin.msgCancel')}</button>
-            </div>
-          </form>
-        )}
-
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-slate-500 border-b">
-              <th className="py-1 pr-4">{t('admin.msgWhen')}</th>
-              <th className="py-1 pr-4">{t('admin.msgKind')}</th>
-              <th className="py-1 pr-4">{t('admin.msgSummary')}</th>
-              <th className="py-1 pr-4">{t('admin.msgLocation')}</th>
-              <th className="py-1 pr-4"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {events.map(ev => {
-              const isGame = ev.kind === 0
-              const summary = isGame
-                ? (ev.opponentName ? `vs ${ev.opponentName}` : (ev.summary ?? 'Game'))
-                : (ev.summary ?? 'Practice')
-              const homeAway = isGame && ev.isHome === true ? ' (H)' : isGame && ev.isHome === false ? ' (A)' : ''
-              const kindBadgeClass = isGame ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'
-              return (
-                <tr key={ev.id} className={`border-b last:border-0 ${ev.isCancelled ? 'text-slate-400 line-through' : ''}`}>
-                  <td className="py-1 pr-4 whitespace-nowrap">{new Date(ev.startsAt).toLocaleString()}</td>
-                  <td className="py-1 pr-4 no-underline">
-                    <span className={`inline-block text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded ${kindBadgeClass}`}>
-                      {isGame ? t('admin.msgKindGame') : t('admin.msgKindPractice')}
-                    </span>
-                  </td>
-                  <td className="py-1 pr-4">
-                    {summary}{homeAway}
-                    {ev.seriesId && <span className="ml-2 inline-block text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 no-underline">{t('admin.msgSeriesBadge')}</span>}
-                    {ev.isCancelled && <span className="ml-2 inline-block text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 no-underline">{t('admin.msgCancelledBadge')}</span>}
-                  </td>
-                  <td className="py-1 pr-4">{ev.location ?? '—'}</td>
-                  <td className="py-1 pr-4 text-right whitespace-nowrap no-underline">
-                    {!ev.isCancelled && (
-                      <>
-                        <button onClick={() => startEdit(ev)}
-                          className="text-emerald-700 hover:underline">{t('admin.details')}</button>
-                        <span className="mx-2 text-slate-300">|</span>
-                        <button onClick={() => cancel(ev)}
-                          className="text-amber-700 hover:underline">{t('admin.msgCancelPractice')}</button>
-                        <span className="mx-2 text-slate-300">|</span>
-                        <button onClick={() => remove(ev)}
-                          className="text-rose-700 hover:underline">{t('admin.delete')}</button>
-                      </>
-                    )}
-                    {ev.isCancelled && (
-                      <button onClick={() => startNotify(ev)}
-                        className="text-emerald-700 hover:underline">{t('admin.msgNotifyParents')}</button>
-                    )}
-                  </td>
-                </tr>
-              )
-            })}
-            {events.length === 0 && (
-              <tr><td colSpan={5} className="py-3 text-center text-slate-400">{t('admin.msgScheduleEmpty')}</td></tr>
-            )}
-          </tbody>
-        </table>
-
-        {notifyState && (
-          <div className="mt-3 border border-amber-300 bg-amber-50 rounded p-3 space-y-2">
-            <div className="text-sm">
-              <strong>{t('admin.msgNotifyHeader', { count: notifyState.recipients.length })}</strong>
-              <div className="text-xs text-slate-600 mt-1">{t('admin.msgNotifyHelp')}</div>
-            </div>
-            <div className="grid md:grid-cols-2 gap-2">
-              <label className="block text-xs">
-                <span className="font-medium text-slate-700">English</span>
-                <textarea rows={3} value={notifyState.bodyEn}
-                  onChange={e => setNotifyState(s => s ? { ...s, bodyEn: e.target.value } : s)}
-                  className="mt-1 w-full border border-slate-300 rounded-md px-2 py-1 text-sm" />
-              </label>
-              <label className="block text-xs">
-                <span className="font-medium text-slate-700">Español</span>
-                <textarea rows={3} value={notifyState.bodyEs}
-                  onChange={e => setNotifyState(s => s ? { ...s, bodyEs: e.target.value } : s)}
-                  className="mt-1 w-full border border-slate-300 rounded-md px-2 py-1 text-sm" />
-              </label>
-            </div>
-            <div className="flex items-center gap-3">
-              <button onClick={sendNotify} disabled={sendingNotify}
-                className="bg-emerald-700 text-white text-sm font-semibold px-3 py-1.5 rounded-md hover:bg-emerald-800 disabled:opacity-60">
-                {sendingNotify ? t('admin.sending') : t('admin.msgSendCancellation')}
-              </button>
-              <button onClick={() => setNotifyState(null)}
-                className="text-sm text-slate-600 hover:underline">{t('admin.msgCancel')}</button>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-/** Format a UTC ISO string as a local-time value usable in &lt;input type="datetime-local"&gt;.
- *  datetime-local has no timezone; this strips to local YYYY-MM-DDTHH:mm. */
-function toDateTimeLocal(iso: string): string {
-  const d = new Date(iso)
-  const pad = (n: number) => n.toString().padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
-
 // --- Schedule helpers ----------------------------------------------------
 
 function formatGameOption(g: ScheduledGame): string {
@@ -2744,7 +2318,7 @@ function formatGameOption(g: ScheduledGame): string {
   }
   const homeAway = g.isHome === true ? ' (H)' : g.isHome === false ? ' (A)' : ''
   const label = g.opponentName ? `vs ${g.opponentName}` : (g.summary?.trim() || g.teamName)
-  return `${date} ${time}${homeAway} — ${label}${g.location ? ` @ ${g.location}` : ''}`
+  return `${date} ${time}${homeAway} â€” ${label}${g.location ? ` @ ${g.location}` : ''}`
 }
 
 /**
@@ -2768,7 +2342,7 @@ function pickTemplateForEvent(
 
 /**
  * Auto-fills both bodyEn and bodyEs with a full sentence derived from a picked game. Used by the
- * free-form Compose path where there's no template to slot values into — admin gets a complete
+ * free-form Compose path where there's no template to slot values into â€” admin gets a complete
  * draft they can tweak in the bilingual preview modal. Mirrors the same EN/ES wording the
  * canonical practice_or_game template uses so messages stay consistent across the two send modes.
  */
@@ -2791,7 +2365,7 @@ function applyGameToFreeForm(
                : game.isHome === false ? WEAR_AWAY[lang]
                : null
 
-    // Localized scaffolding ("on/at" → "el/en", "Wear:" → "Vestimenta:") so the free-form text
+    // Localized scaffolding ("on/at" â†’ "el/en", "Wear:" â†’ "Vestimenta:") so the free-form text
     // reads naturally in the recipient's language.
     if (lang === 1) {
       const main = where ? `${what} el ${when} en ${where}.` : `${what} el ${when}.`
@@ -2807,14 +2381,14 @@ function applyGameToFreeForm(
 
 /**
  * Auto-fills template variable inputs from a picked game. Matching is by label substring
- * (case-insensitive) — works for the canonical practice_or_game template (What/When/Where/wear)
+ * (case-insensitive) â€” works for the canonical practice_or_game template (What/When/Where/wear)
  * and is intentionally lenient so admins can rename labels without breaking the autofill.
  *
  * Specifically:
- *   - "what"  → "Game vs <opponent>" (or "Practice" when there's no opponent)
- *   - "when"  → locale-formatted date+time, in the template's language
- *   - "where" → game location string from GotSport (park + field)
- *   - "wear"  → home/away uniform per LVSS policy, in the template's language
+ *   - "what"  â†’ "Game vs <opponent>" (or "Practice" when there's no opponent)
+ *   - "when"  â†’ locale-formatted date+time, in the template's language
+ *   - "where" â†’ game location string from GotSport (park + field)
+ *   - "wear"  â†’ home/away uniform per LVSS policy, in the template's language
  */
 function applyGameToTemplate(
   game: ScheduledGame,
@@ -2853,185 +2427,43 @@ function applyGameToTemplate(
   })
 }
 
-// --- Teams tab -----------------------------------------------------------
+// --- Teams (roster messaging) tab ----------------------------------------
 
-function TeamsTab({
-  teams, curated, onChanged, onError, onNotice,
+function TeamMessagingTab({
+  teams, onMessageTeam,
 }: {
-  teams: TeamSummary[]
-  curated: MessageGroupSummary[]
-  onChanged: () => Promise<void> | void
-  onError: (e: string) => void
-  onNotice: (n: string) => void
+  teams: RosterTeamSummary[]
+  onMessageTeam: (dynamicGroupKey: string) => void
 }) {
   const { t } = useTranslation()
-  const [editingId, setEditingId] = useState<number | 'new' | null>(null)
-  const [name, setName] = useState('')
-  const [scheduleUrl, setScheduleUrl] = useState('')
-  const [messageGroupId, setMessageGroupId] = useState<number | ''>('')
-  const [detail, setDetail] = useState<TeamDetail | null>(null)
-  const [syncing, setSyncing] = useState(false)
-
-  const startNew = () => {
-    setEditingId('new'); setName(''); setScheduleUrl(''); setMessageGroupId(''); setDetail(null)
-  }
-  const startEdit = async (id: number) => {
-    try {
-      const d = await Api.getTeam(id)
-      setEditingId(id); setName(d.name)
-      setScheduleUrl(`https://system.gotsport.com/org_event/events/${d.gotSportEventId}/schedules?team=${d.gotSportTeamId}`)
-      setMessageGroupId(d.messageGroupId ?? ''); setDetail(d)
-    } catch (e: any) { onError(extractError(e)) }
-  }
-
-  const save = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!name.trim()) { onError('Team name is required.'); return }
-    if (!scheduleUrl.trim()) { onError('GotSport schedule URL is required.'); return }
-    try {
-      const payload = {
-        name: name.trim(),
-        scheduleUrl: scheduleUrl.trim(),
-        messageGroupId: messageGroupId === '' ? null : Number(messageGroupId),
-      }
-      const saved = (editingId === 'new' || editingId === null)
-        ? await Api.createTeam(payload)
-        : await Api.updateTeam(editingId, payload)
-      await onChanged()
-      onNotice(`Saved team "${saved.name}".`)
-      setEditingId(saved.id)
-      // Reload detail so user can sync right away.
-      const d = await Api.getTeam(saved.id)
-      setDetail(d)
-    } catch (e: any) { onError(extractError(e)) }
-  }
-
-  const remove = async () => {
-    if (typeof editingId !== 'number') return
-    if (!confirm(`Delete team "${name}"? Synced games are removed too. Past broadcasts are unaffected.`)) return
-    try {
-      await Api.deleteTeam(editingId)
-      setEditingId(null); setDetail(null)
-      await onChanged()
-    } catch (e: any) { onError(extractError(e)) }
-  }
-
-  const sync = async () => {
-    if (typeof editingId !== 'number') return
-    setSyncing(true); onError(''); onNotice('')
-    try {
-      const r = await Api.syncTeam(editingId)
-      onNotice(r.message)
-      await onChanged()
-      const d = await Api.getTeam(editingId)
-      setDetail(d)
-    } catch (e: any) {
-      onError(extractError(e))
-    } finally { setSyncing(false) }
-  }
-
+  const rostered = teams.filter(tm => tm.rosterCount > 0)
   return (
-    <div className="grid lg:grid-cols-3 gap-4">
-      <section className="bg-white border border-slate-200 rounded-lg p-4 lg:col-span-1 space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="font-bold text-emerald-800">{t('admin.msgTeamsHeader')}</h2>
-          <button onClick={startNew} className="text-sm text-emerald-700 hover:underline">+ {t('admin.msgNewTeam')}</button>
-        </div>
-        <ul className="space-y-1">
-          {teams.map(team => (
-            <li key={team.id}>
-              <button onClick={() => startEdit(team.id)}
-                className={`w-full text-left px-2 py-1.5 rounded text-sm hover:bg-emerald-50 ${editingId === team.id ? 'bg-emerald-50 text-emerald-800 font-medium' : ''}`}>
-                <div>{team.name}</div>
-                <div className="text-xs text-slate-500">
-                  {team.upcomingGameCount} {t('admin.msgUpcomingGames')}
-                  {team.messageGroupName && <> · {team.messageGroupName}</>}
-                </div>
-              </button>
-            </li>
-          ))}
-          {teams.length === 0 && <li className="text-sm text-slate-400">{t('admin.msgNoTeams')}</li>}
-        </ul>
-        <p className="text-xs text-slate-500">{t('admin.msgTeamsHint')}</p>
-      </section>
-
-      <section className="lg:col-span-2 space-y-4">
-        {editingId === null && (
-          <div className="bg-white border border-dashed border-slate-300 rounded-lg p-8 text-center text-sm text-slate-500">
-            {t('admin.msgSelectTeam')}
-          </div>
-        )}
-        {editingId !== null && (
-          <form onSubmit={save} className="bg-white border border-slate-200 rounded-lg p-4 space-y-3">
-            <div className="grid sm:grid-cols-2 gap-3">
-              <label className="block text-sm">
-                <span className="font-medium text-slate-700">{t('admin.msgTeamName')}</span>
-                <input type="text" value={name} onChange={e => setName(e.target.value)}
-                  placeholder="U10 Boys"
-                  className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
-              </label>
-              <label className="block text-sm">
-                <span className="font-medium text-slate-700">{t('admin.msgTeamGroup')}</span>
-                <select value={messageGroupId}
-                  onChange={e => setMessageGroupId(e.target.value === '' ? '' : Number(e.target.value))}
-                  className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm">
-                  <option value="">— {t('admin.msgTeamGroupNone')} —</option>
-                  {curated.map(g => (
-                    <option key={g.id} value={g.id}>{g.name} ({g.memberCount})</option>
-                  ))}
-                </select>
-              </label>
+    <div className="bg-white border border-slate-200 rounded-lg p-5 space-y-4">
+      <div>
+        <h2 className="font-bold text-emerald-800">{t('admin.msgTeamsMsgHeader')}</h2>
+        <p className="text-sm text-slate-600 mt-1">{t('admin.msgTeamsMsgHint')}</p>
+      </div>
+      <ul className="divide-y divide-slate-100">
+        {rostered.map(tm => (
+          <li key={tm.id} className="py-3 flex items-center justify-between gap-3">
+            <div>
+              <div className="font-medium text-slate-800">{tm.name}</div>
+              <div className="text-xs text-slate-500">{t('admin.teamRosterCount', { count: tm.rosterCount })}</div>
             </div>
-            <label className="block text-sm">
-              <span className="font-medium text-slate-700">{t('admin.msgTeamScheduleUrl')}</span>
-              <input type="url" value={scheduleUrl} onChange={e => setScheduleUrl(e.target.value)}
-                placeholder="https://system.gotsport.com/org_event/events/48082/schedules?team=3764244"
-                className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm font-mono" />
-              <span className="block text-xs text-slate-500 mt-1">{t('admin.msgTeamScheduleUrlHelp')}</span>
-            </label>
-
-            <div className="flex items-center gap-3 pt-2 border-t border-slate-100">
-              <button type="submit"
-                className="bg-emerald-700 text-white text-sm font-semibold px-4 py-2 rounded-md hover:bg-emerald-800">
-                {editingId === 'new' ? t('admin.msgCreateTeam') : t('admin.msgSave')}
-              </button>
-              {typeof editingId === 'number' && (
-                <>
-                  <button type="button" onClick={sync} disabled={syncing}
-                    className="text-sm border border-emerald-300 text-emerald-700 rounded-md px-3 py-1.5 hover:bg-emerald-50 disabled:opacity-60">
-                    {syncing ? t('admin.msgSyncing') : t('admin.msgSyncNow')}
-                  </button>
-                  <button type="button" onClick={remove}
-                    className="text-sm border border-rose-300 text-rose-700 rounded-md px-3 py-1.5 hover:bg-rose-50">
-                    {t('admin.delete')}
-                  </button>
-                </>
-              )}
-              <button type="button" onClick={() => { setEditingId(null); setDetail(null) }}
-                className="text-sm text-slate-600 hover:underline ml-auto">{t('admin.msgCancel')}</button>
-            </div>
-            {detail?.lastSyncedAt && (
-              <p className="text-xs text-slate-500">
-                {t('admin.msgLastSynced')}: {new Date(detail.lastSyncedAt).toLocaleString()} — {detail.lastSyncMessage}
-              </p>
-            )}
-          </form>
+            <button
+              onClick={() => onMessageTeam(`team-${tm.id}`)}
+              className="bg-emerald-700 text-white text-sm font-semibold px-3 py-1.5 rounded-md hover:bg-emerald-800">
+              {t('admin.msgMessageThisTeam')}
+            </button>
+          </li>
+        ))}
+        {rostered.length === 0 && (
+          <li className="py-4 text-sm text-slate-400">
+            {t('admin.msgNoRosterTeams')}{' '}
+            <Link to="/admin/teams" className="text-emerald-700 hover:underline">{t('admin.teamsTitle')}</Link>
+          </li>
         )}
-
-        {detail && (
-          <TeamScheduleSection
-            teamId={detail.id}
-            games={detail.upcomingGames}
-            onChanged={async () => {
-              // Reload the team detail so the upcoming list reflects the new/edited/deleted practice.
-              const d = await Api.getTeam(detail.id)
-              setDetail(d)
-            }}
-            onError={onError}
-            onNotice={onNotice}
-          />
-        )}
-      </section>
+      </ul>
     </div>
   )
 }
@@ -3091,7 +2523,7 @@ function BilingualPreviewModal({
           <h2 className="text-lg font-bold text-emerald-800">
             {step === 'edit' ? t('admin.msgPreviewStep1Title') : t('admin.msgPreviewStep2Title')}
           </h2>
-          <button onClick={onCancel} className="text-sm text-slate-500 hover:text-slate-700">✕</button>
+          <button onClick={onCancel} className="text-sm text-slate-500 hover:text-slate-700">âœ•</button>
         </div>
         <p className="text-sm text-slate-600">
           {step === 'edit' ? t('admin.msgPreviewStep1Help') : t('admin.msgPreviewStep2Help')}
@@ -3114,7 +2546,7 @@ function BilingualPreviewModal({
                 maxLength={2000}
                 className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
             ) : (
-              <pre className="w-full border border-slate-200 bg-slate-50 rounded-md px-3 py-2 text-sm whitespace-pre-wrap min-h-[8rem]">{bodyEn || '—'}</pre>
+              <pre className="w-full border border-slate-200 bg-slate-50 rounded-md px-3 py-2 text-sm whitespace-pre-wrap min-h-[8rem]">{bodyEn || 'â€”'}</pre>
             )}
           </div>
           <div>
@@ -3133,7 +2565,7 @@ function BilingualPreviewModal({
                 maxLength={2000}
                 className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
             ) : (
-              <pre className="w-full border border-slate-200 bg-slate-50 rounded-md px-3 py-2 text-sm whitespace-pre-wrap min-h-[8rem]">{bodyEs || '—'}</pre>
+              <pre className="w-full border border-slate-200 bg-slate-50 rounded-md px-3 py-2 text-sm whitespace-pre-wrap min-h-[8rem]">{bodyEs || 'â€”'}</pre>
             )}
           </div>
         </div>
@@ -3149,10 +2581,10 @@ function BilingualPreviewModal({
               <select value={defaultLang} onChange={e => onDefaultLangChange(Number(e.target.value) as Language)}
                 className="border border-slate-300 rounded-md px-2 py-1 text-sm">
                 <option value={0}>English</option>
-                <option value={1}>Español</option>
+                <option value={1}>EspaÃ±ol</option>
               </select>
             ) : (
-              <span className="text-slate-700">{defaultLang === 1 ? 'Español' : 'English'}</span>
+              <span className="text-slate-700">{defaultLang === 1 ? 'EspaÃ±ol' : 'English'}</span>
             )}
             <span className="ml-2 text-xs text-slate-500">{t('admin.msgDefaultLangHelp')}</span>
           </div>
@@ -3206,7 +2638,7 @@ function TemplatePreviewModal({
 
   // Backend renders both sides so the "Spanish recipient gets English template with translated
   // values" fallback shows what will actually deliver. Single source of truth for what the
-  // recipient sees — no client-side guessing.
+  // recipient sees â€” no client-side guessing.
   useEffect(() => {
     let cancelled = false
     Api.templatePreview({ templateId: template.id, values })
@@ -3215,7 +2647,7 @@ function TemplatePreviewModal({
     return () => { cancelled = true }
   }, [template.id, values])
 
-  const langLabel = (lang: Language) => lang === 1 ? 'Español' : 'English'
+  const langLabel = (lang: Language) => lang === 1 ? 'EspaÃ±ol' : 'English'
 
   const renderSide = (side: TemplatePreviewSide) => {
     const sourceLabel =
@@ -3231,11 +2663,11 @@ function TemplatePreviewModal({
       <div>
         <div className="flex items-center justify-between mb-1">
           <div className="text-xs font-medium text-slate-700">
-            {langLabel(side.language)} <span className="text-slate-400">— {side.templateName}</span>
+            {langLabel(side.language)} <span className="text-slate-400">â€” {side.templateName}</span>
           </div>
           <span className={`text-[10px] uppercase tracking-wide px-2 py-0.5 rounded border ${sourceClass}`}>{sourceLabel}</span>
         </div>
-        <pre className="w-full border border-slate-200 bg-slate-50 rounded-md px-3 py-2 text-sm whitespace-pre-wrap min-h-[6rem]">{side.rendered ?? '—'}</pre>
+        <pre className="w-full border border-slate-200 bg-slate-50 rounded-md px-3 py-2 text-sm whitespace-pre-wrap min-h-[6rem]">{side.rendered ?? 'â€”'}</pre>
         {side.source === 1 && side.values && (
           <details className="mt-1 text-xs text-slate-500">
             <summary className="cursor-pointer hover:underline">{t('admin.msgPreviewTranslatedValuesUsed')}</summary>
@@ -3257,7 +2689,7 @@ function TemplatePreviewModal({
       <div className="bg-white rounded-lg shadow-xl max-w-5xl w-full mt-10 p-6 space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-bold text-emerald-800">{t('admin.msgTemplateSendPreviewTitle')}</h2>
-          <button onClick={onCancel} className="text-sm text-slate-500 hover:text-slate-700">✕</button>
+          <button onClick={onCancel} className="text-sm text-slate-500 hover:text-slate-700">âœ•</button>
         </div>
         <p className="text-sm text-slate-600">{t('admin.msgTemplateSendPreviewHelp')}</p>
 
