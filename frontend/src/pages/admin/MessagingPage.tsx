@@ -40,7 +40,7 @@ const WEAR_AWAY: Record<Language, string> = {
   1: 'todo azul',
 }
 const GAME_VS_PREFIX: Record<Language, string> = { 0: 'Game vs', 1: 'Partido vs' }
-const PRACTICE_FALLBACK: Record<Language, string> = { 0: 'Practice', 1: 'PrÃ¡ctica' }
+const PRACTICE_FALLBACK: Record<Language, string> = { 0: 'Practice', 1: 'Práctica' }
 import {
   MESSAGE_CHANNEL_LABELS,
   MESSAGE_DELIVERY_LABELS,
@@ -54,7 +54,7 @@ type ComposeBodyMode = 'free-form' | 'template'
 export function AdminMessagingPage() {
   const { t } = useTranslation()
 
-  // Capabilities â€” driven by what's configured on the server.
+  // Capabilities — driven by what's configured on the server.
   const [config, setConfig] = useState<MessagingConfig | null>(null)
 
   // Tab state
@@ -121,7 +121,7 @@ export function AdminMessagingPage() {
     <Layout>
       <div className="max-w-6xl mx-auto px-4 py-10 space-y-6">
         <div>
-          <Link to="/admin" className="text-sm text-emerald-700 hover:underline">â† {t('admin.backToHub')}</Link>
+          <Link to="/admin" className="text-sm text-emerald-700 hover:underline">← {t('admin.backToHub')}</Link>
           <h1 className="text-3xl font-bold text-emerald-800 mt-2">{t('admin.messagingTitle')}</h1>
           <p className="text-sm text-slate-600 mt-1">{t('admin.messagingSubtitle')}</p>
         </div>
@@ -321,7 +321,7 @@ function ComposeTab({
   const isEmailChannel = channel === 2
 
   // True once the admin has put anything into the recipient picker. Used to suppress the game
-  // picker's auto-flip to the linked group â€” if the admin already picked an individual/group/list,
+  // picker's auto-flip to the linked group — if the admin already picked an individual/group/list,
   // we shouldn't silently override that just because they want the game's variables autofilled.
   const hasRecipientInput = () =>
     phone.trim() !== '' ||
@@ -344,7 +344,7 @@ function ComposeTab({
 
   const target = () => {
     if (recipientMode === 'individual') {
-      // For email channel, route through ad-hoc list so we can carry the email â€” the Individual
+      // For email channel, route through ad-hoc list so we can carry the email — the Individual
       // target only carries a phone.
       if (isEmailChannel) {
         return {
@@ -544,7 +544,7 @@ function ComposeTab({
         {recipientMode === 'curated' && (
           <select value={customGroupId} onChange={e => setCustomGroupId(e.target.value === '' ? '' : Number(e.target.value))}
             className="border border-slate-300 rounded-md px-3 py-2 text-sm w-full sm:w-96">
-            <option value="">â€” {t('admin.msgPickGroup')} â€”</option>
+            <option value="">— {t('admin.msgPickGroup')} —</option>
             {curated.map(g => (
               <option key={g.id} value={g.id}>{g.name} ({g.memberCount})</option>
             ))}
@@ -553,7 +553,7 @@ function ComposeTab({
         {recipientMode === 'dynamic' && (
           <select value={dynamicKey} onChange={e => setDynamicKey(e.target.value)}
             className="border border-slate-300 rounded-md px-3 py-2 text-sm w-full sm:w-96">
-            <option value="">â€” {t('admin.msgPickGroup')} â€”</option>
+            <option value="">— {t('admin.msgPickGroup')} —</option>
             {dynamicGroups.map(d => (
               <option key={d.key} value={d.key}>{d.label} ({d.count})</option>
             ))}
@@ -616,7 +616,7 @@ function ComposeTab({
                   setTemplateValues({})
                 }}
                 className="border border-slate-300 rounded-md px-3 py-2 text-sm w-full sm:w-96">
-                <option value="">â€” {t('admin.msgPickTemplate')} â€”</option>
+                <option value="">— {t('admin.msgPickTemplate')} —</option>
                 {emailTemplates.map(tpl => (
                   <option key={tpl.id} value={tpl.id}>
                     {tpl.name} ({tpl.language === 1 ? 'ES' : 'EN'})
@@ -637,7 +637,7 @@ function ComposeTab({
                 setTemplateValues({})
               }}
               className="border border-slate-300 rounded-md px-3 py-2 text-sm w-full sm:w-96">
-              <option value="">â€” {t('admin.msgPickTemplate')} â€”</option>
+              <option value="">— {t('admin.msgPickTemplate')} —</option>
               {templates.map(tpl => (
                 <option key={tpl.id} value={tpl.id}>
                   {tpl.name} ({tpl.language === 1 ? 'ES' : 'EN'})
@@ -658,7 +658,7 @@ function ComposeTab({
                   if (!gameId) return
                   const g = upcomingGames.find(x => x.id === gameId)
                   if (!g) return
-                  // Auto-select a template by Kind (Practice â†’ practice_*, Game â†’ game_*) if the
+                  // Auto-select a template by Kind (Practice → practice_*, Game → game_*) if the
                   // admin hasn't already picked one, so a single dropdown pick fills variables AND
                   // wires the right template. Use the freshly-picked template for the autofill so
                   // we don't race the React state update.
@@ -673,7 +673,7 @@ function ComposeTab({
                   if (activeTemplate) {
                     applyGameToTemplate(g, activeTemplate, setTemplateValues)
                   }
-                  // Record event-id on this compose state so the broadcast links back to it â€”
+                  // Record event-id on this compose state so the broadcast links back to it —
                   // unlocks the cancellation-notification flow finding "who got reminded".
                   setPickedEventId(g.id)
                   // Auto-target the team's linked group only when the admin hasn't already picked
@@ -685,7 +685,7 @@ function ComposeTab({
                   }
                 }}
                 className="border border-slate-300 rounded-md px-3 py-2 text-sm w-full sm:w-96">
-                <option value="">â€” {t('admin.msgPickGameHint')} â€”</option>
+                <option value="">— {t('admin.msgPickGameHint')} —</option>
                 {upcomingGames.map(g => (
                   <option key={g.id} value={g.id}>{formatGameOption(g)}</option>
                 ))}
@@ -764,7 +764,7 @@ function ComposeTab({
                   }
                 }}
                 className="border border-slate-300 rounded-md px-3 py-2 text-sm w-full sm:w-96">
-                <option value="">â€” {t('admin.msgPickGameHint')} â€”</option>
+                <option value="">— {t('admin.msgPickGameHint')} —</option>
                 {upcomingGames.map(g => (
                   <option key={g.id} value={g.id}>{formatGameOption(g)}</option>
                 ))}
@@ -788,7 +788,7 @@ function ComposeTab({
               maxLength={isEmailChannel ? 8000 : 2000}
               placeholder={t('admin.msgBodyPlaceholder')}
               className="border border-slate-300 rounded-md px-3 py-2 text-sm w-full" />
-            <p className="mt-1 text-xs text-slate-500">{bodyEn.length} / {isEmailChannel ? 8000 : 2000} Â· {t('admin.msgBodyHint')}</p>
+            <p className="mt-1 text-xs text-slate-500">{bodyEn.length} / {isEmailChannel ? 8000 : 2000} · {t('admin.msgBodyHint')}</p>
           </div>
         </div>
       )}
@@ -886,7 +886,7 @@ function GroupsTab({
       })
       await loadGroup(selected.id)
       await onChanged()
-      onNotice(`Group language set to ${lang === 1 ? 'EspaÃ±ol' : 'English'}.`)
+      onNotice(`Group language set to ${lang === 1 ? 'Español' : 'English'}.`)
     } catch (e: any) { onError(extractError(e)) }
   }
 
@@ -1048,9 +1048,9 @@ function GroupsTab({
               <tbody>
                 {selected.members.map(m => (
                   <tr key={m.id} className="border-b last:border-0">
-                    <td className="py-2 pr-4">{m.name ?? 'â€”'}</td>
+                    <td className="py-2 pr-4">{m.name ?? '—'}</td>
                     <td className="py-2 pr-4">{m.phone}</td>
-                    <td className="py-2 pr-4">{m.email ?? 'â€”'}</td>
+                    <td className="py-2 pr-4">{m.email ?? '—'}</td>
                     <td className="py-2 pr-4">
                       <select value={m.language}
                         onChange={e => setMemberLang(m.id, Number(e.target.value) as Language)}
@@ -1066,7 +1066,7 @@ function GroupsTab({
                   </tr>
                 ))}
                 {selected.members.length === 0 && (
-                  <tr><td colSpan={5} className="py-4 text-center text-slate-400">â€”</td></tr>
+                  <tr><td colSpan={5} className="py-4 text-center text-slate-400">—</td></tr>
                 )}
               </tbody>
             </table>
@@ -1136,7 +1136,7 @@ function ConversationsTab({
     )
   }
 
-  // Suppress unused-var warnings for now â€” curated/dynamicGroups are wired to ComposeTab,
+  // Suppress unused-var warnings for now — curated/dynamicGroups are wired to ComposeTab,
   // but we keep them here so future "add existing group to conversation" can reuse them.
   void curated; void dynamicGroups
 
@@ -1151,7 +1151,7 @@ function ConversationsTab({
                 className={`w-full text-left px-2 py-1.5 rounded text-sm hover:bg-emerald-50 ${selected?.id === c.id ? 'bg-emerald-50 text-emerald-800 font-medium' : ''}`}>
                 <div>{c.title}</div>
                 <div className="text-xs text-slate-500">
-                  {MESSAGE_CHANNEL_LABELS[c.channel]} Â· {c.participantCount} {t('admin.msgMembers')}
+                  {MESSAGE_CHANNEL_LABELS[c.channel]} · {c.participantCount} {t('admin.msgMembers')}
                 </div>
               </button>
             </li>
@@ -1172,7 +1172,7 @@ function ConversationsTab({
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h2 className="font-bold text-emerald-800">{selected.title}</h2>
-                <p className="text-xs text-slate-500">{MESSAGE_CHANNEL_LABELS[selected.channel]} Â· {selected.twilioConversationSid}</p>
+                <p className="text-xs text-slate-500">{MESSAGE_CHANNEL_LABELS[selected.channel]} · {selected.twilioConversationSid}</p>
               </div>
               <button onClick={remove}
                 className="text-sm border border-rose-300 text-rose-700 rounded-md px-2 py-1 hover:bg-rose-50">
@@ -1201,7 +1201,7 @@ function ConversationsTab({
               <tbody>
                 {selected.participants.map(p => (
                   <tr key={p.id} className="border-b last:border-0">
-                    <td className="py-2 pr-4">{p.name ?? 'â€”'}</td>
+                    <td className="py-2 pr-4">{p.name ?? '—'}</td>
                     <td className="py-2 pr-4">{p.phone}</td>
                     <td className="py-2 pr-4 text-right">
                       <button onClick={() => removeParticipant(p.id)}
@@ -1288,7 +1288,7 @@ function InboxTab({
       <section className="bg-white border border-slate-200 rounded-lg p-4 lg:col-span-1">
         <div className="flex items-center justify-between mb-2">
           <h2 className="font-bold text-emerald-800">{t('admin.msgInboxHeader')}</h2>
-          <button onClick={refresh} className="text-sm text-emerald-700 hover:underline">â†»</button>
+          <button onClick={refresh} className="text-sm text-emerald-700 hover:underline">↻</button>
         </div>
         <ul className="space-y-1 max-h-[60vh] overflow-y-auto">
           {threads.map(thr => (
@@ -1306,7 +1306,7 @@ function InboxTab({
                 <div className="text-xs text-slate-500 font-mono">{thr.phone}</div>
                 {thr.lastBody && (
                   <div className="text-xs text-slate-600 line-clamp-2 mt-0.5">
-                    <span className="text-slate-400">{thr.lastDirection === 0 ? 'â† ' : 'â†’ '}</span>
+                    <span className="text-slate-400">{thr.lastDirection === 0 ? '← ' : '→ '}</span>
                     {thr.lastBody}
                   </div>
                 )}
@@ -1340,7 +1340,7 @@ function InboxTab({
                   </div>
                 )}
               </div>
-              <button onClick={() => openThread(selectedPhone)} className="text-sm text-emerald-700 hover:underline">â†»</button>
+              <button onClick={() => openThread(selectedPhone)} className="text-sm text-emerald-700 hover:underline">↻</button>
             </div>
 
             <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2 bg-slate-50" style={{ maxHeight: '50vh' }}>
@@ -1350,11 +1350,11 @@ function InboxTab({
                   <div className={`max-w-[75%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap break-words ${m.direction === 1
                     ? 'bg-emerald-600 text-white'
                     : 'bg-white border border-slate-200 text-slate-800'}`}>
-                    <div>{m.body || 'â€”'}</div>
+                    <div>{m.body || '—'}</div>
                     <div className={`text-[10px] mt-1 ${m.direction === 1 ? 'text-emerald-100' : 'text-slate-400'}`}>
-                      {MESSAGE_CHANNEL_LABELS[m.channel]} Â· {new Date(m.at).toLocaleString()}
+                      {MESSAGE_CHANNEL_LABELS[m.channel]} · {new Date(m.at).toLocaleString()}
                       {m.direction === 1 && m.status !== null && m.status !== undefined && (
-                        <span> Â· {MESSAGE_DELIVERY_LABELS[m.status]}</span>
+                        <span> · {MESSAGE_DELIVERY_LABELS[m.status]}</span>
                       )}
                     </div>
                   </div>
@@ -1536,7 +1536,7 @@ function MonthlyFeeTab({
           className="bg-emerald-700 text-white text-sm font-semibold px-4 py-2 rounded-md hover:bg-emerald-800 disabled:opacity-50">
           {sending ? t('admin.sending') : t('admin.monthlyFeeSendButton', { count: preview?.recipientCount ?? 0 })}
         </button>
-        <button type="button" onClick={refresh} className="text-sm text-emerald-700 hover:underline">â†» {t('admin.refresh')}</button>
+        <button type="button" onClick={refresh} className="text-sm text-emerald-700 hover:underline">↻ {t('admin.refresh')}</button>
       </div>
     </div>
   )
@@ -1697,7 +1697,7 @@ function HistoryTab({
     <section className="bg-white border border-slate-200 rounded-lg p-4">
       <div className="flex items-center justify-between">
         <h2 className="font-bold text-emerald-800">{t('admin.msgHistoryHeader')}</h2>
-        <button onClick={onRefresh} className="text-sm text-emerald-700 hover:underline">â†»</button>
+        <button onClick={onRefresh} className="text-sm text-emerald-700 hover:underline">↻</button>
       </div>
       <table className="w-full text-sm mt-3">
         <thead>
@@ -1716,11 +1716,11 @@ function HistoryTab({
               <tr className="border-b last:border-0 align-top">
                 <td className="py-2 pr-4 whitespace-nowrap text-slate-500">{new Date(b.createdAt).toLocaleString()}</td>
                 <td className="py-2 pr-4">{MESSAGE_CHANNEL_LABELS[b.channel]}</td>
-                <td className="py-2 pr-4">{b.targetLabel ?? 'â€”'}</td>
+                <td className="py-2 pr-4">{b.targetLabel ?? '—'}</td>
                 <td className="py-2 pr-4 text-xs">
-                  <span className="text-emerald-700">âœ“{b.delivered}</span>{' '}
-                  <span className="text-slate-500">â€¦{b.queued}</span>{' '}
-                  <span className="text-rose-700">âœ•{b.failed}</span>{' '}
+                  <span className="text-emerald-700">✓{b.delivered}</span>{' '}
+                  <span className="text-slate-500">…{b.queued}</span>{' '}
+                  <span className="text-rose-700">✕{b.failed}</span>{' '}
                   <span className="text-slate-400">/{b.total}</span>
                 </td>
                 <td className="py-2 pr-4 max-w-md">
@@ -1748,7 +1748,7 @@ function HistoryTab({
                       <tbody>
                         {expanded.recipients.map(r => (
                           <tr key={r.id}>
-                            <td className="py-1 pr-4">{r.name ?? 'â€”'}</td>
+                            <td className="py-1 pr-4">{r.name ?? '—'}</td>
                             <td className="py-1 pr-4">{r.phone}</td>
                             <td className="py-1 pr-4">{MESSAGE_DELIVERY_LABELS[r.status]}</td>
                             <td className="py-1 pr-4 text-slate-500">{r.statusMessage ?? ''}</td>
@@ -1762,7 +1762,7 @@ function HistoryTab({
             </Fragment>
           ))}
           {broadcasts.length === 0 && (
-            <tr><td colSpan={6} className="py-4 text-center text-slate-400">â€”</td></tr>
+            <tr><td colSpan={6} className="py-4 text-center text-slate-400">—</td></tr>
           )}
         </tbody>
       </table>
@@ -1770,7 +1770,7 @@ function HistoryTab({
       <div className="mt-6">
         <div className="flex items-center justify-between mb-2">
           <h3 className="font-medium text-slate-700">{t('admin.msgInboundHeader')}</h3>
-          <button onClick={refreshBoth} className="text-sm text-emerald-700 hover:underline">â†»</button>
+          <button onClick={refreshBoth} className="text-sm text-emerald-700 hover:underline">↻</button>
         </div>
         <p className="text-xs text-slate-500 mb-2">{t('admin.msgInboundHelp')}</p>
         <table className="w-full text-sm">
@@ -1789,11 +1789,11 @@ function HistoryTab({
                 <td className="py-2 pr-4 whitespace-nowrap text-slate-500">{new Date(m.receivedAt).toLocaleString()}</td>
                 <td className="py-2 pr-4">{MESSAGE_CHANNEL_LABELS[m.channel]}</td>
                 <td className="py-2 pr-4 font-mono text-xs">{m.fromPhone}</td>
-                <td className="py-2 pr-4 max-w-xl whitespace-pre-wrap break-words">{m.body ?? 'â€”'}</td>
+                <td className="py-2 pr-4 max-w-xl whitespace-pre-wrap break-words">{m.body ?? '—'}</td>
                 <td className="py-2 pr-4 max-w-xs text-xs text-slate-500">
                   {m.broadcastId
-                    ? (<><span className="text-slate-700 font-medium">#{m.broadcastId}</span>{m.broadcastSummary ? <> Â· <span className="line-clamp-2">{m.broadcastSummary}</span></> : null}</>)
-                    : <span className="text-slate-400">â€”</span>}
+                    ? (<><span className="text-slate-700 font-medium">#{m.broadcastId}</span>{m.broadcastSummary ? <> · <span className="line-clamp-2">{m.broadcastSummary}</span></> : null}</>)
+                    : <span className="text-slate-400">—</span>}
                 </td>
               </tr>
             ))}
@@ -1952,7 +1952,7 @@ function TemplatesTab({
                 <select value={language} onChange={e => setLanguage(Number(e.target.value) as Language)}
                   className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm">
                   <option value={0}>English</option>
-                  <option value={1}>EspaÃ±ol</option>
+                  <option value={1}>Español</option>
                 </select>
               </label>
               <label className="block text-sm">
@@ -1990,7 +1990,7 @@ function TemplatesTab({
                     onChange={e => updateVar(idx, { example: e.target.value })}
                     className="border border-slate-300 rounded-md px-2 py-1 text-sm" />
                   <button type="button" onClick={() => removeVar(idx)}
-                    className="text-rose-700 text-sm">âœ•</button>
+                    className="text-rose-700 text-sm">✕</button>
                 </div>
               ))}
             </div>
@@ -2138,7 +2138,7 @@ function EmailTemplatesSection({
                 <select value={language} onChange={e => setLanguage(Number(e.target.value) as Language)}
                   className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm">
                   <option value={0}>English</option>
-                  <option value={1}>EspaÃ±ol</option>
+                  <option value={1}>Español</option>
                 </select>
               </label>
               <label className="block text-sm sm:col-span-2">
@@ -2183,7 +2183,7 @@ function EmailTemplatesSection({
                     onChange={e => updateVar(idx, { example: e.target.value })}
                     className="border border-slate-300 rounded-md px-2 py-1 text-sm" />
                   <button type="button" onClick={() => removeVar(idx)}
-                    className="text-rose-700 text-sm">âœ•</button>
+                    className="text-rose-700 text-sm">✕</button>
                 </div>
               ))}
             </div>
@@ -2284,7 +2284,7 @@ function formatGameOption(g: ScheduledGame): string {
   }
   const homeAway = g.isHome === true ? ' (H)' : g.isHome === false ? ' (A)' : ''
   const label = g.opponentName ? `vs ${g.opponentName}` : (g.summary?.trim() || g.teamName)
-  return `${date} ${time}${homeAway} â€” ${label}${g.location ? ` @ ${g.location}` : ''}`
+  return `${date} ${time}${homeAway} — ${label}${g.location ? ` @ ${g.location}` : ''}`
 }
 
 /**
@@ -2308,7 +2308,7 @@ function pickTemplateForEvent(
 
 /**
  * Auto-fills both bodyEn and bodyEs with a full sentence derived from a picked game. Used by the
- * free-form Compose path where there's no template to slot values into â€” admin gets a complete
+ * free-form Compose path where there's no template to slot values into — admin gets a complete
  * draft they can tweak in the bilingual preview modal. Mirrors the same EN/ES wording the
  * canonical practice_or_game template uses so messages stay consistent across the two send modes.
  */
@@ -2331,7 +2331,7 @@ function applyGameToFreeForm(
                : game.isHome === false ? WEAR_AWAY[lang]
                : null
 
-    // Localized scaffolding ("on/at" â†’ "el/en", "Wear:" â†’ "Vestimenta:") so the free-form text
+    // Localized scaffolding ("on/at" → "el/en", "Wear:" → "Vestimenta:") so the free-form text
     // reads naturally in the recipient's language.
     if (lang === 1) {
       const main = where ? `${what} el ${when} en ${where}.` : `${what} el ${when}.`
@@ -2347,14 +2347,14 @@ function applyGameToFreeForm(
 
 /**
  * Auto-fills template variable inputs from a picked game. Matching is by label substring
- * (case-insensitive) â€” works for the canonical practice_or_game template (What/When/Where/wear)
+ * (case-insensitive) — works for the canonical practice_or_game template (What/When/Where/wear)
  * and is intentionally lenient so admins can rename labels without breaking the autofill.
  *
  * Specifically:
- *   - "what"  â†’ "Game vs <opponent>" (or "Practice" when there's no opponent)
- *   - "when"  â†’ locale-formatted date+time, in the template's language
- *   - "where" â†’ game location string from GotSport (park + field)
- *   - "wear"  â†’ home/away uniform per LVSS policy, in the template's language
+ *   - "what"  → "Game vs <opponent>" (or "Practice" when there's no opponent)
+ *   - "when"  → locale-formatted date+time, in the template's language
+ *   - "where" → game location string from GotSport (park + field)
+ *   - "wear"  → home/away uniform per LVSS policy, in the template's language
  */
 function applyGameToTemplate(
   game: ScheduledGame,
@@ -2448,7 +2448,7 @@ function BilingualPreviewModal({
           <h2 className="text-lg font-bold text-emerald-800">
             {step === 'edit' ? t('admin.msgPreviewStep1Title') : t('admin.msgPreviewStep2Title')}
           </h2>
-          <button onClick={onCancel} className="text-sm text-slate-500 hover:text-slate-700">âœ•</button>
+          <button onClick={onCancel} className="text-sm text-slate-500 hover:text-slate-700">✕</button>
         </div>
         <p className="text-sm text-slate-600">
           {step === 'edit' ? t('admin.msgPreviewStep1Help') : t('admin.msgPreviewStep2Help')}
@@ -2471,7 +2471,7 @@ function BilingualPreviewModal({
                 maxLength={2000}
                 className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
             ) : (
-              <pre className="w-full border border-slate-200 bg-slate-50 rounded-md px-3 py-2 text-sm whitespace-pre-wrap min-h-[8rem]">{bodyEn || 'â€”'}</pre>
+              <pre className="w-full border border-slate-200 bg-slate-50 rounded-md px-3 py-2 text-sm whitespace-pre-wrap min-h-[8rem]">{bodyEn || '—'}</pre>
             )}
           </div>
           <div>
@@ -2490,7 +2490,7 @@ function BilingualPreviewModal({
                 maxLength={2000}
                 className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
             ) : (
-              <pre className="w-full border border-slate-200 bg-slate-50 rounded-md px-3 py-2 text-sm whitespace-pre-wrap min-h-[8rem]">{bodyEs || 'â€”'}</pre>
+              <pre className="w-full border border-slate-200 bg-slate-50 rounded-md px-3 py-2 text-sm whitespace-pre-wrap min-h-[8rem]">{bodyEs || '—'}</pre>
             )}
           </div>
         </div>
@@ -2506,10 +2506,10 @@ function BilingualPreviewModal({
               <select value={defaultLang} onChange={e => onDefaultLangChange(Number(e.target.value) as Language)}
                 className="border border-slate-300 rounded-md px-2 py-1 text-sm">
                 <option value={0}>English</option>
-                <option value={1}>EspaÃ±ol</option>
+                <option value={1}>Español</option>
               </select>
             ) : (
-              <span className="text-slate-700">{defaultLang === 1 ? 'EspaÃ±ol' : 'English'}</span>
+              <span className="text-slate-700">{defaultLang === 1 ? 'Español' : 'English'}</span>
             )}
             <span className="ml-2 text-xs text-slate-500">{t('admin.msgDefaultLangHelp')}</span>
           </div>
@@ -2563,7 +2563,7 @@ function TemplatePreviewModal({
 
   // Backend renders both sides so the "Spanish recipient gets English template with translated
   // values" fallback shows what will actually deliver. Single source of truth for what the
-  // recipient sees â€” no client-side guessing.
+  // recipient sees — no client-side guessing.
   useEffect(() => {
     let cancelled = false
     Api.templatePreview({ templateId: template.id, values })
@@ -2572,7 +2572,7 @@ function TemplatePreviewModal({
     return () => { cancelled = true }
   }, [template.id, values])
 
-  const langLabel = (lang: Language) => lang === 1 ? 'EspaÃ±ol' : 'English'
+  const langLabel = (lang: Language) => lang === 1 ? 'Español' : 'English'
 
   const renderSide = (side: TemplatePreviewSide) => {
     const sourceLabel =
@@ -2588,11 +2588,11 @@ function TemplatePreviewModal({
       <div>
         <div className="flex items-center justify-between mb-1">
           <div className="text-xs font-medium text-slate-700">
-            {langLabel(side.language)} <span className="text-slate-400">â€” {side.templateName}</span>
+            {langLabel(side.language)} <span className="text-slate-400">— {side.templateName}</span>
           </div>
           <span className={`text-[10px] uppercase tracking-wide px-2 py-0.5 rounded border ${sourceClass}`}>{sourceLabel}</span>
         </div>
-        <pre className="w-full border border-slate-200 bg-slate-50 rounded-md px-3 py-2 text-sm whitespace-pre-wrap min-h-[6rem]">{side.rendered ?? 'â€”'}</pre>
+        <pre className="w-full border border-slate-200 bg-slate-50 rounded-md px-3 py-2 text-sm whitespace-pre-wrap min-h-[6rem]">{side.rendered ?? '—'}</pre>
         {side.source === 1 && side.values && (
           <details className="mt-1 text-xs text-slate-500">
             <summary className="cursor-pointer hover:underline">{t('admin.msgPreviewTranslatedValuesUsed')}</summary>
@@ -2614,7 +2614,7 @@ function TemplatePreviewModal({
       <div className="bg-white rounded-lg shadow-xl max-w-5xl w-full mt-10 p-6 space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-bold text-emerald-800">{t('admin.msgTemplateSendPreviewTitle')}</h2>
-          <button onClick={onCancel} className="text-sm text-slate-500 hover:text-slate-700">âœ•</button>
+          <button onClick={onCancel} className="text-sm text-slate-500 hover:text-slate-700">✕</button>
         </div>
         <p className="text-sm text-slate-600">{t('admin.msgTemplateSendPreviewHelp')}</p>
 
