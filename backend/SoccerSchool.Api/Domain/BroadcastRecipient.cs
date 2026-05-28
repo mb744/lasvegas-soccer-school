@@ -24,6 +24,12 @@ public class BroadcastRecipient
     /// at send time from the recipient's group / parent preference / broadcast default.</summary>
     public Language Language { get; set; } = Language.English;
 
+    /// <summary>Name of the template actually sent to this recipient (the language-matched variant),
+    /// or null for free-form sends. Lets History show whether each recipient got the right-language
+    /// template.</summary>
+    [MaxLength(128)]
+    public string? TemplateUsed { get; set; }
+
     public MessageDeliveryStatus Status { get; set; } = MessageDeliveryStatus.Pending;
 
     /// <summary>Twilio Message SID once accepted, used to correlate the status-callback webhook

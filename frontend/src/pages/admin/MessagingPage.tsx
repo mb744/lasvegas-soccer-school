@@ -1797,6 +1797,8 @@ function HistoryTab({
                         <tr className="text-left text-slate-500">
                           <th className="py-1 pr-4">{t('admin.msgMember')}</th>
                           <th className="py-1 pr-4">{t('admin.phone')}</th>
+                          <th className="py-1 pr-4">{t('admin.language')}</th>
+                          <th className="py-1 pr-4">{t('admin.msgColTemplate')}</th>
                           <th className="py-1 pr-4">{t('admin.status')}</th>
                           <th className="py-1 pr-4">{t('admin.msgStatusMessage')}</th>
                         </tr>
@@ -1806,6 +1808,8 @@ function HistoryTab({
                           <tr key={r.id}>
                             <td className="py-1 pr-4">{r.name ?? '—'}</td>
                             <td className="py-1 pr-4">{r.phone}</td>
+                            <td className="py-1 pr-4">{r.language === 1 ? 'ES' : 'EN'}</td>
+                            <td className="py-1 pr-4">{r.templateUsed ?? '—'}</td>
                             <td className="py-1 pr-4">{MESSAGE_DELIVERY_LABELS[r.status]}</td>
                             <td className="py-1 pr-4 text-slate-500">{r.statusMessage ?? ''}</td>
                           </tr>

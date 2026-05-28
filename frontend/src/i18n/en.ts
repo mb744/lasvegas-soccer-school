@@ -388,6 +388,7 @@ const en = {
     msgTarget: 'Target',
     msgDelivery: 'Delivery',
     msgStatusMessage: 'Detail',
+    msgColTemplate: 'Template',
     msgTabTemplates: 'WhatsApp templates',
     msgBodyMode: 'Body',
     msgBodyModeHelp: 'WhatsApp blocks free-form text outside the 24h customer-service window. Use a template for business-initiated reminders.',

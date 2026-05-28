@@ -427,6 +427,7 @@ public class MessagingController : ControllerBase
         if (sendTemplate.Language != recipient.Language)
             send = send with { Message = $"[No {recipient.Language} template; sent {sendTemplate.Language} body] {send.Message}" };
 
+        recipient.TemplateUsed = sendTemplate.Name;
         recipient.TwilioSid = send.TwilioSid;
         recipient.Status = send.Status;
         recipient.StatusMessage = send.Message;
@@ -470,6 +471,7 @@ public class MessagingController : ControllerBase
             }
             subject = RenderTemplateString(pickedTemplate.Subject, pickedTemplate.Variables, vars);
             body = RenderTemplateString(pickedTemplate.Body, pickedTemplate.Variables, vars);
+            recipient.TemplateUsed = pickedTemplate.Name;
         }
         else
         {
@@ -1436,7 +1438,7 @@ public class MessagingController : ControllerBase
     private static BroadcastDetail ToDetail(Broadcast b) => new(
         b.Id, b.Channel, b.BodyEn, b.BodyEs, b.SubjectEn, b.SubjectEs, b.TargetLabel, b.CreatedAt,
         b.Recipients.Select(r => new BroadcastRecipientDto(
-            r.Id, r.Name, r.Phone, r.Email, r.Language, r.Status, r.StatusMessage, r.TwilioSid)).ToList());
+            r.Id, r.Name, r.Phone, r.Email, r.Language, r.Status, r.StatusMessage, r.TwilioSid, r.TemplateUsed)).ToList());
 
     private static GroupConversationDetail ToDetail(GroupConversation c) => new(
         c.Id, c.Title, c.Channel, c.TwilioConversationSid, c.CreatedAt,

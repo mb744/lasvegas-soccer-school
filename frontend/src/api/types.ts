@@ -381,6 +381,8 @@ export interface BroadcastRecipientRow {
   status: MessageDeliveryStatus
   statusMessage: string | null
   twilioSid: string | null
+  /** Name of the template variant actually sent to this recipient; null for free-form sends. */
+  templateUsed: string | null
 }
 
 export interface BroadcastDetail {

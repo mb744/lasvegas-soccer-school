@@ -164,7 +164,8 @@ public record BroadcastRecipientDto(
     Language Language,
     MessageDeliveryStatus Status,
     string? StatusMessage,
-    string? TwilioSid);
+    string? TwilioSid,
+    string? TemplateUsed);
 
 public record BroadcastDetail(
     int Id,

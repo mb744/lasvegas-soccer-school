@@ -390,6 +390,7 @@ const es: Translations = {
     msgTarget: 'Destinatarios',
     msgDelivery: 'Entrega',
     msgStatusMessage: 'Detalle',
+    msgColTemplate: 'Plantilla',
     msgTabTemplates: 'Plantillas WhatsApp',
     msgBodyMode: 'Cuerpo',
     msgBodyModeHelp: 'WhatsApp bloquea texto libre fuera de la ventana de servicio de 24h. Use una plantilla para recordatorios iniciados por el negocio.',
