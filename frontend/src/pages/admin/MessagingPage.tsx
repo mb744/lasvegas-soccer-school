@@ -19,7 +19,6 @@ import type {
   PhraseTranslation,
   SaveTemplateVariable,
   ScheduledGame,
-  RosterTeamSummary,
   TemplatePreviewResponse,
   TemplatePreviewSide,
   WhatsAppTemplate,
@@ -47,7 +46,7 @@ import {
   MESSAGE_DELIVERY_LABELS,
 } from '../../api/types'
 
-type Tab = 'compose' | 'inbox' | 'groups' | 'conversations' | 'templates' | 'teams' | 'dictionary' | 'history' | 'settings' | 'monthly-fee'
+type Tab = 'compose' | 'inbox' | 'groups' | 'conversations' | 'templates' | 'dictionary' | 'history' | 'settings' | 'monthly-fee'
 type RecipientMode = 'individual' | 'curated' | 'dynamic' | 'list'
 type SendMode = 'broadcast' | 'group-chat'
 type ComposeBodyMode = 'free-form' | 'template'
@@ -68,13 +67,9 @@ export function AdminMessagingPage() {
   const [conversations, setConversations] = useState<GroupConversationSummary[]>([])
   const [templates, setTemplates] = useState<WhatsAppTemplate[]>([])
   const [emailTemplates, setEmailTemplates] = useState<EmailTemplate[]>([])
-  const [rosterTeams, setRosterTeams] = useState<RosterTeamSummary[]>([])
   const [upcomingGames, setUpcomingGames] = useState<ScheduledGame[]>([])
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  // When the Teams tab asks to message a team, we stash its dynamic-group key and jump to Compose,
-  // which consumes it on mount to pre-select the recipient.
-  const [composePresetKey, setComposePresetKey] = useState('')
 
   const refreshConfig = async () => {
     try { setConfig(await Api.messagingConfig()) }
@@ -99,10 +94,6 @@ export function AdminMessagingPage() {
     }
     catch (e: any) { setError(extractError(e)) }
   }
-  const refreshTeams = async () => {
-    try { setRosterTeams(await Api.listRosterTeams()) }
-    catch (e: any) { setError(extractError(e)) }
-  }
   const refreshUpcomingGames = async () => {
     try { setUpcomingGames(await Api.listUpcomingGames(30)) }
     catch (e: any) { setError(extractError(e)) }
@@ -113,7 +104,6 @@ export function AdminMessagingPage() {
     refreshGroups()
     refreshHistory()
     refreshTemplates()
-    refreshTeams()
     refreshUpcomingGames()
   }, [])
 
@@ -151,7 +141,6 @@ export function AdminMessagingPage() {
           {tabBtn('groups', t('admin.msgTabGroups'))}
           {tabBtn('conversations', t('admin.msgTabConversations'))}
           {tabBtn('templates', t('admin.msgTabTemplates'))}
-          {tabBtn('teams', t('admin.msgTabTeams'))}
           {tabBtn('dictionary', t('admin.msgTabDictionary'))}
           {tabBtn('history', t('admin.msgTabHistory'))}
           {tabBtn('monthly-fee', t('admin.msgTabMonthlyFee'))}
@@ -173,21 +162,12 @@ export function AdminMessagingPage() {
             templates={templates}
             emailTemplates={emailTemplates}
             upcomingGames={upcomingGames}
-            initialDynamicKey={composePresetKey}
-            onPresetConsumed={() => setComposePresetKey('')}
             onSent={async (msg) => {
               setNotice(msg); setError(null)
               await refreshHistory()
               await refreshGroups()
             }}
             onError={(e) => { setError(e); setNotice(null) }}
-          />
-        )}
-
-        {tab === 'teams' && (
-          <TeamMessagingTab
-            teams={rosterTeams}
-            onMessageTeam={(key) => { setComposePresetKey(key); setTab('compose'); setError(null); setNotice(null) }}
           />
         )}
 
@@ -278,7 +258,6 @@ function Capability({ ok, label }: { ok: boolean; label: string }) {
 
 function ComposeTab({
   config, curated, dynamicGroups, templates, emailTemplates, upcomingGames, onSent, onError,
-  initialDynamicKey, onPresetConsumed,
 }: {
   config: MessagingConfig | null
   curated: MessageGroupSummary[]
@@ -288,9 +267,6 @@ function ComposeTab({
   upcomingGames: ScheduledGame[]
   onSent: (msg: string) => void | Promise<void>
   onError: (e: string) => void
-  /** When set (e.g. from the Teams tab), pre-selects this dynamic group as the recipient on mount. */
-  initialDynamicKey?: string
-  onPresetConsumed?: () => void
 }) {
   const { t } = useTranslation()
   const [channel, setChannel] = useState<MessageChannel>(0)
@@ -316,16 +292,6 @@ function ComposeTab({
   const [previewStep, setPreviewStep] = useState<'edit' | 'confirm' | null>(null)
   const [templatePreviewOpen, setTemplatePreviewOpen] = useState(false)
   const [sending, setSending] = useState(false)
-
-  // Consume a one-shot preset from the Teams tab: target this team's roster and clear the preset so
-  // re-opening Compose normally doesn't re-apply it. Runs once on mount (Compose remounts per open).
-  useEffect(() => {
-    if (initialDynamicKey) {
-      setRecipientMode('dynamic')
-      setDynamicKey(initialDynamicKey)
-      onPresetConsumed?.()
-    }
-  }, [])
 
   const selectedTemplate = useMemo(
     () => templates.find(t => t.id === templateId) ?? null,
@@ -2425,47 +2391,6 @@ function applyGameToTemplate(
     }
     return next
   })
-}
-
-// --- Teams (roster messaging) tab ----------------------------------------
-
-function TeamMessagingTab({
-  teams, onMessageTeam,
-}: {
-  teams: RosterTeamSummary[]
-  onMessageTeam: (dynamicGroupKey: string) => void
-}) {
-  const { t } = useTranslation()
-  const rostered = teams.filter(tm => tm.rosterCount > 0)
-  return (
-    <div className="bg-white border border-slate-200 rounded-lg p-5 space-y-4">
-      <div>
-        <h2 className="font-bold text-emerald-800">{t('admin.msgTeamsMsgHeader')}</h2>
-        <p className="text-sm text-slate-600 mt-1">{t('admin.msgTeamsMsgHint')}</p>
-      </div>
-      <ul className="divide-y divide-slate-100">
-        {rostered.map(tm => (
-          <li key={tm.id} className="py-3 flex items-center justify-between gap-3">
-            <div>
-              <div className="font-medium text-slate-800">{tm.name}</div>
-              <div className="text-xs text-slate-500">{t('admin.teamRosterCount', { count: tm.rosterCount })}</div>
-            </div>
-            <button
-              onClick={() => onMessageTeam(`team-${tm.id}`)}
-              className="bg-emerald-700 text-white text-sm font-semibold px-3 py-1.5 rounded-md hover:bg-emerald-800">
-              {t('admin.msgMessageThisTeam')}
-            </button>
-          </li>
-        ))}
-        {rostered.length === 0 && (
-          <li className="py-4 text-sm text-slate-400">
-            {t('admin.msgNoRosterTeams')}{' '}
-            <Link to="/admin/teams" className="text-emerald-700 hover:underline">{t('admin.teamsTitle')}</Link>
-          </li>
-        )}
-      </ul>
-    </div>
-  )
 }
 
 // --- Bilingual preview modal ---------------------------------------------

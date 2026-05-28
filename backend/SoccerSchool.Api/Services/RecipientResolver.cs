@@ -73,49 +73,32 @@ public class RecipientResolver : IRecipientResolver
 
     public async Task<IReadOnlyList<DynamicGroupSummary>> ListDynamicGroupsAsync(CancellationToken ct)
     {
-        var allCount = await _db.ParentAccounts
-            .Where(p => p.CellPhone != null && p.CellPhone != "")
-            .CountAsync(ct);
-
         var season = _app.ActiveSeason;
-        var activeCount = await _db.Registrations
-            .Where(r => r.Season == season && r.ParentAccount != null && r.ParentAccount.CellPhone != null && r.ParentAccount.CellPhone != "")
-            .Select(r => r.ParentAccountId)
-            .Distinct()
-            .CountAsync(ct);
 
-        // Distinct parents in the active season with at least one player whose free trial is over.
-        // Drives the monthly-fee notification.
-        var trialOverCount = await _db.RegistrationPlayers
-            .Where(rp => rp.FreeTrialOver
-                && rp.Registration!.Season == season
-                && rp.Registration.ParentAccount != null
-                && rp.Registration.ParentAccount.CellPhone != null
-                && rp.Registration.ParentAccount.CellPhone != "")
-            .Select(rp => rp.Registration!.ParentAccountId)
-            .Distinct()
-            .CountAsync(ct);
+        // Counts come from the same resolvers used at send time, so the picker shows exactly who will
+        // be reached — including every additional parent/guardian on each family's account, deduped
+        // by phone/email. Keeping these in sync with the loaders avoids the picker undercounting.
+        var allCount = (await LoadAllParentsAsync(ct)).Count;
+        var activeCount = (await LoadActiveSeasonParentsAsync(ct)).Count;
+        var trialOverCount = (await LoadTrialOverParentsAsync(ct)).Count;
 
-        // One dynamic group per team that has a roster. Count is distinct reachable parents so it
-        // lines up with the recipient-count semantics of the other dynamic groups.
         var teams = await _db.Teams
             .Where(t => t.Roster.Any())
             .OrderBy(t => t.Name)
-            .Select(t => new
-            {
-                t.Id,
-                t.Name,
-                Count = t.Roster.Select(tp => tp.Player!.ParentAccountId).Distinct().Count()
-            })
+            .Select(t => new { t.Id, t.Name })
             .ToListAsync(ct);
 
         var result = new List<DynamicGroupSummary>
         {
-            new(DynamicAllParents, "All parents with a phone on file", allCount),
-            new(DynamicActiveSeasonParents, $"Parents registered in {season}", activeCount),
-            new(DynamicTrialOverParents, "Parents whose free trial is over", trialOverCount)
+            new(DynamicAllParents, "All parents/guardians on file", allCount),
+            new(DynamicActiveSeasonParents, $"Parents/guardians registered in {season}", activeCount),
+            new(DynamicTrialOverParents, "Parents/guardians whose free trial is over", trialOverCount)
         };
-        result.AddRange(teams.Select(t => new DynamicGroupSummary($"{DynamicTeamPrefix}{t.Id}", $"Team: {t.Name}", t.Count)));
+        foreach (var t in teams)
+        {
+            var recipients = await LoadTeamRosterParentsAsync(t.Id, ct);
+            result.Add(new DynamicGroupSummary($"{DynamicTeamPrefix}{t.Id}", $"Team: {t.Name}", recipients.Recipients.Count));
+        }
         return result;
     }
 
