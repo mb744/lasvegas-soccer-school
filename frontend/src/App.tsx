@@ -7,6 +7,7 @@ import { AdminRegistrationsPage } from './pages/admin/RegistrationsPage'
 import { AdminUsersPage } from './pages/admin/UsersPage'
 import { AdminMessagingPage } from './pages/admin/MessagingPage'
 import { AdminAgeClassificationsPage } from './pages/admin/AgeClassificationsPage'
+import { AdminTeamsPage } from './pages/admin/TeamsPage'
 import { LoginPage } from './pages/LoginPage'
 import { SignupPage } from './pages/SignupPage'
 import { PrivacyPage } from './pages/PrivacyPage'
@@ -57,6 +58,10 @@ export default function App() {
           <Route
             path="/admin/age-classifications"
             element={<RequireAuth adminOnly><AdminAgeClassificationsPage /></RequireAuth>}
+          />
+          <Route
+            path="/admin/teams"
+            element={<RequireAuth adminOnly><AdminTeamsPage /></RequireAuth>}
           />
           <Route path="*" element={<LandingPage />} />
         </Routes>

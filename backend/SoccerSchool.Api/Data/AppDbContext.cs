@@ -57,6 +57,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<EmailTemplate> EmailTemplates => Set<EmailTemplate>();
     public DbSet<EmailTemplateVariable> EmailTemplateVariables => Set<EmailTemplateVariable>();
     public DbSet<Team> Teams => Set<Team>();
+    public DbSet<TeamPlayer> TeamPlayers => Set<TeamPlayer>();
     public DbSet<ScheduledGame> ScheduledGames => Set<ScheduledGame>();
     public DbSet<PhraseTranslation> PhraseTranslations => Set<PhraseTranslation>();
     public DbSet<InboundMessage> InboundMessages => Set<InboundMessage>();
@@ -224,6 +225,19 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
                 .WithMany()
                 .HasForeignKey(t => t.MessageGroupId)
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<TeamPlayer>(b =>
+        {
+            b.HasOne(tp => tp.Team)
+                .WithMany(t => t.Roster)
+                .HasForeignKey(tp => tp.TeamId)
+                .OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(tp => tp.Player)
+                .WithMany()
+                .HasForeignKey(tp => tp.PlayerId)
+                .OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(tp => new { tp.TeamId, tp.PlayerId }).IsUnique();
         });
 
         modelBuilder.Entity<ScheduledGame>(b =>

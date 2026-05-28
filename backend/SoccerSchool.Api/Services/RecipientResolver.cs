@@ -57,6 +57,11 @@ public class RecipientResolver : IRecipientResolver
     public const string DynamicActiveSeasonParents = "active-season-parents";
     public const string DynamicTrialOverParents = "trial-over-parents";
 
+    /// <summary>Prefix for per-team dynamic groups: key <c>team-{id}</c> resolves to the parents of
+    /// that team's roster players. Lets the Compose tab target a team's roster with the existing
+    /// broadcast pipeline, with the audience always reflecting the current roster.</summary>
+    public const string DynamicTeamPrefix = "team-";
+
     private readonly AppDbContext _db;
     private readonly AppOptions _app;
 
@@ -91,12 +96,27 @@ public class RecipientResolver : IRecipientResolver
             .Distinct()
             .CountAsync(ct);
 
-        return new[]
+        // One dynamic group per team that has a roster. Count is distinct reachable parents so it
+        // lines up with the recipient-count semantics of the other dynamic groups.
+        var teams = await _db.Teams
+            .Where(t => t.Roster.Any())
+            .OrderBy(t => t.Name)
+            .Select(t => new
+            {
+                t.Id,
+                t.Name,
+                Count = t.Roster.Select(tp => tp.Player!.ParentAccountId).Distinct().Count()
+            })
+            .ToListAsync(ct);
+
+        var result = new List<DynamicGroupSummary>
         {
-            new DynamicGroupSummary(DynamicAllParents, "All parents with a phone on file", allCount),
-            new DynamicGroupSummary(DynamicActiveSeasonParents, $"Parents registered in {season}", activeCount),
-            new DynamicGroupSummary(DynamicTrialOverParents, "Parents whose free trial is over", trialOverCount)
+            new(DynamicAllParents, "All parents with a phone on file", allCount),
+            new(DynamicActiveSeasonParents, $"Parents registered in {season}", activeCount),
+            new(DynamicTrialOverParents, "Parents whose free trial is over", trialOverCount)
         };
+        result.AddRange(teams.Select(t => new DynamicGroupSummary($"{DynamicTeamPrefix}{t.Id}", $"Team: {t.Name}", t.Count)));
+        return result;
     }
 
     public async Task<RecipientList> ResolveAsync(RecipientTarget target, CancellationToken ct)
@@ -146,6 +166,12 @@ public class RecipientResolver : IRecipientResolver
                 return new RecipientList($"Group: {group.Name}", members);
 
             case RecipientTargetKind.DynamicGroup:
+                if (target.DynamicGroupKey is string teamKey
+                    && teamKey.StartsWith(DynamicTeamPrefix, StringComparison.Ordinal)
+                    && int.TryParse(teamKey.AsSpan(DynamicTeamPrefix.Length), out var teamId))
+                {
+                    return await LoadTeamRosterParentsAsync(teamId, ct);
+                }
                 return target.DynamicGroupKey switch
                 {
                     DynamicAllParents =>
@@ -261,6 +287,42 @@ public class RecipientResolver : IRecipientResolver
                 r.Email,
                 r.HasWhatsApp))
             .ToList();
+    }
+
+    /// <summary>Parents of a team's roster players (deduped per parent), for the <c>team-{id}</c>
+    /// dynamic group. Mirrors <see cref="LoadActiveSeasonParentsAsync"/>: only parents reachable by
+    /// phone or email are included, and language/HasWhatsApp come from the parent profile.</summary>
+    private async Task<RecipientList> LoadTeamRosterParentsAsync(int teamId, CancellationToken ct)
+    {
+        var team = await _db.Teams
+            .Where(t => t.Id == teamId)
+            .Select(t => new { t.Name })
+            .FirstOrDefaultAsync(ct);
+        if (team is null) return new RecipientList("Unknown team", Array.Empty<ResolvedRecipient>());
+
+        var rows = await _db.TeamPlayers
+            .Where(tp => tp.TeamId == teamId
+                && tp.Player!.ParentAccount != null
+                && ((tp.Player.ParentAccount.CellPhone != null && tp.Player.ParentAccount.CellPhone != "")
+                    || (tp.Player.ParentAccount.User != null && tp.Player.ParentAccount.User.Email != null && tp.Player.ParentAccount.User.Email != "")))
+            .Select(tp => new
+            {
+                tp.Player!.ParentAccount!.Id,
+                tp.Player.ParentAccount.CellPhone,
+                tp.Player.ParentAccount.FirstName,
+                tp.Player.ParentAccount.LastName,
+                tp.Player.ParentAccount.Language,
+                tp.Player.ParentAccount.HasWhatsApp,
+                Email = tp.Player.ParentAccount.User!.Email
+            })
+            .Distinct()
+            .ToListAsync(ct);
+
+        var recipients = rows
+            .Select(r => new ResolvedRecipient(
+                r.CellPhone ?? string.Empty, $"{r.FirstName} {r.LastName}".Trim(), r.Id, r.Language, r.Email, r.HasWhatsApp))
+            .ToList();
+        return new RecipientList($"Team: {team.Name}", recipients);
     }
 
     /// <summary>One-shot lookup for a single typed phone. Uses <see cref="PhoneNormalizer.Variants"/>

@@ -8,6 +8,7 @@ export function AdminPage() {
   const cards = [
     { to: '/admin/outreach',            title: t('admin.hubOutreach'),         blurb: t('admin.hubOutreachBlurb'),         icon: '📨' },
     { to: '/admin/messaging',           title: t('admin.hubMessaging'),        blurb: t('admin.hubMessagingBlurb'),        icon: '💬' },
+    { to: '/admin/teams',               title: t('admin.hubTeams'),            blurb: t('admin.hubTeamsBlurb'),            icon: '⚽' },
     { to: '/admin/registrations',       title: t('admin.hubRegistrations'),    blurb: t('admin.hubRegistrationsBlurb'),    icon: '📋' },
     { to: '/admin/age-classifications', title: t('admin.hubAgeClassifications'), blurb: t('admin.hubAgeClassificationsBlurb'), icon: '🏷️' },
     { to: '/admin/users',               title: t('admin.hubUsers'),            blurb: t('admin.hubUsersBlurb'),            icon: '👥' },

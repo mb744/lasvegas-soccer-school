@@ -51,6 +51,12 @@ import type {
   SendMonthlyFeeRequest,
   TeamDetail,
   TeamSummary,
+  RosterTeamSummary,
+  RosterTeamDetail,
+  AvailablePlayer,
+  CreateRosterTeamRequest,
+  RenameTeamRequest,
+  AddRosterMembersRequest,
   TemplatePreviewRequest,
   TemplatePreviewResponse,
   TranslateRequest,
@@ -412,6 +418,40 @@ export const Api = {
   async listEventRecipients(eventId: number) {
     const r = await api.get<EventRecipient[]>(`/schedule/events/${eventId}/broadcast-recipients`)
     return r.data
+  },
+
+  // --- Teams (roster builder) ---
+  async listRosterTeams() {
+    const r = await api.get<RosterTeamSummary[]>('/teams')
+    return r.data
+  },
+  async getRosterTeam(id: number) {
+    const r = await api.get<RosterTeamDetail>(`/teams/${id}`)
+    return r.data
+  },
+  async createRosterTeam(payload: CreateRosterTeamRequest) {
+    const r = await api.post<RosterTeamSummary>('/teams', payload)
+    return r.data
+  },
+  async renameRosterTeam(id: number, payload: RenameTeamRequest) {
+    const r = await api.put<RosterTeamSummary>(`/teams/${id}`, payload)
+    return r.data
+  },
+  async deleteRosterTeam(id: number) {
+    await api.delete(`/teams/${id}`)
+  },
+  async listAvailablePlayers(id: number, season?: string) {
+    const r = await api.get<AvailablePlayer[]>(`/teams/${id}/available-players`, {
+      params: season ? { season } : undefined,
+    })
+    return r.data
+  },
+  async addRosterMembers(id: number, payload: AddRosterMembersRequest) {
+    const r = await api.post<RosterTeamDetail>(`/teams/${id}/roster`, payload)
+    return r.data
+  },
+  async removeRosterMember(id: number, playerId: number) {
+    await api.delete(`/teams/${id}/roster/${playerId}`)
   },
 
   // --- Phrase translation dictionary ---

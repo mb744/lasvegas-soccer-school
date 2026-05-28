@@ -602,6 +602,64 @@ export interface ScheduleSyncResult {
   message: string
 }
 
+// --- Teams (roster builder) ---
+
+export interface RosterTeamSummary {
+  id: number
+  name: string
+  rosterCount: number
+  upcomingGameCount: number
+  /** true when GotSport IDs are set (schedule sync available). */
+  gotSportLinked: boolean
+  messageGroupId: number | null
+  messageGroupName: string | null
+  createdAt: string
+}
+
+export interface RosterMember {
+  playerId: number
+  firstName: string
+  lastName: string
+  dateOfBirth: string
+  ageBracket: string | null
+  parentName: string | null
+  parentPhone: string | null
+  parentEmail: string | null
+  addedAt: string
+}
+
+export interface RosterTeamDetail {
+  id: number
+  name: string
+  messageGroupId: number | null
+  messageGroupName: string | null
+  gotSportLinked: boolean
+  createdAt: string
+  roster: RosterMember[]
+  upcomingGames: ScheduledGame[]
+}
+
+export interface AvailablePlayer {
+  playerId: number
+  firstName: string
+  lastName: string
+  dateOfBirth: string
+  ageBracket: string | null
+  parentName: string | null
+}
+
+export interface CreateRosterTeamRequest {
+  name: string
+}
+
+export interface RenameTeamRequest {
+  name: string
+}
+
+export interface AddRosterMembersRequest {
+  playerIds: number[]
+}
+
 // --- Phrase translation dictionary ---
 
 export interface PhraseTranslation {

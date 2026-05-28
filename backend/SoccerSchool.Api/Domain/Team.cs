@@ -37,4 +37,8 @@ public class Team
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public List<ScheduledGame> Games { get; set; } = new();
+
+    /// <summary>Players assigned to this team's roster. Drives team-building and the roster-based
+    /// messaging audience.</summary>
+    public List<TeamPlayer> Roster { get; set; } = new();
 }
