@@ -246,10 +246,14 @@ export function AdminTeamsPage() {
               </div>
             ) : (
               <>
+                <h2 className="text-xl font-bold text-emerald-800">{detail.name}</h2>
+
                 {/* Roster */}
-                <section className="bg-white border border-slate-200 rounded-lg p-5">
-                  <h2 className="font-bold text-emerald-800">{detail.name} — {t('admin.teamRosterHeading')}</h2>
-                  <table className="w-full text-sm mt-3">
+                <CollapsibleSection
+                  title={t('admin.teamRosterHeading')}
+                  subtitle={t('admin.teamRosterCount', { count: detail.roster.length })}
+                  defaultOpen>
+                  <table className="w-full text-sm">
                     <thead>
                       <tr className="text-left text-slate-500 border-b">
                         <th className="py-2 pr-4">{t('admin.playerLabel')}</th>
@@ -274,18 +278,17 @@ export function AdminTeamsPage() {
                       )}
                     </tbody>
                   </table>
-                </section>
+                </CollapsibleSection>
 
                 {/* Add players from registrations */}
-                <section className="bg-white border border-slate-200 rounded-lg p-5">
-                  <div className="flex items-center justify-between gap-3 flex-wrap">
-                    <h2 className="font-bold text-emerald-800">{t('admin.teamAddHeading')}</h2>
+                <CollapsibleSection title={t('admin.teamAddHeading')} defaultOpen>
+                  <div className="flex items-center justify-end mb-2">
                     <button onClick={addPicked} disabled={busy || picked.size === 0}
                       className="bg-emerald-700 text-white text-sm font-semibold px-3 py-2 rounded-md hover:bg-emerald-800 disabled:opacity-50">
                       {t('admin.teamAddSelected', { count: picked.size })}
                     </button>
                   </div>
-                  <div className="flex gap-2 mt-3 flex-wrap">
+                  <div className="flex gap-2 flex-wrap">
                     <input type="text" value={search} onChange={e => setSearch(e.target.value)}
                       placeholder={t('admin.teamSearchPlaceholder')}
                       className="flex-1 min-w-[12rem] border border-slate-300 rounded-md px-3 py-2 text-sm" />
@@ -312,12 +315,13 @@ export function AdminTeamsPage() {
                       )}
                     </tbody>
                   </table>
-                </section>
+                </CollapsibleSection>
 
                 {/* GotSport schedule sync (optional) */}
-                <section className="bg-white border border-slate-200 rounded-lg p-5">
-                  <h2 className="font-bold text-emerald-800">{t('admin.teamGotSportHeading')}</h2>
-                  <p className="text-xs text-slate-500 mt-1">{t('admin.msgTeamScheduleUrlHelp')}</p>
+                <CollapsibleSection
+                  title={t('admin.teamGotSportHeading')}
+                  subtitle={detail.lastSyncedAt ? `${t('admin.msgLastSynced')}: ${new Date(detail.lastSyncedAt).toLocaleString()}` : undefined}>
+                  <p className="text-xs text-slate-500">{t('admin.msgTeamScheduleUrlHelp')}</p>
                   <form onSubmit={saveScheduleLink} className="mt-3 flex flex-col gap-2">
                     <input type="url" value={scheduleUrl} onChange={e => setScheduleUrl(e.target.value)}
                       placeholder="https://system.gotsport.com/org_event/events/48082/schedules?team=3764244"
@@ -338,11 +342,12 @@ export function AdminTeamsPage() {
                       </p>
                     )}
                   </form>
-                </section>
+                </CollapsibleSection>
 
                 {/* Schedule (practices + games) */}
-                <section>
-                  <h2 className="font-bold text-emerald-800 mb-2">{t('admin.teamScheduleHeading')}</h2>
+                <CollapsibleSection
+                  title={t('admin.teamScheduleHeading')}
+                  subtitle={t('admin.teamUpcomingCount', { count: detail.upcomingGames.length })}>
                   <TeamScheduleSection
                     teamId={detail.id}
                     games={detail.upcomingGames}
@@ -350,7 +355,7 @@ export function AdminTeamsPage() {
                     onError={setError}
                     onNotice={setNotice}
                   />
-                </section>
+                </CollapsibleSection>
 
                 {/* Communicate */}
                 <section className="bg-white border border-slate-200 rounded-lg p-5">
@@ -366,5 +371,31 @@ export function AdminTeamsPage() {
         </div>
       </div>
     </Layout>
+  )
+}
+
+/** A bordered card whose body collapses behind a clickable header. Counts/status shown in the
+ *  header stay visible when collapsed, so the team detail stays scannable without scrolling. */
+function CollapsibleSection({
+  title, subtitle, defaultOpen = false, children,
+}: {
+  title: string
+  subtitle?: string
+  defaultOpen?: boolean
+  children: React.ReactNode
+}) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <section className="bg-white border border-slate-200 rounded-lg">
+      <button type="button" onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between gap-3 px-5 py-4 text-left">
+        <span>
+          <span className="font-bold text-emerald-800">{title}</span>
+          {subtitle && <span className="block text-xs text-slate-500 font-normal mt-0.5">{subtitle}</span>}
+        </span>
+        <span className={`text-slate-400 text-xs transition-transform ${open ? '' : '-rotate-90'}`} aria-hidden>▼</span>
+      </button>
+      {open && <div className="px-5 pb-5 -mt-1">{children}</div>}
+    </section>
   )
 }
