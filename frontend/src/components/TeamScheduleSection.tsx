@@ -1,7 +1,7 @@
-import { Fragment, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Api } from '../api/client'
-import type { EventRecipient, ScheduledGame, EventAttendanceList, AttendanceStatus } from '../api/types'
+import type { EventRecipient, ScheduledGame, EventAttendanceList, EventAttendanceSummary, AttendanceStatus } from '../api/types'
 
 function extractError(e: any): string {
   return e?.response?.data?.title || e?.response?.data || e?.message || 'Error'
@@ -220,6 +220,17 @@ export function TeamScheduleSection({
   // Attendance ("confirm rostered players") panel — opens inline under a clicked event.
   const [attendanceFor, setAttendanceFor] = useState<number | null>(null)
   const [attendance, setAttendance] = useState<EventAttendanceList | null>(null)
+  // Per-event confirmation counts (eventId → summary), for the row badge + re-send enablement.
+  const [attnSummary, setAttnSummary] = useState<Record<number, EventAttendanceSummary>>({})
+  const [resendingId, setResendingId] = useState<number | null>(null)
+
+  const loadSummary = async () => {
+    try {
+      const rows = await Api.getTeamAttendanceSummary(teamId)
+      setAttnSummary(Object.fromEntries(rows.map(s => [s.eventId, s])))
+    } catch { /* badge is non-critical; ignore */ }
+  }
+  useEffect(() => { loadSummary() }, [teamId, games])
 
   const toggleAttendance = async (eventId: number) => {
     if (attendanceFor === eventId) { setAttendanceFor(null); setAttendance(null); return }
@@ -229,8 +240,22 @@ export function TeamScheduleSection({
   }
 
   const setStatus = async (eventId: number, playerId: number, status: AttendanceStatus) => {
-    try { setAttendance(await Api.setEventAttendance(eventId, playerId, status)) }
+    try {
+      setAttendance(await Api.setEventAttendance(eventId, playerId, status))
+      await loadSummary()
+    }
     catch (e: any) { onError(extractError(e)) }
+  }
+
+  const resend = async (eventId: number) => {
+    if (!confirm(t('admin.evtResendConfirm'))) return
+    setResendingId(eventId); onError(''); onNotice('')
+    try {
+      const b = await Api.resendEventMessage(eventId)
+      onNotice(t('admin.evtResendSent', { count: b.recipients.length }))
+      await loadSummary()
+    } catch (e: any) { onError(extractError(e)) }
+    finally { setResendingId(null) }
   }
 
   return (
@@ -399,6 +424,7 @@ export function TeamScheduleSection({
                 : (ev.summary ?? 'Practice')
               const homeAway = isGame && ev.isHome === true ? ' (H)' : isGame && ev.isHome === false ? ' (A)' : ''
               const kindBadgeClass = isGame ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'
+              const s = attnSummary[ev.id]
               return (
                 <Fragment key={ev.id}>
                 <tr className={`border-b last:border-0 ${ev.isCancelled ? 'text-slate-400 line-through' : ''}`}>
@@ -412,6 +438,11 @@ export function TeamScheduleSection({
                     {evSummary}{homeAway}
                     {ev.seriesId && <span className="ml-2 inline-block text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 no-underline">{t('admin.msgSeriesBadge')}</span>}
                     {ev.isCancelled && <span className="ml-2 inline-block text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 no-underline">{t('admin.msgCancelledBadge')}</span>}
+                    {s && !ev.isCancelled && (
+                      <span className="ml-2 inline-block text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 no-underline">
+                        {t('admin.evtRowConfirmed', { count: s.confirmed })} · {t('admin.evtRowNoResponse', { count: s.pending })}
+                      </span>
+                    )}
                   </td>
                   <td className="py-1 pr-4">{ev.location ?? '—'}</td>
                   <td className="py-1 pr-4 text-right whitespace-nowrap no-underline">
@@ -419,6 +450,11 @@ export function TeamScheduleSection({
                       <>
                         <button onClick={() => toggleAttendance(ev.id)}
                           className="text-emerald-700 hover:underline">{t('admin.attnConfirm')}</button>
+                        <span className="mx-2 text-slate-300">|</span>
+                        <button onClick={() => resend(ev.id)} disabled={resendingId === ev.id || !s || s.pending === 0}
+                          className="text-emerald-700 hover:underline disabled:opacity-40 disabled:no-underline">
+                          {resendingId === ev.id ? t('admin.evtSyncing') : t('admin.evtResend')}
+                        </button>
                         <span className="mx-2 text-slate-300">|</span>
                         <button onClick={() => startEdit(ev)}
                           className="text-emerald-700 hover:underline">{t('admin.details')}</button>

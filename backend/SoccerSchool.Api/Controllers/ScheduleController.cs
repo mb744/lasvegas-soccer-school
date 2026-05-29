@@ -631,6 +631,39 @@ public class ScheduleController : ControllerBase
         return await GetAttendance(eventId, ct);
     }
 
+    /// <summary>Per-event confirmation counts for a team's upcoming events — drives the schedule
+    /// row badges + the re-send button's enabled state. Pending = roster minus those who answered.</summary>
+    [HttpGet("teams/{teamId:int}/attendance-summary")]
+    public async Task<ActionResult<IEnumerable<EventAttendanceSummaryDto>>> AttendanceSummary(int teamId, CancellationToken ct)
+    {
+        if (!await _db.Teams.AnyAsync(t => t.Id == teamId, ct)) return NotFound();
+
+        var rosterCount = await _db.TeamPlayers.CountAsync(tp => tp.TeamId == teamId, ct);
+        var now = DateTime.UtcNow;
+        var eventIds = await _db.ScheduledGames
+            .Where(g => g.TeamId == teamId && !g.IsCancelled && g.StartsAt >= now.AddDays(-1))
+            .Select(g => g.Id)
+            .ToListAsync(ct);
+        if (eventIds.Count == 0) return Ok(Array.Empty<EventAttendanceSummaryDto>());
+
+        var rows = await _db.EventAttendances
+            .Where(a => eventIds.Contains(a.ScheduledGameId))
+            .Select(a => new { a.ScheduledGameId, a.Status })
+            .ToListAsync(ct);
+        var byEvent = rows.GroupBy(a => a.ScheduledGameId).ToDictionary(g => g.Key, g => g.ToList());
+
+        var result = eventIds.Select(id =>
+        {
+            byEvent.TryGetValue(id, out var rs);
+            var confirmed = rs?.Count(r => r.Status == AttendanceStatus.Confirmed) ?? 0;
+            var declined = rs?.Count(r => r.Status == AttendanceStatus.Declined) ?? 0;
+            var maybe = rs?.Count(r => r.Status == AttendanceStatus.Maybe) ?? 0;
+            var pending = Math.Max(0, rosterCount - (confirmed + declined + maybe));
+            return new EventAttendanceSummaryDto(id, confirmed, declined, maybe, pending);
+        }).ToList();
+        return Ok(result);
+    }
+
     private static ScheduledGameDto ToDto(ScheduledGame g, Team team) => new(
         g.Id, team.Id, team.Name, team.MessageGroupId, team.MessageGroup?.Name,
         g.Kind, g.StartsAt, g.EndsAt, g.Summary, g.Location, g.Description,

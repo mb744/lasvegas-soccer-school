@@ -678,6 +678,14 @@ export interface EventAttendanceList {
   items: EventAttendance[]
 }
 
+export interface EventAttendanceSummary {
+  eventId: number
+  confirmed: number
+  declined: number
+  maybe: number
+  pending: number
+}
+
 // --- Teams (roster builder) ---
 
 export interface RosterTeamSummary {

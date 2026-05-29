@@ -396,6 +396,45 @@ public class MessagingController : ControllerBase
         return Ok(ToDetail(broadcast));
     }
 
+    /// <summary>Re-sends the most recent message for an event to the rostered players' guardians who
+    /// haven't confirmed yet ("no response"). Clones the original's channel + template/body and runs
+    /// the normal broadcast pipeline against the <c>event-pending-{id}</c> audience.</summary>
+    [HttpPost("events/{eventId:int}/resend")]
+    public async Task<ActionResult<BroadcastDetail>> ResendEventMessage(int eventId, CancellationToken ct)
+    {
+        var latest = await _db.Broadcasts
+            .Where(b => b.ScheduledGameId == eventId)
+            .OrderByDescending(b => b.CreatedAt)
+            .FirstOrDefaultAsync(ct);
+        if (latest is null)
+            return BadRequest("No message has been sent for this event yet.");
+
+        Dictionary<string, string>? vars = null;
+        if (!string.IsNullOrWhiteSpace(latest.TemplateVariablesJson))
+        {
+            try { vars = JsonSerializer.Deserialize<Dictionary<string, string>>(latest.TemplateVariablesJson); }
+            catch { vars = null; }
+        }
+
+        var request = new CreateBroadcastRequest
+        {
+            Channel = latest.Channel,
+            BodyEn = latest.BodyEn,
+            BodyEs = latest.BodyEs,
+            SubjectEn = latest.SubjectEn,
+            SubjectEs = latest.SubjectEs,
+            WhatsAppTemplateId = latest.WhatsAppTemplateId,
+            TemplateVariables = vars,
+            ScheduledGameId = eventId,
+            Target = new BroadcastTargetDto
+            {
+                Kind = RecipientTargetKindDto.DynamicGroup,
+                DynamicGroupKey = $"{RecipientResolver.DynamicEventPendingPrefix}{eventId}",
+            },
+        };
+        return await CreateBroadcast(request, ct);
+    }
+
     private async Task SendWhatsAppTemplateRecipientAsync(
         BroadcastRecipient recipient,
         WhatsAppTemplate template,

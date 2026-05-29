@@ -165,6 +165,14 @@ public record EventAttendanceListDto(
     int Pending,
     IReadOnlyList<EventAttendanceDto> Items);
 
+/// <summary>Per-event confirmation counts for a team, used to badge each schedule row.</summary>
+public record EventAttendanceSummaryDto(
+    int EventId,
+    int Confirmed,
+    int Declined,
+    int Maybe,
+    int Pending);
+
 public record SetAttendanceRequest
 {
     public AttendanceStatus Status { get; init; }

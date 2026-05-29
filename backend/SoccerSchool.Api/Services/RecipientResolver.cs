@@ -62,6 +62,11 @@ public class RecipientResolver : IRecipientResolver
     /// broadcast pipeline, with the audience always reflecting the current roster.</summary>
     public const string DynamicTeamPrefix = "team-";
 
+    /// <summary>Internal target for the event re-send flow: key <c>event-pending-{eventId}</c>
+    /// resolves to the guardians of that event's rostered players who haven't confirmed yet (no
+    /// attendance row or status Pending). Not listed as a pickable group.</summary>
+    public const string DynamicEventPendingPrefix = "event-pending-";
+
     private readonly AppDbContext _db;
     private readonly AppOptions _app;
 
@@ -154,6 +159,12 @@ public class RecipientResolver : IRecipientResolver
                     && int.TryParse(teamKey.AsSpan(DynamicTeamPrefix.Length), out var teamId))
                 {
                     return await LoadTeamRosterParentsAsync(teamId, ct);
+                }
+                if (target.DynamicGroupKey is string pendKey
+                    && pendKey.StartsWith(DynamicEventPendingPrefix, StringComparison.Ordinal)
+                    && int.TryParse(pendKey.AsSpan(DynamicEventPendingPrefix.Length), out var pendingEventId))
+                {
+                    return await LoadEventPendingGuardiansAsync(pendingEventId, ct);
                 }
                 return target.DynamicGroupKey switch
                 {
@@ -314,6 +325,48 @@ public class RecipientResolver : IRecipientResolver
             .ToList();
         var contacts = await LoadContactsAsync(rows.Select(r => r.Id).Distinct().ToList(), ct);
         return new RecipientList($"Team: {team.Name}", DedupeByReachability(parents.Concat(contacts)));
+    }
+
+    /// <summary>Guardians of an event's rostered players who haven't confirmed (no attendance row
+    /// or status Pending). Used by the "re-send to no-shows" flow; carries per-recipient language.</summary>
+    private async Task<RecipientList> LoadEventPendingGuardiansAsync(int eventId, CancellationToken ct)
+    {
+        var teamId = await _db.ScheduledGames
+            .Where(g => g.Id == eventId)
+            .Select(g => (int?)g.TeamId)
+            .FirstOrDefaultAsync(ct);
+        if (teamId is null) return new RecipientList("Unknown event", Array.Empty<ResolvedRecipient>());
+
+        var rosterPlayerIds = await _db.TeamPlayers
+            .Where(tp => tp.TeamId == teamId)
+            .Select(tp => tp.PlayerId)
+            .ToListAsync(ct);
+        // Players who explicitly have a non-Pending status are excluded; everyone else is "no response".
+        var answeredPlayerIds = await _db.EventAttendances
+            .Where(a => a.ScheduledGameId == eventId && a.Status != AttendanceStatus.Pending)
+            .Select(a => a.PlayerId)
+            .ToListAsync(ct);
+        var pendingPlayerIds = rosterPlayerIds.Except(answeredPlayerIds).ToList();
+        if (pendingPlayerIds.Count == 0) return new RecipientList("No-response guardians", Array.Empty<ResolvedRecipient>());
+
+        var accountIds = await _db.Players
+            .Where(p => pendingPlayerIds.Contains(p.Id))
+            .Select(p => p.ParentAccountId)
+            .Distinct()
+            .ToListAsync(ct);
+
+        var rows = await _db.ParentAccounts
+            .Where(p => accountIds.Contains(p.Id)
+                && ((p.CellPhone != null && p.CellPhone != "")
+                    || (p.User != null && p.User.Email != null && p.User.Email != "")))
+            .Select(p => new { p.Id, p.CellPhone, p.FirstName, p.LastName, p.Language, p.HasWhatsApp, Email = p.User!.Email })
+            .ToListAsync(ct);
+        var parents = rows
+            .Select(r => new ResolvedRecipient(
+                r.CellPhone ?? string.Empty, $"{r.FirstName} {r.LastName}".Trim(), r.Id, r.Language, r.Email, r.HasWhatsApp))
+            .ToList();
+        var contacts = await LoadContactsAsync(accountIds, ct);
+        return new RecipientList("No-response guardians", DedupeByReachability(parents.Concat(contacts)));
     }
 
     /// <summary>Additional parent/guardian contacts as recipients. <paramref name="parentAccountIds"/>

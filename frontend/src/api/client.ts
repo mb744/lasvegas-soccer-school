@@ -24,6 +24,7 @@ import type {
   PhraseTranslation,
   EventRecipient,
   EventAttendanceList,
+  EventAttendanceSummary,
   AttendanceStatus,
   TournamentSummary,
   SaveTournamentRequest,
@@ -452,6 +453,14 @@ export const Api = {
   },
   async getEventAttendance(eventId: number) {
     const r = await api.get<EventAttendanceList>(`/schedule/events/${eventId}/attendance`)
+    return r.data
+  },
+  async getTeamAttendanceSummary(teamId: number) {
+    const r = await api.get<EventAttendanceSummary[]>(`/schedule/teams/${teamId}/attendance-summary`)
+    return r.data
+  },
+  async resendEventMessage(eventId: number) {
+    const r = await api.post<BroadcastDetail>(`/messaging/events/${eventId}/resend`, {})
     return r.data
   },
   async setEventAttendance(eventId: number, playerId: number, status: AttendanceStatus) {
