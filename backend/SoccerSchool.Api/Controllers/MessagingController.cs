@@ -400,7 +400,15 @@ public class MessagingController : ControllerBase
     /// haven't confirmed yet ("no response"). Clones the original's channel + template/body and runs
     /// the normal broadcast pipeline against the <c>event-pending-{id}</c> audience.</summary>
     [HttpPost("events/{eventId:int}/resend")]
-    public async Task<ActionResult<BroadcastDetail>> ResendEventMessage(int eventId, CancellationToken ct)
+    public Task<ActionResult<BroadcastDetail>> ResendEventMessage(int eventId, CancellationToken ct) =>
+        ResendEventToTargetAsync(eventId, $"{RecipientResolver.DynamicEventPendingPrefix}{eventId}", ct);
+
+    /// <summary>Re-sends the event's most recent message to a single rostered player's guardians.</summary>
+    [HttpPost("events/{eventId:int}/resend/{playerId:int}")]
+    public Task<ActionResult<BroadcastDetail>> ResendEventToPlayer(int eventId, int playerId, CancellationToken ct) =>
+        ResendEventToTargetAsync(eventId, $"{RecipientResolver.DynamicPlayerPrefix}{playerId}", ct);
+
+    private async Task<ActionResult<BroadcastDetail>> ResendEventToTargetAsync(int eventId, string dynamicGroupKey, CancellationToken ct)
     {
         var latest = await _db.Broadcasts
             .Where(b => b.ScheduledGameId == eventId)
@@ -429,7 +437,7 @@ public class MessagingController : ControllerBase
             Target = new BroadcastTargetDto
             {
                 Kind = RecipientTargetKindDto.DynamicGroup,
-                DynamicGroupKey = $"{RecipientResolver.DynamicEventPendingPrefix}{eventId}",
+                DynamicGroupKey = dynamicGroupKey,
             },
         };
         return await CreateBroadcast(request, ct);

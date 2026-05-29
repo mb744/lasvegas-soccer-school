@@ -20,6 +20,8 @@ import type {
   PlayerSummary,
   RegistrationDetail,
   RegistrationPlayerDetail,
+  AddRegistrationPlayerRequest,
+  UpdateRegistrationPlayerRequest,
   RegistrationSummary,
   PhraseTranslation,
   EventRecipient,
@@ -163,6 +165,17 @@ export const Api = {
       `/registrations/${regId}/players/${rpId}/trial`,
       { freeTrialOver })
     return r.data
+  },
+  async addRegistrationPlayer(regId: number, payload: AddRegistrationPlayerRequest) {
+    const r = await api.post<RegistrationDetail>(`/registrations/${regId}/players`, payload)
+    return r.data
+  },
+  async updateRegistrationPlayer(regId: number, rpId: number, payload: UpdateRegistrationPlayerRequest) {
+    const r = await api.put<RegistrationDetail>(`/registrations/${regId}/players/${rpId}`, payload)
+    return r.data
+  },
+  async removeRegistrationPlayer(regId: number, rpId: number) {
+    await api.delete(`/registrations/${regId}/players/${rpId}`)
   },
   async listAgeClassifications() {
     const r = await api.get<AgeClassification[]>('/age-classifications')
@@ -461,6 +474,10 @@ export const Api = {
   },
   async resendEventMessage(eventId: number) {
     const r = await api.post<BroadcastDetail>(`/messaging/events/${eventId}/resend`, {})
+    return r.data
+  },
+  async resendEventToPlayer(eventId: number, playerId: number) {
+    const r = await api.post<BroadcastDetail>(`/messaging/events/${eventId}/resend/${playerId}`, {})
     return r.data
   },
   async setEventAttendance(eventId: number, playerId: number, status: AttendanceStatus) {

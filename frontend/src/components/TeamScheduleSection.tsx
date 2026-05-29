@@ -247,6 +247,15 @@ export function TeamScheduleSection({
     catch (e: any) { onError(extractError(e)) }
   }
 
+  const resendToPlayer = async (eventId: number, playerId: number) => {
+    if (!confirm(t('admin.attnResendConfirm'))) return
+    onError(''); onNotice('')
+    try {
+      const b = await Api.resendEventToPlayer(eventId, playerId)
+      onNotice(t('admin.evtResendSent', { count: b.recipients.length }))
+    } catch (e: any) { onError(extractError(e)) }
+  }
+
   const resend = async (eventId: number) => {
     if (!confirm(t('admin.evtResendConfirm'))) return
     setResendingId(eventId); onError(''); onNotice('')
@@ -478,6 +487,7 @@ export function TeamScheduleSection({
                       <AttendancePanel
                         data={attendance}
                         onSet={(playerId, status) => setStatus(ev.id, playerId, status)}
+                        onResend={(playerId) => resendToPlayer(ev.id, playerId)}
                       />
                     </td>
                   </tr>
@@ -528,10 +538,11 @@ export function TeamScheduleSection({
 
 /** Inline roster confirmation list for one event: per-player status with four set-buttons + counts. */
 function AttendancePanel({
-  data, onSet,
+  data, onSet, onResend,
 }: {
   data: EventAttendanceList | null
   onSet: (playerId: number, status: AttendanceStatus) => void
+  onResend: (playerId: number) => void
 }) {
   const { t } = useTranslation()
   if (!data) return <div className="text-xs text-slate-400">…</div>
@@ -560,11 +571,15 @@ function AttendancePanel({
                 </div>
               </td>
               <td className="py-1 text-right whitespace-nowrap">
-                <div className="inline-flex gap-1">
+                <div className="inline-flex items-center gap-1">
                   {setBtn(it, 1, t('admin.attnConfirmed'), 'bg-emerald-600 text-white border-emerald-600')}
                   {setBtn(it, 3, t('admin.attnMaybe'), 'bg-amber-500 text-white border-amber-500')}
                   {setBtn(it, 2, t('admin.attnDeclined'), 'bg-rose-600 text-white border-rose-600')}
                   {setBtn(it, 0, t('admin.attnPending'), 'bg-slate-500 text-white border-slate-500')}
+                  <button onClick={() => onResend(it.playerId)} disabled={it.status !== 0}
+                    className="ml-1 text-[11px] text-emerald-700 hover:underline disabled:opacity-40 disabled:no-underline">
+                    {t('admin.evtResend')}
+                  </button>
                 </div>
               </td>
             </tr>

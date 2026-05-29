@@ -3,7 +3,11 @@ import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Layout } from '../../components/Layout'
 import { Api } from '../../api/client'
-import type { Language, ParentContactInput, RegistrationDetail, RegistrationPlayerDetail, RegistrationSummary, UpdateRegistrationRequest } from '../../api/types'
+import type { Language, ParentContactInput, RegistrationDetail, RegistrationPlayerDetail, RegistrationSummary, UpdateRegistrationRequest, AddRegistrationPlayerRequest } from '../../api/types'
+
+const GRADES = ['Pre-K', 'K', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12']
+const UNIFORM_SIZES = ['YXS', 'YS', 'YM', 'YL', 'YXL', 'AS', 'AM', 'AL', 'AXL', 'A2XL']
+const npInputCls = 'border border-slate-300 rounded-md px-2 py-1 text-sm w-full'
 
 export function AdminRegistrationsPage() {
   const { t } = useTranslation()
@@ -168,6 +172,7 @@ function RegistrationDetailPanel({
 }) {
   const { t } = useTranslation()
   const [editing, setEditing] = useState(false)
+  const [adding, setAdding] = useState(false)
   const r = detail
   const fullAddress = [
     r.addressLine1,
@@ -244,10 +249,25 @@ function RegistrationDetailPanel({
       </div>
 
       <div>
-        <h3 className="font-bold text-emerald-800 mb-2">{t('admin.playersHeading')}</h3>
-        <div className="grid sm:grid-cols-2 gap-3">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="font-bold text-emerald-800">{t('admin.playersHeading')}</h3>
+          {!adding && (
+            <button onClick={() => setAdding(true)} className="text-sm text-emerald-700 hover:underline">
+              + {t('admin.addPlayer')}
+            </button>
+          )}
+        </div>
+        {adding && (
+          <AddPlayerForm
+            regId={detail.id}
+            onCancel={() => setAdding(false)}
+            onSaved={(updated) => { onSaved(updated); setAdding(false) }}
+            onError={onError}
+          />
+        )}
+        <div className="grid sm:grid-cols-2 gap-3 mt-3">
           {detail.players.map((p, idx) => (
-            <PlayerCard key={p.id} regId={detail.id} idx={idx + 1} p={p} />
+            <PlayerCard key={p.id} regId={detail.id} idx={idx + 1} p={p} onChanged={onSaved} onError={onError} />
           ))}
         </div>
       </div>
@@ -430,11 +450,26 @@ function EditRegistrationForm({
   )
 }
 
-function PlayerCard({ regId, idx, p }: { regId: number; idx: number; p: RegistrationPlayerDetail }) {
+function PlayerCard({ regId, idx, p, onChanged, onError }: {
+  regId: number
+  idx: number
+  p: RegistrationPlayerDetail
+  onChanged: (updated: RegistrationDetail) => void
+  onError: (msg: string) => void
+}) {
   const { t } = useTranslation()
   const stem = `${regId}-${p.lastName}-${p.firstName}`.replace(/[^a-zA-Z0-9-_]/g, '')
   const [trialOver, setTrialOver] = useState(p.freeTrialOver)
   const [saving, setSaving] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [firstName, setFirstName] = useState(p.firstName)
+  const [lastName, setLastName] = useState(p.lastName)
+  const [dob, setDob] = useState(p.dateOfBirth)
+  const [grade, setGrade] = useState(p.schoolGrade)
+  const [uniform, setUniform] = useState(p.uniformSize)
+  const [shoe, setShoe] = useState(p.shoeSize)
+
+  const err = (e: any) => onError(e?.response?.data?.title || e?.response?.data || e?.message || 'Error')
 
   const toggleTrial = async () => {
     const next = !trialOver
@@ -449,6 +484,27 @@ function PlayerCard({ regId, idx, p }: { regId: number; idx: number; p: Registra
     }
   }
 
+  const saveEdit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!firstName.trim() || !lastName.trim() || !dob) { onError(t('common.required')); return }
+    setSaving(true)
+    try {
+      const updated = await Api.updateRegistrationPlayer(regId, p.id, {
+        firstName: firstName.trim(), lastName: lastName.trim(), dateOfBirth: dob,
+        schoolGrade: grade, uniformSize: uniform, shoeSize: shoe,
+      })
+      onChanged(updated); setEditing(false)
+    } catch (e: any) { err(e) } finally { setSaving(false) }
+  }
+
+  const remove = async () => {
+    if (!confirm(t('admin.removePlayerConfirm'))) return
+    try {
+      await Api.removeRegistrationPlayer(regId, p.id)
+      onChanged(await Api.getRegistration(regId))
+    } catch (e: any) { err(e) }
+  }
+
   return (
     <div className="bg-white rounded-md border border-slate-200 p-4 text-sm">
       <div className="flex items-center justify-between mb-2">
@@ -461,39 +517,119 @@ function PlayerCard({ regId, idx, p }: { regId: number; idx: number; p: Registra
           <span className="text-xs bg-amber-100 text-amber-800 rounded px-2 py-0.5">{t('admin.notSigned')}</span>
         )}
       </div>
-      <dl className="grid grid-cols-2 gap-x-4 gap-y-1">
-        <Definition label={t('admin.dob')} value={p.dateOfBirth} />
-        <Definition label={t('admin.grade')} value={p.schoolGrade} />
-        <Definition label={t('admin.sizes')} value={`${p.uniformSize} / ${p.shoeSize}`} />
-        <Definition label={t('admin.ageClassification')} value={p.ageClassificationName ?? '—'} />
-        {p.waiverTeamName && <Definition label={t('admin.teamLbl')} value={p.waiverTeamName} />}
-        {p.heardFrom && <Definition label={t('admin.heardFromLbl')} value={p.heardFrom} />}
-      </dl>
-      <label className="mt-3 flex items-center gap-2 text-xs text-slate-700">
-        <input type="checkbox" className="w-4 h-4"
-          checked={trialOver}
-          disabled={saving}
-          onChange={toggleTrial} />
-        <span>{t('admin.freeTrialOver')}</span>
-        {saving && <span className="text-slate-400">…</span>}
-      </label>
-      <div className="mt-3 flex flex-wrap gap-2">
-        <button
-          onClick={() => Api.viewPlayerWaiver(regId, p.id)}
-          disabled={!p.hasSignature}
-          className="text-xs bg-emerald-700 text-white px-3 py-1.5 rounded-md hover:bg-emerald-800 disabled:opacity-50"
-        >
-          {t('admin.view')}
-        </button>
-        <button
-          onClick={() => Api.downloadPlayerWaiver(regId, p.id, stem)}
-          disabled={!p.hasSignature}
-          className="text-xs bg-white border border-emerald-700 text-emerald-700 px-3 py-1.5 rounded-md hover:bg-emerald-50 disabled:opacity-50"
-        >
-          {t('admin.download')}
-        </button>
-      </div>
+
+      {editing ? (
+        <form onSubmit={saveEdit} className="grid grid-cols-2 gap-2">
+          <input className={npInputCls} placeholder={t('register.players.firstName')} value={firstName} onChange={e => setFirstName(e.target.value)} />
+          <input className={npInputCls} placeholder={t('register.players.lastName')} value={lastName} onChange={e => setLastName(e.target.value)} />
+          <input type="date" className={npInputCls} value={dob} onChange={e => setDob(e.target.value)} />
+          <select className={npInputCls} value={grade} onChange={e => setGrade(e.target.value)}>
+            <option value="">{t('register.players.grade')}</option>
+            {GRADES.map(g => <option key={g} value={g}>{g}</option>)}
+          </select>
+          <select className={npInputCls} value={uniform} onChange={e => setUniform(e.target.value)}>
+            <option value="">{t('register.players.uniformSize')}</option>
+            {UNIFORM_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+          <input className={npInputCls} placeholder={t('register.players.shoeSize')} value={shoe} onChange={e => setShoe(e.target.value)} />
+          <div className="col-span-2 flex gap-2 pt-1">
+            <button type="submit" disabled={saving}
+              className="text-xs bg-emerald-700 text-white px-3 py-1.5 rounded-md hover:bg-emerald-800 disabled:opacity-60">
+              {saving ? t('register.submitting') : t('admin.save')}
+            </button>
+            <button type="button" onClick={() => setEditing(false)} className="text-xs text-slate-600 hover:underline">{t('admin.cancel')}</button>
+          </div>
+        </form>
+      ) : (
+        <>
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-1">
+            <Definition label={t('admin.dob')} value={p.dateOfBirth} />
+            <Definition label={t('admin.grade')} value={p.schoolGrade} />
+            <Definition label={t('admin.sizes')} value={`${p.uniformSize} / ${p.shoeSize}`} />
+            <Definition label={t('admin.ageClassification')} value={p.ageClassificationName ?? '—'} />
+            {p.waiverTeamName && <Definition label={t('admin.teamLbl')} value={p.waiverTeamName} />}
+            {p.heardFrom && <Definition label={t('admin.heardFromLbl')} value={p.heardFrom} />}
+          </dl>
+          <label className="mt-3 flex items-center gap-2 text-xs text-slate-700">
+            <input type="checkbox" className="w-4 h-4" checked={trialOver} disabled={saving} onChange={toggleTrial} />
+            <span>{t('admin.freeTrialOver')}</span>
+            {saving && <span className="text-slate-400">…</span>}
+          </label>
+          <div className="mt-3 flex flex-wrap gap-2 items-center">
+            <button onClick={() => Api.viewPlayerWaiver(regId, p.id)} disabled={!p.hasSignature}
+              className="text-xs bg-emerald-700 text-white px-3 py-1.5 rounded-md hover:bg-emerald-800 disabled:opacity-50">
+              {t('admin.view')}
+            </button>
+            <button onClick={() => Api.downloadPlayerWaiver(regId, p.id, stem)} disabled={!p.hasSignature}
+              className="text-xs bg-white border border-emerald-700 text-emerald-700 px-3 py-1.5 rounded-md hover:bg-emerald-50 disabled:opacity-50">
+              {t('admin.download')}
+            </button>
+            <button onClick={() => setEditing(true)} className="text-xs text-emerald-700 hover:underline ml-auto">{t('admin.edit')}</button>
+            <button onClick={remove} className="text-xs text-rose-700 hover:underline">{t('admin.removePlayer')}</button>
+          </div>
+        </>
+      )}
     </div>
+  )
+}
+
+function AddPlayerForm({ regId, onCancel, onSaved, onError }: {
+  regId: number
+  onCancel: () => void
+  onSaved: (updated: RegistrationDetail) => void
+  onError: (msg: string) => void
+}) {
+  const { t } = useTranslation()
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
+  const [dob, setDob] = useState('')
+  const [grade, setGrade] = useState('')
+  const [uniform, setUniform] = useState('')
+  const [shoe, setShoe] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!firstName.trim() || !lastName.trim() || !dob || !grade || !uniform || !shoe.trim()) {
+      onError(t('common.required')); return
+    }
+    setSaving(true)
+    try {
+      const payload: AddRegistrationPlayerRequest = {
+        firstName: firstName.trim(), lastName: lastName.trim(), dateOfBirth: dob,
+        schoolGrade: grade, uniformSize: uniform, shoeSize: shoe.trim(),
+      }
+      onSaved(await Api.addRegistrationPlayer(regId, payload))
+    } catch (e: any) {
+      onError(e?.response?.data?.title || e?.response?.data || e?.message || 'Error')
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <form onSubmit={submit} className="bg-white border border-slate-200 rounded-md p-3 grid sm:grid-cols-2 gap-2">
+      <p className="sm:col-span-2 text-xs text-amber-700">{t('admin.addPlayerUnsignedHint')}</p>
+      <input className={npInputCls} placeholder={t('register.players.firstName')} value={firstName} onChange={e => setFirstName(e.target.value)} />
+      <input className={npInputCls} placeholder={t('register.players.lastName')} value={lastName} onChange={e => setLastName(e.target.value)} />
+      <label className="block text-xs text-slate-600">{t('register.players.dob')}
+        <input type="date" className={npInputCls} value={dob} onChange={e => setDob(e.target.value)} />
+      </label>
+      <select className={npInputCls} value={grade} onChange={e => setGrade(e.target.value)}>
+        <option value="">{t('register.players.grade')}</option>
+        {GRADES.map(g => <option key={g} value={g}>{g}</option>)}
+      </select>
+      <select className={npInputCls} value={uniform} onChange={e => setUniform(e.target.value)}>
+        <option value="">{t('register.players.uniformSize')}</option>
+        {UNIFORM_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
+      </select>
+      <input className={npInputCls} placeholder={t('register.players.shoeSize')} value={shoe} onChange={e => setShoe(e.target.value)} />
+      <div className="sm:col-span-2 flex gap-2 pt-1">
+        <button type="submit" disabled={saving}
+          className="text-xs bg-emerald-700 text-white px-3 py-1.5 rounded-md hover:bg-emerald-800 disabled:opacity-60">
+          {saving ? t('register.submitting') : t('admin.addPlayer')}
+        </button>
+        <button type="button" onClick={onCancel} className="text-xs text-slate-600 hover:underline">{t('admin.cancel')}</button>
+      </div>
+    </form>
   )
 }
 

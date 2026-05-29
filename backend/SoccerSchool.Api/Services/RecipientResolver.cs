@@ -67,6 +67,10 @@ public class RecipientResolver : IRecipientResolver
     /// attendance row or status Pending). Not listed as a pickable group.</summary>
     public const string DynamicEventPendingPrefix = "event-pending-";
 
+    /// <summary>Internal target for the per-player re-send: key <c>player-{playerId}</c> resolves to
+    /// that one player's guardians. Not listed as a pickable group.</summary>
+    public const string DynamicPlayerPrefix = "player-";
+
     private readonly AppDbContext _db;
     private readonly AppOptions _app;
 
@@ -165,6 +169,12 @@ public class RecipientResolver : IRecipientResolver
                     && int.TryParse(pendKey.AsSpan(DynamicEventPendingPrefix.Length), out var pendingEventId))
                 {
                     return await LoadEventPendingGuardiansAsync(pendingEventId, ct);
+                }
+                if (target.DynamicGroupKey is string playerKey
+                    && playerKey.StartsWith(DynamicPlayerPrefix, StringComparison.Ordinal)
+                    && int.TryParse(playerKey.AsSpan(DynamicPlayerPrefix.Length), out var singlePlayerId))
+                {
+                    return await LoadPlayerGuardiansAsync(singlePlayerId, ct);
                 }
                 return target.DynamicGroupKey switch
                 {
@@ -367,6 +377,30 @@ public class RecipientResolver : IRecipientResolver
             .ToList();
         var contacts = await LoadContactsAsync(accountIds, ct);
         return new RecipientList("No-response guardians", DedupeByReachability(parents.Concat(contacts)));
+    }
+
+    /// <summary>One player's guardians (primary parent + contacts), for the per-player re-send.</summary>
+    private async Task<RecipientList> LoadPlayerGuardiansAsync(int playerId, CancellationToken ct)
+    {
+        var accountId = await _db.Players
+            .Where(p => p.Id == playerId)
+            .Select(p => (int?)p.ParentAccountId)
+            .FirstOrDefaultAsync(ct);
+        if (accountId is null) return new RecipientList("Player guardians", Array.Empty<ResolvedRecipient>());
+
+        var ids = new List<int> { accountId.Value };
+        var rows = await _db.ParentAccounts
+            .Where(p => p.Id == accountId
+                && ((p.CellPhone != null && p.CellPhone != "")
+                    || (p.User != null && p.User.Email != null && p.User.Email != "")))
+            .Select(p => new { p.Id, p.CellPhone, p.FirstName, p.LastName, p.Language, p.HasWhatsApp, Email = p.User!.Email })
+            .ToListAsync(ct);
+        var parents = rows
+            .Select(r => new ResolvedRecipient(
+                r.CellPhone ?? string.Empty, $"{r.FirstName} {r.LastName}".Trim(), r.Id, r.Language, r.Email, r.HasWhatsApp))
+            .ToList();
+        var contacts = await LoadContactsAsync(ids, ct);
+        return new RecipientList("Player guardians", DedupeByReachability(parents.Concat(contacts)));
     }
 
     /// <summary>Additional parent/guardian contacts as recipients. <paramref name="parentAccountIds"/>

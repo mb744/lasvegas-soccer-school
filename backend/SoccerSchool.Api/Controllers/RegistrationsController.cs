@@ -319,6 +319,101 @@ public class RegistrationsController : ControllerBase
             rp.FreeTrialOver, rp.AgeClassificationId, rp.AgeClassification?.Name));
     }
 
+    /// <summary>Admin adds a player to a registration (creates the durable Player under the
+    /// registration's account too). Enrolled unsigned — no signature is captured here.</summary>
+    [HttpPost("{id:int}/players")]
+    [Authorize(Roles = Roles.Admin)]
+    public async Task<ActionResult<RegistrationDetail>> AddPlayer(
+        int id, [FromBody] AddRegistrationPlayerRequest request, CancellationToken ct)
+    {
+        var registration = await _db.Registrations.FirstOrDefaultAsync(r => r.Id == id, ct);
+        if (registration is null) return NotFound();
+        if (string.IsNullOrWhiteSpace(request.FirstName) || string.IsNullOrWhiteSpace(request.LastName) || request.DateOfBirth == default)
+            return BadRequest("First name, last name, and date of birth are required.");
+
+        var player = new Player
+        {
+            ParentAccountId = registration.ParentAccountId,
+            FirstName = request.FirstName.Trim(),
+            LastName = request.LastName.Trim(),
+            DateOfBirth = request.DateOfBirth,
+        };
+        _db.Players.Add(player);
+
+        _db.RegistrationPlayers.Add(new RegistrationPlayer
+        {
+            RegistrationId = registration.Id,
+            Player = player,
+            SchoolGrade = request.SchoolGrade.Trim(),
+            UniformSize = request.UniformSize.Trim(),
+            ShoeSize = request.ShoeSize.Trim(),
+            HeardFrom = request.HeardFrom?.Trim(),
+            WaiverParticipantName = $"{player.FirstName} {player.LastName}".Trim(),
+            WaiverParentGuardianName = $"{registration.ParentFirstName} {registration.ParentLastName}".Trim(),
+            WaiverPhone = registration.CellPhone,
+            WaiverEmail = registration.Email,
+            SignatureDataUrl = null,
+            SignedAt = null,
+            AgeClassificationId = await AssignAgeClassificationAsync(request.DateOfBirth, ct),
+        });
+        await _db.SaveChangesAsync(ct);
+        return Ok(await LoadDetailAsync(id, ct));
+    }
+
+    /// <summary>Admin edit of an enrolled player: per-season fields + the durable name/DOB.</summary>
+    [HttpPut("{id:int}/players/{rpId:int}")]
+    [Authorize(Roles = Roles.Admin)]
+    public async Task<ActionResult<RegistrationDetail>> UpdatePlayer(
+        int id, int rpId, [FromBody] UpdateRegistrationPlayerRequest request, CancellationToken ct)
+    {
+        var rp = await _db.RegistrationPlayers
+            .Include(p => p.Player)
+            .FirstOrDefaultAsync(p => p.Id == rpId && p.RegistrationId == id, ct);
+        if (rp is null) return NotFound();
+        if (string.IsNullOrWhiteSpace(request.FirstName) || string.IsNullOrWhiteSpace(request.LastName) || request.DateOfBirth == default)
+            return BadRequest("First name, last name, and date of birth are required.");
+
+        rp.Player!.FirstName = request.FirstName.Trim();
+        rp.Player.LastName = request.LastName.Trim();
+        rp.Player.DateOfBirth = request.DateOfBirth;
+        rp.SchoolGrade = request.SchoolGrade.Trim();
+        rp.UniformSize = request.UniformSize.Trim();
+        rp.ShoeSize = request.ShoeSize.Trim();
+        rp.AgeClassificationId = await AssignAgeClassificationAsync(request.DateOfBirth, ct);
+        await _db.SaveChangesAsync(ct);
+        return Ok(await LoadDetailAsync(id, ct));
+    }
+
+    /// <summary>Admin un-enrolls a player from this registration. The durable Player (and any team
+    /// roster membership) is kept.</summary>
+    [HttpDelete("{id:int}/players/{rpId:int}")]
+    [Authorize(Roles = Roles.Admin)]
+    public async Task<IActionResult> RemovePlayer(int id, int rpId, CancellationToken ct)
+    {
+        var rp = await _db.RegistrationPlayers.FirstOrDefaultAsync(p => p.Id == rpId && p.RegistrationId == id, ct);
+        if (rp is null) return NotFound();
+        _db.RegistrationPlayers.Remove(rp);
+        await _db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
+    /// <summary>Most-specific age bracket whose inclusive DOB range covers the date, or null.</summary>
+    private async Task<int?> AssignAgeClassificationAsync(DateOnly dob, CancellationToken ct)
+    {
+        var classifications = await _db.AgeClassifications.ToListAsync(ct);
+        return classifications.FirstOrDefault(c => c.DobStart <= dob && dob <= c.DobEnd)?.Id;
+    }
+
+    private async Task<RegistrationDetail> LoadDetailAsync(int id, CancellationToken ct)
+    {
+        var registration = await _db.Registrations
+            .Include(x => x.ParentAccount).ThenInclude(pa => pa!.Contacts)
+            .Include(x => x.Players).ThenInclude(rp => rp.Player)
+            .Include(x => x.Players).ThenInclude(rp => rp.AgeClassification)
+            .FirstAsync(x => x.Id == id, ct);
+        return ToDetail(registration);
+    }
+
     private async Task<ParentAccount?> GetAccountAsync(CancellationToken ct)
     {
         var userId = _users.GetUserId(User);

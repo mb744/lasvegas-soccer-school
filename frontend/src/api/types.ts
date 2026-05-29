@@ -148,6 +148,25 @@ export interface RegistrationPlayerDetail {
   ageClassificationName: string | null
 }
 
+export interface AddRegistrationPlayerRequest {
+  firstName: string
+  lastName: string
+  dateOfBirth: string  // YYYY-MM-DD
+  schoolGrade: string
+  uniformSize: string
+  shoeSize: string
+  heardFrom?: string | null
+}
+
+export interface UpdateRegistrationPlayerRequest {
+  firstName: string
+  lastName: string
+  dateOfBirth: string
+  schoolGrade: string
+  uniformSize: string
+  shoeSize: string
+}
+
 // --- Age classifications (admin-managed DOB buckets) ---
 
 export interface AgeClassification {

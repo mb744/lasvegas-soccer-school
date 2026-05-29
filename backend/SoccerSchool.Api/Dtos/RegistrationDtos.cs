@@ -158,6 +158,31 @@ public record UpdatePlayerTrialRequest
     public bool FreeTrialOver { get; init; }
 }
 
+/// <summary>Admin adds a player to an existing registration (creates the durable player too).
+/// No signature — the row is enrolled but unsigned until a waiver is captured later.</summary>
+public record AddRegistrationPlayerRequest
+{
+    [Required, MaxLength(80)] public string FirstName { get; init; } = string.Empty;
+    [Required, MaxLength(80)] public string LastName { get; init; } = string.Empty;
+    public DateOnly DateOfBirth { get; init; }
+    [Required, MaxLength(40)] public string SchoolGrade { get; init; } = string.Empty;
+    [Required, MaxLength(10)] public string UniformSize { get; init; } = string.Empty;
+    [Required, MaxLength(10)] public string ShoeSize { get; init; } = string.Empty;
+    [MaxLength(120)] public string? HeardFrom { get; init; }
+}
+
+/// <summary>Admin edit of an enrolled player: per-season fields plus the durable name/DOB
+/// (DOB change re-assigns the age bracket; name/DOB changes apply to the player everywhere).</summary>
+public record UpdateRegistrationPlayerRequest
+{
+    [Required, MaxLength(80)] public string FirstName { get; init; } = string.Empty;
+    [Required, MaxLength(80)] public string LastName { get; init; } = string.Empty;
+    public DateOnly DateOfBirth { get; init; }
+    [Required, MaxLength(40)] public string SchoolGrade { get; init; } = string.Empty;
+    [Required, MaxLength(10)] public string UniformSize { get; init; } = string.Empty;
+    [Required, MaxLength(10)] public string ShoeSize { get; init; } = string.Empty;
+}
+
 // --- Age classifications (admin-managed DOB buckets) ---
 
 public record AgeClassificationDto(
