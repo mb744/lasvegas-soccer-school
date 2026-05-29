@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Api } from '../api/client'
-import type { EventRecipient, ScheduledGame, EventAttendanceList, EventAttendanceSummary, AttendanceStatus } from '../api/types'
+import type { ScheduledGame, EventAttendanceList, EventAttendanceSummary, AttendanceStatus, WhatsAppTemplate, TemplatePreviewResponse } from '../api/types'
 
 function extractError(e: any): string {
   return e?.response?.data?.title || e?.response?.data || e?.message || 'Error'
@@ -160,61 +160,97 @@ export function TeamScheduleSection({
     } catch (e: any) { onError(extractError(e)) }
   }
 
-  const cancel = async (ev: ScheduledGame) => {
-    const label = ev.kind === 0 ? 'game' : 'practice'
-    if (!confirm(`Cancel this ${label} on ${new Date(ev.startsAt).toLocaleString()}? You'll be able to notify parents who already received the reminder.`)) return
-    try {
-      if (ev.kind === 0) await Api.cancelGame(ev.id)
-      else await Api.cancelPractice(ev.id)
-      await onChanged()
-      onNotice(t('admin.msgPracticeCancelled'))
-    } catch (e: any) { onError(extractError(e)) }
-  }
-
-  const [notifyState, setNotifyState] = useState<{
-    practice: ScheduledGame
-    recipients: EventRecipient[]
-    bodyEn: string
-    bodyEs: string
+  // Templated cancel-&-notify: pick the event-kind WhatsApp template (game_* / practice_*), build
+  // variable values from the event (game: param 1 = "Has been cancelled"; practice: param 1 =
+  // "CANCELLED — <when>"), fetch the bilingual preview so admin can confirm Spanish + date/time
+  // read right, then on confirm send the templated WhatsApp message to the team-roster families
+  // and mark the event cancelled (for not-yet-cancelled rows). Replaces the old SMS notify flow.
+  const [cancelState, setCancelState] = useState<{
+    event: ScheduledGame
+    markAfter: boolean
+    template: WhatsAppTemplate
+    values: Record<string, string>
+    preview: TemplatePreviewResponse
   } | null>(null)
-  const [sendingNotify, setSendingNotify] = useState(false)
+  const [cancelLoading, setCancelLoading] = useState<number | null>(null)
+  const [cancelSending, setCancelSending] = useState(false)
 
-  const startNotify = async (p: ScheduledGame) => {
-    try {
-      const recipients = await Api.listEventRecipients(p.id)
-      const when = new Date(p.startsAt).toLocaleString()
-      const where = p.location ? ` at ${p.location}` : ''
-      setNotifyState({
-        practice: p,
-        recipients,
-        bodyEn: `The practice scheduled for ${when}${where} has been cancelled. Sorry for the late notice.`,
-        bodyEs: `La práctica programada para ${when}${where ? ` en ${p.location}` : ''} ha sido cancelada. Disculpe el aviso tardío.`,
-      })
-    } catch (e: any) { onError(extractError(e)) }
+  const kindLabel = (ev: ScheduledGame) =>
+    ev.kind === 0 ? t('admin.msgKindGame') : t('admin.msgKindPractice')
+
+  // Build the template variable map by walking the template's own variables and filling each
+  // position by label substring (matches Compose's autofill convention). For a game cancellation
+  // the opponent slot is overridden with "Has been cancelled"; for a practice the when slot is
+  // prefixed with "CANCELLED — " since the practice template has no opponent slot. Any leftover
+  // slot (e.g. uniform) is filled with "—" so CreateBroadcast's required-vars check is satisfied.
+  // Values are authored in English ("en-US" locale for the when string) — the bilingual preview
+  // endpoint translates each value into Spanish via the phrase dictionary on the way out.
+  const buildCancelValues = (ev: ScheduledGame, template: WhatsAppTemplate): Record<string, string> => {
+    const d = new Date(ev.startsAt)
+    const when = `${d.toLocaleDateString('en-US', { weekday: 'short', month: 'numeric', day: 'numeric' })} ${d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
+    const loc = ev.location?.trim() || '—'
+    const isGame = ev.kind === 0
+    const values: Record<string, string> = {}
+    for (const v of template.variables) {
+      const key = v.position.toString()
+      const label = v.label.toLowerCase()
+      if (label.includes('opponent')) {
+        values[key] = isGame ? 'Has been cancelled' : (ev.opponentName?.trim() || '—')
+      } else if (label.includes('when')) {
+        values[key] = isGame ? when : `CANCELLED — ${when}`
+      } else if (label.includes('where') || label.includes('location')) {
+        values[key] = loc
+      } else {
+        values[key] = '—'
+      }
+    }
+    return values
   }
 
-  const sendNotify = async () => {
-    if (!notifyState) return
-    if (notifyState.recipients.length === 0) {
-      onError(t('admin.msgNotifyNoRecipients'))
-      return
-    }
-    setSendingNotify(true)
+  const openCancel = async (ev: ScheduledGame, markAfter: boolean) => {
+    setCancelLoading(ev.id); onError(''); onNotice('')
     try {
-      await Api.createBroadcast({
-        channel: 0, // SMS — free-form cancellation works anytime without a template
-        bodyEn: notifyState.bodyEn.trim() || null,
-        bodyEs: notifyState.bodyEs.trim() || null,
-        scheduledGameId: notifyState.practice.id,
-        target: {
-          kind: 3, // AdHocList
-          recipients: notifyState.recipients.map(r => ({ phone: r.phone, name: r.name })),
-        },
-      })
-      onNotice(t('admin.msgCancellationSent', { count: notifyState.recipients.length }))
-      setNotifyState(null)
+      const templates = await Api.listWhatsAppTemplates()
+      const kindMatch = (tmpl: WhatsAppTemplate) => {
+        const n = tmpl.name.toLowerCase()
+        return ev.kind === 1 ? n.includes('practice') : n.includes('game')
+      }
+      // English-first (language=0) so values are authored in EN; the preview/send pipeline routes
+      // Spanish recipients to the paired template with translated values.
+      const tmpl = templates.filter(kindMatch).sort((a, b) => a.language - b.language)[0]
+      if (!tmpl) {
+        onError(t('admin.evtCancelNoTemplate', { kind: kindLabel(ev) }))
+        return
+      }
+      const values = buildCancelValues(ev, tmpl)
+      const preview = await Api.templatePreview({ templateId: tmpl.id, values })
+      setCancelState({ event: ev, markAfter, template: tmpl, values, preview })
     } catch (e: any) { onError(extractError(e)) }
-    finally { setSendingNotify(false) }
+    finally { setCancelLoading(null) }
+  }
+
+  const confirmCancel = async () => {
+    if (!cancelState) return
+    setCancelSending(true); onError('')
+    try {
+      const b = await Api.createBroadcast({
+        channel: 1, // WhatsApp — the only channel templates send on
+        whatsAppTemplateId: cancelState.template.id,
+        templateVariables: cancelState.values,
+        scheduledGameId: cancelState.event.id,
+        target: { kind: 2, dynamicGroupKey: `team-${teamId}` },
+      })
+      if (cancelState.markAfter) {
+        if (cancelState.event.kind === 0) await Api.cancelGame(cancelState.event.id)
+        else await Api.cancelPractice(cancelState.event.id)
+      }
+      const sent = b.recipients.filter(r => r.status !== 4 && r.status !== 5).length
+      onNotice(t('admin.evtCancelSent', { sent, total: b.recipients.length }))
+      setCancelState(null)
+      await onChanged()
+      await loadSummary()
+    } catch (e: any) { onError(extractError(e)) }
+    finally { setCancelSending(false) }
   }
 
   // Attendance ("confirm rostered players") panel — opens inline under a clicked event.
@@ -468,16 +504,20 @@ export function TeamScheduleSection({
                         <button onClick={() => startEdit(ev)}
                           className="text-emerald-700 hover:underline">{t('admin.details')}</button>
                         <span className="mx-2 text-slate-300">|</span>
-                        <button onClick={() => cancel(ev)}
-                          className="text-amber-700 hover:underline">{t('admin.msgCancelPractice')}</button>
+                        <button onClick={() => openCancel(ev, true)} disabled={cancelLoading === ev.id}
+                          className="text-amber-700 hover:underline disabled:opacity-40 disabled:no-underline">
+                          {cancelLoading === ev.id ? t('admin.evtCancelLoading') : t('admin.evtCancelNotify')}
+                        </button>
                         <span className="mx-2 text-slate-300">|</span>
                         <button onClick={() => remove(ev)}
                           className="text-rose-700 hover:underline">{t('admin.delete')}</button>
                       </>
                     )}
                     {ev.isCancelled && (
-                      <button onClick={() => startNotify(ev)}
-                        className="text-emerald-700 hover:underline">{t('admin.msgNotifyParents')}</button>
+                      <button onClick={() => openCancel(ev, false)} disabled={cancelLoading === ev.id}
+                        className="text-emerald-700 hover:underline disabled:opacity-40 disabled:no-underline">
+                        {cancelLoading === ev.id ? t('admin.evtCancelLoading') : t('admin.evtNotifyAgain')}
+                      </button>
                     )}
                   </td>
                 </tr>
@@ -501,33 +541,45 @@ export function TeamScheduleSection({
           </tbody>
         </table>
 
-        {notifyState && (
-          <div className="mt-3 border border-amber-300 bg-amber-50 rounded p-3 space-y-2">
-            <div className="text-sm">
-              <strong>{t('admin.msgNotifyHeader', { count: notifyState.recipients.length })}</strong>
-              <div className="text-xs text-slate-600 mt-1">{t('admin.msgNotifyHelp')}</div>
-            </div>
-            <div className="grid md:grid-cols-2 gap-2">
-              <label className="block text-xs">
-                <span className="font-medium text-slate-700">English</span>
-                <textarea rows={3} value={notifyState.bodyEn}
-                  onChange={e => setNotifyState(s => s ? { ...s, bodyEn: e.target.value } : s)}
-                  className="mt-1 w-full border border-slate-300 rounded-md px-2 py-1 text-sm" />
-              </label>
-              <label className="block text-xs">
-                <span className="font-medium text-slate-700">Español</span>
-                <textarea rows={3} value={notifyState.bodyEs}
-                  onChange={e => setNotifyState(s => s ? { ...s, bodyEs: e.target.value } : s)}
-                  className="mt-1 w-full border border-slate-300 rounded-md px-2 py-1 text-sm" />
-              </label>
-            </div>
-            <div className="flex items-center gap-3">
-              <button onClick={sendNotify} disabled={sendingNotify}
-                className="bg-emerald-700 text-white text-sm font-semibold px-3 py-1.5 rounded-md hover:bg-emerald-800 disabled:opacity-60">
-                {sendingNotify ? t('admin.sending') : t('admin.msgSendCancellation')}
-              </button>
-              <button onClick={() => setNotifyState(null)}
-                className="text-sm text-slate-600 hover:underline">{t('admin.msgCancel')}</button>
+        {cancelState && (
+          <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
+            <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full p-5 space-y-3 my-8">
+              <div className="flex items-start justify-between">
+                <h4 className="text-base font-semibold text-slate-800">
+                  {t('admin.evtCancelTitle', { kind: kindLabel(cancelState.event) })}
+                </h4>
+                <button onClick={() => setCancelState(null)}
+                  className="text-slate-400 hover:text-slate-700 text-xl leading-none">×</button>
+              </div>
+              <div className="text-xs text-slate-500">
+                <div>{t('admin.evtCancelHelp')}</div>
+                <div className="mt-1 text-slate-700">
+                  {kindLabel(cancelState.event)} · {new Date(cancelState.event.startsAt).toLocaleString()}
+                  {cancelState.event.location ? ` · ${cancelState.event.location}` : ''}
+                </div>
+              </div>
+              <div className="grid md:grid-cols-2 gap-3">
+                <div className="border border-slate-200 rounded p-3 bg-slate-50 text-sm whitespace-pre-wrap">
+                  <div className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">
+                    English · {cancelState.preview.english.templateName}
+                  </div>
+                  {cancelState.preview.english.rendered ?? '—'}
+                </div>
+                <div className="border border-slate-200 rounded p-3 bg-slate-50 text-sm whitespace-pre-wrap">
+                  <div className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">
+                    Español · {cancelState.preview.spanish.templateName}
+                  </div>
+                  {cancelState.preview.spanish.rendered ?? '—'}
+                </div>
+              </div>
+              <div className="flex items-center gap-3 pt-1">
+                <button onClick={confirmCancel} disabled={cancelSending}
+                  className="bg-rose-700 text-white text-sm font-semibold px-4 py-2 rounded-md hover:bg-rose-800 disabled:opacity-60">
+                  {cancelSending ? t('admin.sending') : t('admin.evtCancelSend')}
+                </button>
+                <button onClick={() => setCancelState(null)} disabled={cancelSending}
+                  className="text-sm text-slate-600 hover:underline">{t('admin.msgCancel')}</button>
+              </div>
             </div>
           </div>
         )}
