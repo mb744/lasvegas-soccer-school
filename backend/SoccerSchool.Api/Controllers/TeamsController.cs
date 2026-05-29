@@ -98,7 +98,7 @@ public class TeamsController : ControllerBase
         var team = await _db.Teams
             .Include(t => t.MessageGroup)
             .Include(t => t.Roster).ThenInclude(tp => tp.Player!).ThenInclude(p => p.ParentAccount!).ThenInclude(pa => pa.User)
-            .Include(t => t.Games)
+            .Include(t => t.Games).ThenInclude(g => g.Tournament)
             .FirstOrDefaultAsync(t => t.Id == id, ct);
         if (team is null) return NotFound();
 
@@ -130,7 +130,8 @@ public class TeamsController : ControllerBase
             .Select(g => new ScheduledGameDto(
                 g.Id, team.Id, team.Name, team.MessageGroupId, team.MessageGroup?.Name,
                 g.Kind, g.StartsAt, g.EndsAt, g.Summary, g.Location, g.Description,
-                g.OpponentName, g.IsHome, g.SeriesId, g.IsCancelled, g.CancelledAt))
+                g.OpponentName, g.IsHome, g.SeriesId, g.IsCancelled, g.CancelledAt,
+                g.TournamentId, g.Tournament?.Name))
             .ToList();
 
         return Ok(new RosterTeamDetail(

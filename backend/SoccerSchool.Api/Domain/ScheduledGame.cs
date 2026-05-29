@@ -14,6 +14,11 @@ public class ScheduledGame
     public int TeamId { get; set; }
     public Team? Team { get; set; }
 
+    /// <summary>When set, this game belongs to a tournament (GotSport-synced or manually added under
+    /// one). Null for practices and for one-off games not tied to a tournament.</summary>
+    public int? TournamentId { get; set; }
+    public Tournament? Tournament { get; set; }
+
     /// <summary>Game (scraped from GotSport, has opponent + home/away) or Practice (admin-entered,
     /// no opponent). Drives template-picker auto-selection in Compose.</summary>
     public ScheduledEventKind Kind { get; set; } = ScheduledEventKind.Game;

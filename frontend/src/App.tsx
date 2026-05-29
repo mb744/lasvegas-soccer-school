@@ -8,6 +8,7 @@ import { AdminUsersPage } from './pages/admin/UsersPage'
 import { AdminMessagingPage } from './pages/admin/MessagingPage'
 import { AdminAgeClassificationsPage } from './pages/admin/AgeClassificationsPage'
 import { AdminTeamsPage } from './pages/admin/TeamsPage'
+import { AdminEventsPage } from './pages/admin/EventsPage'
 import { LoginPage } from './pages/LoginPage'
 import { SignupPage } from './pages/SignupPage'
 import { PrivacyPage } from './pages/PrivacyPage'
@@ -62,6 +63,10 @@ export default function App() {
           <Route
             path="/admin/teams"
             element={<RequireAuth adminOnly><AdminTeamsPage /></RequireAuth>}
+          />
+          <Route
+            path="/admin/events"
+            element={<RequireAuth adminOnly><AdminEventsPage /></RequireAuth>}
           />
           <Route path="*" element={<LandingPage />} />
         </Routes>

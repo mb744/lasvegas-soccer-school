@@ -63,7 +63,9 @@ public record ScheduledGameDto(
     bool? IsHome,
     Guid? SeriesId,
     bool IsCancelled,
-    DateTime? CancelledAt);
+    DateTime? CancelledAt,
+    int? TournamentId,
+    string? TournamentName);
 
 public record SavePracticeRequest
 {
@@ -98,6 +100,9 @@ public record SaveGameRequest
 
     [MaxLength(512)]
     public string? Summary { get; init; }
+
+    /// <summary>Optional tournament this game belongs to (set when added from the Tournaments tab).</summary>
+    public int? TournamentId { get; init; }
 }
 
 /// <summary>Create a recurring practice series. Each combination of (day-of-week × occurrence date
@@ -163,4 +168,35 @@ public record EventAttendanceListDto(
 public record SetAttendanceRequest
 {
     public AttendanceStatus Status { get; init; }
+}
+
+// --- Tournaments (a team's GotSport competition entry) ---
+
+public record TournamentSummary(
+    int Id,
+    string Name,
+    int TeamId,
+    string TeamName,
+    int GotSportEventId,
+    int GotSportTeamId,
+    DateTime? LastSyncedAt,
+    string? LastSyncMessage,
+    int GameCount,
+    int UpcomingGameCount,
+    DateTime CreatedAt);
+
+public record SaveTournamentRequest
+{
+    [Required, MaxLength(128)]
+    public string Name { get; init; } = string.Empty;
+
+    public int TeamId { get; init; }
+
+    /// <summary>Either set EventId + TeamId directly, or paste the schedule URL and the server
+    /// parses them out (same parsing the old team form used).</summary>
+    public int? GotSportEventId { get; init; }
+    public int? GotSportTeamId { get; init; }
+
+    [MaxLength(1024)]
+    public string? ScheduleUrl { get; init; }
 }

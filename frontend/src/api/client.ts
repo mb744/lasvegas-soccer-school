@@ -25,6 +25,8 @@ import type {
   EventRecipient,
   EventAttendanceList,
   AttendanceStatus,
+  TournamentSummary,
+  SaveTournamentRequest,
   InboundMessage,
   PracticeSeriesCreated,
   SaveGameRequest,
@@ -427,6 +429,25 @@ export const Api = {
   },
   async listEventRecipients(eventId: number) {
     const r = await api.get<EventRecipient[]>(`/schedule/events/${eventId}/broadcast-recipients`)
+    return r.data
+  },
+  async listTournaments() {
+    const r = await api.get<TournamentSummary[]>('/schedule/tournaments')
+    return r.data
+  },
+  async createTournament(payload: SaveTournamentRequest) {
+    const r = await api.post<TournamentSummary>('/schedule/tournaments', payload)
+    return r.data
+  },
+  async updateTournament(id: number, payload: SaveTournamentRequest) {
+    const r = await api.put<TournamentSummary>(`/schedule/tournaments/${id}`, payload)
+    return r.data
+  },
+  async deleteTournament(id: number) {
+    await api.delete(`/schedule/tournaments/${id}`)
+  },
+  async syncTournament(id: number) {
+    const r = await api.post<ScheduleSyncResult>(`/schedule/tournaments/${id}/sync`, {})
     return r.data
   },
   async getEventAttendance(eventId: number) {

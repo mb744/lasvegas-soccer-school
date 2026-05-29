@@ -21,20 +21,23 @@ function toDateTimeLocal(iso: string): string {
  * for the team via the /api/schedule endpoints.
  */
 export function TeamScheduleSection({
-  teamId, games, onChanged, onError, onNotice,
+  teamId, games, onChanged, onError, onNotice, kind,
 }: {
   teamId: number
   games: ScheduledGame[]
   onChanged: () => Promise<void> | void
   onError: (e: string) => void
   onNotice: (n: string) => void
+  /** Restrict the table + add-buttons to one event kind. Omit to show practices and games together. */
+  kind?: 'practice' | 'game'
 }) {
   const { t } = useTranslation()
-  // Unified, time-sorted list. Games and practices show in the same table; admin distinguishes
-  // by the Kind badge on each row.
+  // Time-sorted list, optionally filtered to one kind (0 = Game, 1 = Practice).
   const events = useMemo(
-    () => [...games].sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime()),
-    [games])
+    () => [...games]
+      .filter(g => kind === undefined || (kind === 'game' ? g.kind === 0 : g.kind === 1))
+      .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime()),
+    [games, kind])
 
   // `editingId` discriminator:
   //   'new-practice' | 'new-game' | 'series' → opening one of the three new forms
@@ -237,12 +240,18 @@ export function TeamScheduleSection({
           <h3 className="font-medium text-slate-700">{t('admin.msgTeamScheduleHeader')}</h3>
           {editingId === null && (
             <div className="flex gap-3 flex-wrap">
-              <button onClick={startNewGame}
-                className="text-sm text-emerald-700 hover:underline">+ {t('admin.msgAddGame')}</button>
-              <button onClick={startNewPractice}
-                className="text-sm text-emerald-700 hover:underline">+ {t('admin.msgAddPractice')}</button>
-              <button onClick={startSeries}
-                className="text-sm text-emerald-700 hover:underline">+ {t('admin.msgAddPracticeSeries')}</button>
+              {kind !== 'practice' && (
+                <button onClick={startNewGame}
+                  className="text-sm text-emerald-700 hover:underline">+ {t('admin.msgAddGame')}</button>
+              )}
+              {kind !== 'game' && (
+                <>
+                  <button onClick={startNewPractice}
+                    className="text-sm text-emerald-700 hover:underline">+ {t('admin.msgAddPractice')}</button>
+                  <button onClick={startSeries}
+                    className="text-sm text-emerald-700 hover:underline">+ {t('admin.msgAddPracticeSeries')}</button>
+                </>
+              )}
             </div>
           )}
         </div>

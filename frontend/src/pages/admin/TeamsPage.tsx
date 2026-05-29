@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Layout } from '../../components/Layout'
-import { TeamScheduleSection } from '../../components/TeamScheduleSection'
 import { Api } from '../../api/client'
 import type {
   RosterTeamSummary,
@@ -12,10 +11,6 @@ import type {
 
 function errMsg(e: any): string {
   return e?.response?.data?.title || e?.response?.data || e?.message || 'Error'
-}
-
-function gotSportUrl(eventId: number, teamId: number): string {
-  return `https://system.gotsport.com/org_event/events/${eventId}/schedules?team=${teamId}`
 }
 
 export function AdminTeamsPage() {
@@ -36,9 +31,6 @@ export function AdminTeamsPage() {
   const [bracketFilter, setBracketFilter] = useState('')
   const [picked, setPicked] = useState<Set<number>>(new Set())
 
-  const [scheduleUrl, setScheduleUrl] = useState('')
-  const [syncing, setSyncing] = useState(false)
-
   const [coachName, setCoachName] = useState('')
   const [coachEmail, setCoachEmail] = useState('')
   const [coachPhone, setCoachPhone] = useState('')
@@ -57,7 +49,6 @@ export function AdminTeamsPage() {
     try {
       const [d, avail] = await Promise.all([Api.getRosterTeam(id), Api.listAvailablePlayers(id)])
       setDetail(d); setAvailable(avail)
-      setScheduleUrl(d.gotSportLinked ? gotSportUrl(d.gotSportEventId, d.gotSportTeamId) : '')
       setCoachName(d.coachName ?? ''); setCoachEmail(d.coachEmail ?? ''); setCoachPhone(d.coachPhone ?? '')
     } catch (e: any) { setError(errMsg(e)) }
   }
@@ -128,36 +119,6 @@ export function AdminTeamsPage() {
       await reloadSelected()
       setNotice(t('admin.teamMemberRemoved'))
     } catch (e: any) { setError(errMsg(e)) }
-  }
-
-  // Link this team to its GotSport event so schedule sync can scrape games. The schedule URL
-  // carries both IDs; the backend parses them. Reuses the schedule team-update endpoint, which
-  // operates on the same Team row.
-  const saveScheduleLink = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!detail) return
-    setError(null); setNotice(null); setBusy(true)
-    try {
-      await Api.updateTeam(detail.id, {
-        name: detail.name,
-        scheduleUrl: scheduleUrl.trim() || null,
-        messageGroupId: detail.messageGroupId,
-      })
-      await reloadSelected()
-      setNotice(t('admin.teamSaved'))
-    } catch (e: any) { setError(errMsg(e)) }
-    finally { setBusy(false) }
-  }
-
-  const runSync = async () => {
-    if (!detail) return
-    setError(null); setNotice(null); setSyncing(true)
-    try {
-      const r = await Api.syncTeam(detail.id)
-      setNotice(r.message)
-      await reloadSelected()
-    } catch (e: any) { setError(errMsg(e)) }
-    finally { setSyncing(false) }
   }
 
   const saveCoach = async (e: React.FormEvent) => {
@@ -369,46 +330,6 @@ export function AdminTeamsPage() {
                       )}
                     </tbody>
                   </table>
-                </CollapsibleSection>
-
-                {/* GotSport schedule sync (optional) */}
-                <CollapsibleSection
-                  title={t('admin.teamGotSportHeading')}
-                  subtitle={detail.lastSyncedAt ? `${t('admin.msgLastSynced')}: ${new Date(detail.lastSyncedAt).toLocaleString()}` : undefined}>
-                  <p className="text-xs text-slate-500">{t('admin.msgTeamScheduleUrlHelp')}</p>
-                  <form onSubmit={saveScheduleLink} className="mt-3 flex flex-col gap-2">
-                    <input type="url" value={scheduleUrl} onChange={e => setScheduleUrl(e.target.value)}
-                      placeholder="https://system.gotsport.com/org_event/events/48082/schedules?team=3764244"
-                      className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm font-mono" />
-                    <div className="flex items-center gap-3">
-                      <button type="submit" disabled={busy}
-                        className="bg-emerald-700 text-white text-sm font-semibold px-3 py-1.5 rounded-md hover:bg-emerald-800 disabled:opacity-60">
-                        {t('admin.msgSave')}
-                      </button>
-                      <button type="button" onClick={runSync} disabled={syncing || !detail.gotSportLinked}
-                        className="text-sm border border-emerald-300 text-emerald-700 rounded-md px-3 py-1.5 hover:bg-emerald-50 disabled:opacity-50">
-                        {syncing ? t('admin.msgSyncing') : t('admin.msgSyncNow')}
-                      </button>
-                    </div>
-                    {detail.lastSyncedAt && (
-                      <p className="text-xs text-slate-500">
-                        {t('admin.msgLastSynced')}: {new Date(detail.lastSyncedAt).toLocaleString()} — {detail.lastSyncMessage}
-                      </p>
-                    )}
-                  </form>
-                </CollapsibleSection>
-
-                {/* Schedule (practices + games) */}
-                <CollapsibleSection
-                  title={t('admin.teamScheduleHeading')}
-                  subtitle={t('admin.teamUpcomingCount', { count: detail.upcomingGames.length })}>
-                  <TeamScheduleSection
-                    teamId={detail.id}
-                    games={detail.upcomingGames}
-                    onChanged={reloadSelected}
-                    onError={setError}
-                    onNotice={setNotice}
-                  />
                 </CollapsibleSection>
 
                 {/* Communicate */}

@@ -51,7 +51,7 @@ public class ScheduleController : ControllerBase
     {
         var team = await _db.Teams
             .Include(t => t.MessageGroup)
-            .Include(t => t.Games)
+            .Include(t => t.Games).ThenInclude(g => g.Tournament)
             .FirstOrDefaultAsync(t => t.Id == id, ct);
         if (team is null) return NotFound();
 
@@ -62,7 +62,8 @@ public class ScheduleController : ControllerBase
             .Select(g => new ScheduledGameDto(
                 g.Id, team.Id, team.Name, team.MessageGroupId, team.MessageGroup?.Name,
                 g.Kind, g.StartsAt, g.EndsAt, g.Summary, g.Location, g.Description,
-                g.OpponentName, g.IsHome, g.SeriesId, g.IsCancelled, g.CancelledAt))
+                g.OpponentName, g.IsHome, g.SeriesId, g.IsCancelled, g.CancelledAt,
+                g.TournamentId, g.Tournament?.Name))
             .ToList();
 
         return Ok(new TeamDetail(
@@ -155,6 +156,121 @@ public class ScheduleController : ControllerBase
         var result = await _sync.SyncTeamAsync(id, ct);
         if (!result.Success) return UnprocessableEntity(new ScheduleSyncResultDto(false, 0, 0, result.Message));
         return Ok(new ScheduleSyncResultDto(true, result.Added, result.Updated, result.Message));
+    }
+
+    // --- Tournaments (a team's GotSport competition entry) ---
+
+    [HttpGet("tournaments")]
+    public async Task<ActionResult<IEnumerable<TournamentSummary>>> ListTournaments(CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        var rows = await _db.Tournaments
+            .Include(t => t.Team)
+            .OrderByDescending(t => t.CreatedAt)
+            .Select(t => new TournamentSummary(
+                t.Id, t.Name, t.TeamId, t.Team!.Name, t.GotSportEventId, t.GotSportTeamId,
+                t.LastSyncedAt, t.LastSyncMessage,
+                t.Games.Count,
+                t.Games.Count(g => g.StartsAt >= now && !g.IsCancelled),
+                t.CreatedAt))
+            .ToListAsync(ct);
+        return Ok(rows);
+    }
+
+    [HttpPost("tournaments")]
+    public async Task<ActionResult<TournamentSummary>> CreateTournament(
+        [FromBody] SaveTournamentRequest request, CancellationToken ct)
+    {
+        var (name, eventId, gsTeamId, err) = ResolveTournamentIds(request);
+        if (err is not null) return BadRequest(err);
+        if (!await _db.Teams.AnyAsync(t => t.Id == request.TeamId, ct))
+            return BadRequest("Team not found.");
+
+        var tournament = new Tournament
+        {
+            Name = name!,
+            TeamId = request.TeamId,
+            GotSportEventId = eventId,
+            GotSportTeamId = gsTeamId,
+        };
+        _db.Tournaments.Add(tournament);
+        await _db.SaveChangesAsync(ct);
+        return Ok(await SummarizeTournamentAsync(tournament.Id, ct));
+    }
+
+    [HttpPut("tournaments/{id:int}")]
+    public async Task<ActionResult<TournamentSummary>> UpdateTournament(
+        int id, [FromBody] SaveTournamentRequest request, CancellationToken ct)
+    {
+        var tournament = await _db.Tournaments.FindAsync(new object?[] { id }, ct);
+        if (tournament is null) return NotFound();
+        var (name, eventId, gsTeamId, err) = ResolveTournamentIds(request);
+        if (err is not null) return BadRequest(err);
+        if (!await _db.Teams.AnyAsync(t => t.Id == request.TeamId, ct))
+            return BadRequest("Team not found.");
+
+        tournament.Name = name!;
+        tournament.TeamId = request.TeamId;
+        tournament.GotSportEventId = eventId;
+        tournament.GotSportTeamId = gsTeamId;
+        await _db.SaveChangesAsync(ct);
+        return Ok(await SummarizeTournamentAsync(tournament.Id, ct));
+    }
+
+    [HttpDelete("tournaments/{id:int}")]
+    public async Task<IActionResult> DeleteTournament(int id, CancellationToken ct)
+    {
+        var tournament = await _db.Tournaments.FindAsync(new object?[] { id }, ct);
+        if (tournament is null) return NotFound();
+        // Games keep existing as the team's games (FK is SetNull) — only the tournament link drops.
+        _db.Tournaments.Remove(tournament);
+        await _db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
+    [HttpPost("tournaments/{id:int}/sync")]
+    public async Task<ActionResult<ScheduleSyncResultDto>> SyncTournament(int id, CancellationToken ct)
+    {
+        var result = await _sync.SyncTournamentAsync(id, ct);
+        if (!result.Success) return UnprocessableEntity(new ScheduleSyncResultDto(false, 0, 0, result.Message));
+        return Ok(new ScheduleSyncResultDto(true, result.Added, result.Updated, result.Message));
+    }
+
+    /// <summary>Resolves a tournament's GotSport IDs from explicit fields or a pasted schedule URL.</summary>
+    private static (string? Name, int EventId, int TeamId, string? Error) ResolveTournamentIds(SaveTournamentRequest request)
+    {
+        var name = request.Name?.Trim();
+        if (string.IsNullOrWhiteSpace(name)) return (null, 0, 0, "Name is required.");
+        if (request.TeamId <= 0) return (null, 0, 0, "Team is required.");
+
+        int eventId = request.GotSportEventId ?? 0;
+        int teamId = request.GotSportTeamId ?? 0;
+        if ((eventId <= 0 || teamId <= 0) && !string.IsNullOrWhiteSpace(request.ScheduleUrl))
+        {
+            var url = request.ScheduleUrl.Trim();
+            var em = Regex.Match(url, @"/events/(\d+)/schedules", RegexOptions.IgnoreCase);
+            var tm = Regex.Match(url, @"[?&]team=(\d+)", RegexOptions.IgnoreCase);
+            if (em.Success && int.TryParse(em.Groups[1].Value, out var e)) eventId = e;
+            if (tm.Success && int.TryParse(tm.Groups[1].Value, out var t)) teamId = t;
+        }
+        if (eventId <= 0 || teamId <= 0)
+            return (null, 0, 0, "GotSport event ID and team ID are required. Paste the schedule URL or enter them directly.");
+        return (name, eventId, teamId, null);
+    }
+
+    private async Task<TournamentSummary> SummarizeTournamentAsync(int id, CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        return await _db.Tournaments
+            .Where(t => t.Id == id)
+            .Include(t => t.Team)
+            .Select(t => new TournamentSummary(
+                t.Id, t.Name, t.TeamId, t.Team!.Name, t.GotSportEventId, t.GotSportTeamId,
+                t.LastSyncedAt, t.LastSyncMessage,
+                t.Games.Count,
+                t.Games.Count(g => g.StartsAt >= now && !g.IsCancelled),
+                t.CreatedAt))
+            .FirstAsync(ct);
     }
 
     // --- Manual practice CRUD ---
@@ -325,9 +441,15 @@ public class ScheduleController : ControllerBase
         if (team is null) return NotFound();
         if (request.StartsAt == default) return BadRequest("Start time is required.");
 
+        // If tied to a tournament, it must belong to this team.
+        if (request.TournamentId is int tid &&
+            !await _db.Tournaments.AnyAsync(t => t.Id == tid && t.TeamId == teamId, ct))
+            return BadRequest("Tournament not found for this team.");
+
         var game = new ScheduledGame
         {
             TeamId = team.Id,
+            TournamentId = request.TournamentId,
             Kind = ScheduledEventKind.Game,
             ExternalUid = $"manual-game-{Guid.NewGuid():N}",
             StartsAt = DateTime.SpecifyKind(request.StartsAt, DateTimeKind.Utc),
@@ -512,7 +634,8 @@ public class ScheduleController : ControllerBase
     private static ScheduledGameDto ToDto(ScheduledGame g, Team team) => new(
         g.Id, team.Id, team.Name, team.MessageGroupId, team.MessageGroup?.Name,
         g.Kind, g.StartsAt, g.EndsAt, g.Summary, g.Location, g.Description,
-        g.OpponentName, g.IsHome, g.SeriesId, g.IsCancelled, g.CancelledAt);
+        g.OpponentName, g.IsHome, g.SeriesId, g.IsCancelled, g.CancelledAt,
+        g.TournamentId, g.Tournament?.Name);
 
     /// <summary>
     /// Upcoming games across all teams within the given window. Used by the Compose tab game
@@ -534,7 +657,8 @@ public class ScheduleController : ControllerBase
             .Select(g => new ScheduledGameDto(
                 g.Id, g.TeamId, g.Team!.Name, g.Team.MessageGroupId, g.Team.MessageGroup != null ? g.Team.MessageGroup.Name : null,
                 g.Kind, g.StartsAt, g.EndsAt, g.Summary, g.Location, g.Description,
-                g.OpponentName, g.IsHome, g.SeriesId, g.IsCancelled, g.CancelledAt))
+                g.OpponentName, g.IsHome, g.SeriesId, g.IsCancelled, g.CancelledAt,
+                g.TournamentId, g.Tournament != null ? g.Tournament.Name : null))
             .ToListAsync(ct);
         return Ok(games);
     }

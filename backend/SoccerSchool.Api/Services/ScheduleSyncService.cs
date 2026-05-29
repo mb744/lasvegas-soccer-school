@@ -26,6 +26,7 @@ namespace SoccerSchool.Api.Services;
 public interface IScheduleSyncService
 {
     Task<ScheduleSyncResult> SyncTeamAsync(int teamId, CancellationToken ct);
+    Task<ScheduleSyncResult> SyncTournamentAsync(int tournamentId, CancellationToken ct);
 }
 
 public record ScheduleSyncResult(bool Success, int Added, int Updated, string Message);
@@ -50,10 +51,42 @@ public class ScheduleSyncService : IScheduleSyncService
     {
         var team = await _db.Teams.Include(t => t.Games).FirstOrDefaultAsync(t => t.Id == teamId, ct);
         if (team is null) return new ScheduleSyncResult(false, 0, 0, "Team not found.");
-        if (team.GotSportEventId <= 0 || team.GotSportTeamId <= 0)
-            return await FailAsync(team, "Team is missing GotSport event/team IDs.", ct);
 
-        var url = $"https://system.gotsport.com/org_event/events/{team.GotSportEventId}/schedules?team={team.GotSportTeamId}";
+        var existing = team.Games.Where(g => g.TournamentId == null).ToList();
+        var r = await ScrapeAsync(team.GotSportEventId, team.GotSportTeamId, team.Id, null, existing, ct);
+        team.LastSyncedAt = DateTime.UtcNow;
+        team.LastSyncMessage = r.Message;
+        await _db.SaveChangesAsync(ct);
+        return new ScheduleSyncResult(r.Ok, r.Added, r.Updated, r.Message);
+    }
+
+    public async Task<ScheduleSyncResult> SyncTournamentAsync(int tournamentId, CancellationToken ct)
+    {
+        var tournament = await _db.Tournaments.Include(t => t.Games).FirstOrDefaultAsync(t => t.Id == tournamentId, ct);
+        if (tournament is null) return new ScheduleSyncResult(false, 0, 0, "Tournament not found.");
+
+        var r = await ScrapeAsync(tournament.GotSportEventId, tournament.GotSportTeamId,
+            tournament.TeamId, tournament.Id, tournament.Games.ToList(), ct);
+        tournament.LastSyncedAt = DateTime.UtcNow;
+        tournament.LastSyncMessage = r.Message;
+        await _db.SaveChangesAsync(ct);
+        return new ScheduleSyncResult(r.Ok, r.Added, r.Updated, r.Message);
+    }
+
+    private sealed record ScrapeOutcome(bool Ok, int Added, int Updated, string Message);
+
+    /// <summary>Fetches + parses the public GotSport schedule for (<paramref name="eventId"/>,
+    /// <paramref name="gotSportTeamId"/>) and upserts the games against <paramref name="existing"/>.
+    /// New rows are created on <paramref name="teamDbId"/> and tagged with <paramref name="tournamentId"/>.
+    /// Caller persists the owner's LastSynced bookkeeping.</summary>
+    private async Task<ScrapeOutcome> ScrapeAsync(
+        int eventId, int gotSportTeamId, int teamDbId, int? tournamentId,
+        IReadOnlyCollection<ScheduledGame> existingGames, CancellationToken ct)
+    {
+        if (eventId <= 0 || gotSportTeamId <= 0)
+            return new ScrapeOutcome(false, 0, 0, "Missing GotSport event/team IDs.");
+
+        var url = $"https://system.gotsport.com/org_event/events/{eventId}/schedules?team={gotSportTeamId}";
 
         string html;
         try
@@ -66,21 +99,21 @@ public class ScheduleSyncService : IScheduleSyncService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to fetch GotSport schedule for team {TeamId}", teamId);
-            return await FailAsync(team, $"Fetch failed: {ex.Message}", ct);
+            _logger.LogWarning(ex, "Failed to fetch GotSport schedule for event {EventId} team {GsTeamId}", eventId, gotSportTeamId);
+            return new ScrapeOutcome(false, 0, 0, $"Fetch failed: {ex.Message}");
         }
 
         IHtmlParser parser = new HtmlParser();
         var doc = await parser.ParseDocumentAsync(html, ct);
 
-        var existing = team.Games.ToDictionary(g => g.ExternalUid, g => g, StringComparer.Ordinal);
+        var existing = existingGames.ToDictionary(g => g.ExternalUid, g => g, StringComparer.Ordinal);
         int added = 0, updated = 0;
         var now = DateTime.UtcNow;
-        var ourTeamId = team.GotSportTeamId.ToString(CultureInfo.InvariantCulture);
+        var ourTeamId = gotSportTeamId.ToString(CultureInfo.InvariantCulture);
 
         // .row.public-match is the per-match anchor. Each one has two team links (.text-primary)
         // with team=XXX in their href and a (H)/(A) suffix in the text. The date/time and venue
-        // live in surrounding markup that we walk to find — see PaseMatchContext below.
+        // live in surrounding markup that we walk to find.
         var matchRows = doc.QuerySelectorAll(".row.public-match");
         var seenUids = new HashSet<string>();
 
@@ -124,10 +157,10 @@ public class ScheduleSyncService : IScheduleSyncService
             }
 
             // Match number is the most stable per-game key inside one event; combine with the
-            // event id (implicit per team here) for global uniqueness.
+            // event id for global uniqueness (stays unique across a team's multiple tournaments).
             var uid = !string.IsNullOrWhiteSpace(matchNumber)
-                ? $"gs:{team.GotSportEventId}:{matchNumber.TrimStart('#')}"
-                : $"gs:{team.GotSportEventId}:{startsAt:O}:{homeName}:{awayName}".GetHashCode().ToString("x");
+                ? $"gs:{eventId}:{matchNumber.TrimStart('#')}"
+                : $"gs:{eventId}:{startsAt:O}:{homeName}:{awayName}".GetHashCode().ToString("x");
             if (uid.Length > 256) uid = uid[..256];
             if (!seenUids.Add(uid)) continue; // .visible-xs/.hidden-xs duplicate dedup
 
@@ -151,9 +184,10 @@ public class ScheduleSyncService : IScheduleSyncService
             }
             else
             {
-                team.Games.Add(new ScheduledGame
+                _db.ScheduledGames.Add(new ScheduledGame
                 {
-                    TeamId = team.Id,
+                    TeamId = teamDbId,
+                    TournamentId = tournamentId,
                     ExternalUid = uid,
                     StartsAt = startsAt,
                     Summary = Trim(summary, 512),
@@ -167,13 +201,10 @@ public class ScheduleSyncService : IScheduleSyncService
             }
         }
 
-        team.LastSyncedAt = now;
-        team.LastSyncMessage = added + updated == 0
+        var message = added + updated == 0
             ? "No matches found on the GotSport page. Double-check the event/team IDs."
             : $"{added} added, {updated} updated.";
-        await _db.SaveChangesAsync(ct);
-
-        return new ScheduleSyncResult(true, added, updated, team.LastSyncMessage);
+        return new ScrapeOutcome(true, added, updated, message);
     }
 
     private static string? ExtractTeamId(string? href)
@@ -222,14 +253,6 @@ public class ScheduleSyncService : IScheduleSyncService
         }
         var utc = TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(local, DateTimeKind.Unspecified), pacific);
         return (utc, true);
-    }
-
-    private async Task<ScheduleSyncResult> FailAsync(Team team, string message, CancellationToken ct)
-    {
-        team.LastSyncedAt = DateTime.UtcNow;
-        team.LastSyncMessage = message;
-        await _db.SaveChangesAsync(ct);
-        return new ScheduleSyncResult(false, 0, 0, message);
     }
 
     private static string? Trim(string? input, int max) =>

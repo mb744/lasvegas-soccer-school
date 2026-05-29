@@ -567,6 +567,30 @@ export interface ScheduledGame {
   seriesId: string | null
   isCancelled: boolean
   cancelledAt: string | null
+  tournamentId: number | null
+  tournamentName: string | null
+}
+
+export interface TournamentSummary {
+  id: number
+  name: string
+  teamId: number
+  teamName: string
+  gotSportEventId: number
+  gotSportTeamId: number
+  lastSyncedAt: string | null
+  lastSyncMessage: string | null
+  gameCount: number
+  upcomingGameCount: number
+  createdAt: string
+}
+
+export interface SaveTournamentRequest {
+  name: string
+  teamId: number
+  gotSportEventId?: number | null
+  gotSportTeamId?: number | null
+  scheduleUrl?: string | null
 }
 
 export interface EventRecipient {
@@ -589,6 +613,7 @@ export interface SaveGameRequest {
   isHome?: boolean | null
   location?: string | null
   summary?: string | null
+  tournamentId?: number | null
 }
 
 export interface SavePracticeSeriesRequest {
