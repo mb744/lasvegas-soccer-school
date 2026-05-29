@@ -428,6 +428,87 @@ public class ScheduleController : ControllerBase
         return Ok(result);
     }
 
+    // --- Event attendance (per rostered player confirmation) ---
+
+    /// <summary>The event's team roster with each player's confirmation status (Pending when no row
+    /// exists yet) plus headline counts. Drives the "click an event → confirm players" panel.</summary>
+    [HttpGet("events/{eventId:int}/attendance")]
+    public async Task<ActionResult<EventAttendanceListDto>> GetAttendance(int eventId, CancellationToken ct)
+    {
+        var teamId = await _db.ScheduledGames
+            .Where(g => g.Id == eventId)
+            .Select(g => (int?)g.TeamId)
+            .FirstOrDefaultAsync(ct);
+        if (teamId is null) return NotFound();
+
+        var roster = await _db.TeamPlayers
+            .Where(tp => tp.TeamId == teamId)
+            .Select(tp => new
+            {
+                tp.PlayerId,
+                tp.Player!.FirstName,
+                tp.Player.LastName,
+                ParentFirst = tp.Player.ParentAccount!.FirstName,
+                ParentLast = tp.Player.ParentAccount.LastName,
+                ParentPhone = tp.Player.ParentAccount.CellPhone,
+            })
+            .ToListAsync(ct);
+
+        var attendance = await _db.EventAttendances
+            .Where(a => a.ScheduledGameId == eventId)
+            .ToDictionaryAsync(a => a.PlayerId, a => a, ct);
+
+        var items = roster
+            .Select(r =>
+            {
+                attendance.TryGetValue(r.PlayerId, out var a);
+                var parentName = $"{r.ParentFirst} {r.ParentLast}".Trim();
+                return new EventAttendanceDto(
+                    r.PlayerId, r.FirstName, r.LastName,
+                    string.IsNullOrWhiteSpace(parentName) ? null : parentName,
+                    r.ParentPhone,
+                    a?.Status ?? AttendanceStatus.Pending,
+                    a?.Source ?? AttendanceSource.ParentReply,
+                    a?.UpdatedAt);
+            })
+            .OrderBy(i => i.LastName).ThenBy(i => i.FirstName)
+            .ToList();
+
+        return Ok(new EventAttendanceListDto(
+            eventId,
+            items.Count(i => i.Status == AttendanceStatus.Confirmed),
+            items.Count(i => i.Status == AttendanceStatus.Declined),
+            items.Count(i => i.Status == AttendanceStatus.Maybe),
+            items.Count(i => i.Status == AttendanceStatus.Pending),
+            items));
+    }
+
+    /// <summary>Admin manually sets a rostered player's status for the event. Stamped Source=Admin
+    /// so a later parent reply won't overwrite the deliberate call.</summary>
+    [HttpPut("events/{eventId:int}/attendance/{playerId:int}")]
+    public async Task<ActionResult<EventAttendanceListDto>> SetAttendance(
+        int eventId, int playerId, [FromBody] SetAttendanceRequest request, CancellationToken ct)
+    {
+        var ev = await _db.ScheduledGames.FirstOrDefaultAsync(g => g.Id == eventId, ct);
+        if (ev is null) return NotFound();
+        var onRoster = await _db.TeamPlayers.AnyAsync(tp => tp.TeamId == ev.TeamId && tp.PlayerId == playerId, ct);
+        if (!onRoster) return BadRequest("Player is not on this team's roster.");
+
+        var row = await _db.EventAttendances
+            .FirstOrDefaultAsync(a => a.ScheduledGameId == eventId && a.PlayerId == playerId, ct);
+        if (row is null)
+        {
+            row = new EventAttendance { ScheduledGameId = eventId, PlayerId = playerId };
+            _db.EventAttendances.Add(row);
+        }
+        row.Status = request.Status;
+        row.Source = AttendanceSource.Admin;
+        row.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+
+        return await GetAttendance(eventId, ct);
+    }
+
     private static ScheduledGameDto ToDto(ScheduledGame g, Team team) => new(
         g.Id, team.Id, team.Name, team.MessageGroupId, team.MessageGroup?.Name,
         g.Kind, g.StartsAt, g.EndsAt, g.Summary, g.Location, g.Description,

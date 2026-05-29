@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Api } from '../api/client'
-import type { EventRecipient, ScheduledGame } from '../api/types'
+import type { EventRecipient, ScheduledGame, EventAttendanceList, AttendanceStatus } from '../api/types'
 
 function extractError(e: any): string {
   return e?.response?.data?.title || e?.response?.data || e?.message || 'Error'
@@ -214,6 +214,22 @@ export function TeamScheduleSection({
     finally { setSendingNotify(false) }
   }
 
+  // Attendance ("confirm rostered players") panel — opens inline under a clicked event.
+  const [attendanceFor, setAttendanceFor] = useState<number | null>(null)
+  const [attendance, setAttendance] = useState<EventAttendanceList | null>(null)
+
+  const toggleAttendance = async (eventId: number) => {
+    if (attendanceFor === eventId) { setAttendanceFor(null); setAttendance(null); return }
+    setAttendanceFor(eventId); setAttendance(null)
+    try { setAttendance(await Api.getEventAttendance(eventId)) }
+    catch (e: any) { onError(extractError(e)) }
+  }
+
+  const setStatus = async (eventId: number, playerId: number, status: AttendanceStatus) => {
+    try { setAttendance(await Api.setEventAttendance(eventId, playerId, status)) }
+    catch (e: any) { onError(extractError(e)) }
+  }
+
   return (
     <div className="bg-white border border-slate-200 rounded-lg p-4 space-y-4">
       <div>
@@ -375,7 +391,8 @@ export function TeamScheduleSection({
               const homeAway = isGame && ev.isHome === true ? ' (H)' : isGame && ev.isHome === false ? ' (A)' : ''
               const kindBadgeClass = isGame ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'
               return (
-                <tr key={ev.id} className={`border-b last:border-0 ${ev.isCancelled ? 'text-slate-400 line-through' : ''}`}>
+                <Fragment key={ev.id}>
+                <tr className={`border-b last:border-0 ${ev.isCancelled ? 'text-slate-400 line-through' : ''}`}>
                   <td className="py-1 pr-4 whitespace-nowrap">{new Date(ev.startsAt).toLocaleString()}</td>
                   <td className="py-1 pr-4 no-underline">
                     <span className={`inline-block text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded ${kindBadgeClass}`}>
@@ -391,6 +408,9 @@ export function TeamScheduleSection({
                   <td className="py-1 pr-4 text-right whitespace-nowrap no-underline">
                     {!ev.isCancelled && (
                       <>
+                        <button onClick={() => toggleAttendance(ev.id)}
+                          className="text-emerald-700 hover:underline">{t('admin.attnConfirm')}</button>
+                        <span className="mx-2 text-slate-300">|</span>
                         <button onClick={() => startEdit(ev)}
                           className="text-emerald-700 hover:underline">{t('admin.details')}</button>
                         <span className="mx-2 text-slate-300">|</span>
@@ -407,6 +427,17 @@ export function TeamScheduleSection({
                     )}
                   </td>
                 </tr>
+                {attendanceFor === ev.id && (
+                  <tr>
+                    <td colSpan={5} className="bg-slate-50 px-3 py-3 no-underline">
+                      <AttendancePanel
+                        data={attendance}
+                        onSet={(playerId, status) => setStatus(ev.id, playerId, status)}
+                      />
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               )
             })}
             {events.length === 0 && (
@@ -446,6 +477,58 @@ export function TeamScheduleSection({
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+/** Inline roster confirmation list for one event: per-player status with four set-buttons + counts. */
+function AttendancePanel({
+  data, onSet,
+}: {
+  data: EventAttendanceList | null
+  onSet: (playerId: number, status: AttendanceStatus) => void
+}) {
+  const { t } = useTranslation()
+  if (!data) return <div className="text-xs text-slate-400">…</div>
+
+  const setBtn = (it: EventAttendanceList['items'][number], s: AttendanceStatus, label: string, activeCls: string) => (
+    <button onClick={() => onSet(it.playerId, s)}
+      className={`px-2 py-0.5 rounded border text-[11px] ${it.status === s ? activeCls : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-100'}`}>
+      {label}
+    </button>
+  )
+
+  return (
+    <div className="space-y-2">
+      <div className="text-xs font-medium text-emerald-800">
+        {t('admin.attnHeading')} — {t('admin.attnConfirmed')}: {data.confirmed} · {t('admin.attnMaybe')}: {data.maybe} · {t('admin.attnDeclined')}: {data.declined} · {t('admin.attnPending')}: {data.pending}
+      </div>
+      <table className="w-full text-xs">
+        <tbody>
+          {data.items.map(it => (
+            <tr key={it.playerId} className="border-b last:border-0">
+              <td className="py-1 pr-3">
+                <div className="font-medium text-slate-800">{it.firstName} {it.lastName}</div>
+                <div className="text-[10px] text-slate-400">
+                  {it.parentName ?? ''}{it.parentPhone ? ` · ${it.parentPhone}` : ''}
+                  {it.source === 0 && it.status !== 0 ? ` · ${t('admin.attnFromReply')}` : ''}
+                </div>
+              </td>
+              <td className="py-1 text-right whitespace-nowrap">
+                <div className="inline-flex gap-1">
+                  {setBtn(it, 1, t('admin.attnConfirmed'), 'bg-emerald-600 text-white border-emerald-600')}
+                  {setBtn(it, 3, t('admin.attnMaybe'), 'bg-amber-500 text-white border-amber-500')}
+                  {setBtn(it, 2, t('admin.attnDeclined'), 'bg-rose-600 text-white border-rose-600')}
+                  {setBtn(it, 0, t('admin.attnPending'), 'bg-slate-500 text-white border-slate-500')}
+                </div>
+              </td>
+            </tr>
+          ))}
+          {data.items.length === 0 && (
+            <tr><td className="py-2 text-slate-400">{t('admin.attnNoRoster')}</td></tr>
+          )}
+        </tbody>
+      </table>
     </div>
   )
 }

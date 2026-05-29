@@ -23,6 +23,8 @@ import type {
   RegistrationSummary,
   PhraseTranslation,
   EventRecipient,
+  EventAttendanceList,
+  AttendanceStatus,
   InboundMessage,
   PracticeSeriesCreated,
   SaveGameRequest,
@@ -425,6 +427,14 @@ export const Api = {
   },
   async listEventRecipients(eventId: number) {
     const r = await api.get<EventRecipient[]>(`/schedule/events/${eventId}/broadcast-recipients`)
+    return r.data
+  },
+  async getEventAttendance(eventId: number) {
+    const r = await api.get<EventAttendanceList>(`/schedule/events/${eventId}/attendance`)
+    return r.data
+  },
+  async setEventAttendance(eventId: number, playerId: number, status: AttendanceStatus) {
+    const r = await api.put<EventAttendanceList>(`/schedule/events/${eventId}/attendance/${playerId}`, { status })
     return r.data
   },
 

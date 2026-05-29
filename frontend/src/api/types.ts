@@ -628,6 +628,31 @@ export interface ScheduleSyncResult {
   message: string
 }
 
+// --- Event attendance (per rostered player confirmation) ---
+
+export type AttendanceStatus = 0 | 1 | 2 | 3 // Pending | Confirmed | Declined | Maybe
+export type AttendanceSource = 0 | 1 // ParentReply | Admin
+
+export interface EventAttendance {
+  playerId: number
+  firstName: string
+  lastName: string
+  parentName: string | null
+  parentPhone: string | null
+  status: AttendanceStatus
+  source: AttendanceSource
+  updatedAt: string | null
+}
+
+export interface EventAttendanceList {
+  eventId: number
+  confirmed: number
+  declined: number
+  maybe: number
+  pending: number
+  items: EventAttendance[]
+}
+
 // --- Teams (roster builder) ---
 
 export interface RosterTeamSummary {

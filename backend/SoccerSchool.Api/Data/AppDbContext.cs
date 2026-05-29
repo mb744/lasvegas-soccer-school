@@ -60,6 +60,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<Team> Teams => Set<Team>();
     public DbSet<TeamPlayer> TeamPlayers => Set<TeamPlayer>();
     public DbSet<ScheduledGame> ScheduledGames => Set<ScheduledGame>();
+    public DbSet<EventAttendance> EventAttendances => Set<EventAttendance>();
     public DbSet<PhraseTranslation> PhraseTranslations => Set<PhraseTranslation>();
     public DbSet<InboundMessage> InboundMessages => Set<InboundMessage>();
     public DbSet<MessagingSettings> MessagingSettings => Set<MessagingSettings>();
@@ -248,6 +249,19 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
                 .HasForeignKey(tp => tp.PlayerId)
                 .OnDelete(DeleteBehavior.Restrict);
             b.HasIndex(tp => new { tp.TeamId, tp.PlayerId }).IsUnique();
+        });
+
+        modelBuilder.Entity<EventAttendance>(b =>
+        {
+            b.HasOne(a => a.ScheduledGame)
+                .WithMany()
+                .HasForeignKey(a => a.ScheduledGameId)
+                .OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(a => a.Player)
+                .WithMany()
+                .HasForeignKey(a => a.PlayerId)
+                .OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(a => new { a.ScheduledGameId, a.PlayerId }).IsUnique();
         });
 
         modelBuilder.Entity<ScheduledGame>(b =>

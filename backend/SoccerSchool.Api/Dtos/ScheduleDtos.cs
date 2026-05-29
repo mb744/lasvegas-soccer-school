@@ -136,3 +136,31 @@ public record PracticeSeriesCreatedDto(Guid SeriesId, int Count, IReadOnlyList<S
 public record EventRecipientDto(string Phone, string? Name, Language Language);
 
 public record ScheduleSyncResultDto(bool Success, int Added, int Updated, string Message);
+
+// --- Event attendance (per rostered player confirmation) ---
+
+/// <summary>One rostered player's confirmation status for an event. <see cref="Source"/> is 1 when
+/// an admin set it manually, 0 when it came from a parent's reply. <see cref="UpdatedAt"/> is null
+/// when there's no stored row yet (player defaults to Pending).</summary>
+public record EventAttendanceDto(
+    int PlayerId,
+    string FirstName,
+    string LastName,
+    string? ParentName,
+    string? ParentPhone,
+    AttendanceStatus Status,
+    AttendanceSource Source,
+    DateTime? UpdatedAt);
+
+public record EventAttendanceListDto(
+    int EventId,
+    int Confirmed,
+    int Declined,
+    int Maybe,
+    int Pending,
+    IReadOnlyList<EventAttendanceDto> Items);
+
+public record SetAttendanceRequest
+{
+    public AttendanceStatus Status { get; init; }
+}

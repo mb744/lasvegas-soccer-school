@@ -136,7 +136,78 @@ public class TwilioWebhookController : ControllerBase
         try { await MaybeAutoReplyAsync(channel, from, ct); }
         catch (Exception ex) { _logger.LogWarning(ex, "Auto-reply to {From} failed", from); }
 
+        try { await MaybeRecordAttendanceAsync(from, body, broadcastId, ct); }
+        catch (Exception ex) { _logger.LogWarning(ex, "Attendance auto-record for {From} failed", from); }
+
         return Content("<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response></Response>", "application/xml");
+    }
+
+    /// <summary>When a reply threads onto a broadcast that announced an event, interpret it as an
+    /// attendance answer and apply it to the replying family's rostered players on that event.
+    /// Skips rows the admin set manually so an old reply can't undo a deliberate correction.</summary>
+    private async Task MaybeRecordAttendanceAsync(string from, string? body, int? broadcastId, CancellationToken ct)
+    {
+        if (broadcastId is null) return;
+        var status = AttendanceReplyParser.Parse(body);
+        if (status is null) return;
+
+        var eventId = await _db.Broadcasts
+            .Where(b => b.Id == broadcastId && b.ScheduledGameId != null)
+            .Select(b => b.ScheduledGameId)
+            .FirstOrDefaultAsync(ct);
+        if (eventId is null) return;
+
+        var teamId = await _db.ScheduledGames
+            .Where(g => g.Id == eventId)
+            .Select(g => (int?)g.TeamId)
+            .FirstOrDefaultAsync(ct);
+        if (teamId is null) return;
+
+        // Resolve the sender's family account (registered parent or additional guardian).
+        var variants = PhoneNormalizer.Variants(from);
+        var accountId = await _db.ParentAccounts
+            .Where(p => p.CellPhone != null && variants.Contains(p.CellPhone))
+            .Select(p => (int?)p.Id)
+            .FirstOrDefaultAsync(ct);
+        accountId ??= await _db.ParentContacts
+            .Where(c => c.CellPhone != null && variants.Contains(c.CellPhone))
+            .Select(c => (int?)c.ParentAccountId)
+            .FirstOrDefaultAsync(ct);
+        if (accountId is null) return;
+
+        var playerIds = await _db.TeamPlayers
+            .Where(tp => tp.TeamId == teamId && tp.Player!.ParentAccountId == accountId)
+            .Select(tp => tp.PlayerId)
+            .ToListAsync(ct);
+        if (playerIds.Count == 0) return;
+
+        var existing = await _db.EventAttendances
+            .Where(a => a.ScheduledGameId == eventId && playerIds.Contains(a.PlayerId))
+            .ToListAsync(ct);
+
+        foreach (var pid in playerIds)
+        {
+            var row = existing.FirstOrDefault(a => a.PlayerId == pid);
+            if (row is null)
+            {
+                _db.EventAttendances.Add(new EventAttendance
+                {
+                    ScheduledGameId = eventId.Value,
+                    PlayerId = pid,
+                    Status = status.Value,
+                    Source = AttendanceSource.ParentReply,
+                });
+            }
+            else if (row.Source != AttendanceSource.Admin)
+            {
+                row.Status = status.Value;
+                row.Source = AttendanceSource.ParentReply;
+                row.UpdatedAt = DateTime.UtcNow;
+            }
+        }
+        await _db.SaveChangesAsync(ct);
+        _logger.LogInformation("Recorded attendance {Status} for {Count} player(s) on event {EventId} from {From}",
+            status, playerIds.Count, eventId, from);
     }
 
     /// <summary>Sends an admin-configured bilingual "we got your message" reply on the same
