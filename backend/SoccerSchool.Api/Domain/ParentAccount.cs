@@ -47,4 +47,9 @@ public class ParentAccount
 
     /// <summary>Additional parent/guardian contacts (no login) reachable for messaging.</summary>
     public List<ParentContact> Contacts { get; set; } = new();
+
+    /// <summary>Additional <see cref="ApplicationUser"/> logins (besides <see cref="UserId"/>'s
+    /// owner) that have access to this family. Populated when an admin links a second parent's
+    /// login to an existing family.</summary>
+    public List<ParentAccountCollaborator> Collaborators { get; set; } = new();
 }

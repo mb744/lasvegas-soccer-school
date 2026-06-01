@@ -42,6 +42,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     }
 
     public DbSet<ParentAccount> ParentAccounts => Set<ParentAccount>();
+    public DbSet<ParentAccountCollaborator> ParentAccountCollaborators => Set<ParentAccountCollaborator>();
     public DbSet<ParentContact> ParentContacts => Set<ParentContact>();
     public DbSet<Player> Players => Set<Player>();
     public DbSet<Registration> Registrations => Set<Registration>();
@@ -82,6 +83,26 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
         modelBuilder.Entity<ParentAccount>(b =>
         {
             b.HasIndex(p => p.UserId).IsUnique();
+        });
+
+        modelBuilder.Entity<ParentAccountCollaborator>(b =>
+        {
+            b.HasOne(c => c.ParentAccount)
+                .WithMany(p => p.Collaborators)
+                .HasForeignKey(c => c.ParentAccountId)
+                .OnDelete(DeleteBehavior.Cascade);
+            // SQL Server forbids multiple cascade paths to the same table, and AspNetUsers
+            // already cascades through ParentAccount → ParentAccountCollaborators. Keep this
+            // edge as NoAction; if a user is deleted we'll clean up collaborator rows in app
+            // code (Identity user deletes are rare anyway).
+            b.HasOne(c => c.User)
+                .WithMany()
+                .HasForeignKey(c => c.UserId)
+                .OnDelete(DeleteBehavior.NoAction);
+            // A user can only be a collaborator once per family, and we look up rows by
+            // (account, user) when toggling links.
+            b.HasIndex(c => new { c.ParentAccountId, c.UserId }).IsUnique();
+            b.HasIndex(c => c.UserId);
         });
 
         modelBuilder.Entity<ParentContact>(b =>

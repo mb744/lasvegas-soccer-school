@@ -24,6 +24,7 @@ import type {
   UpdateRegistrationPlayerRequest,
   AdminCreateRegistrationRequest,
   SignPlayerWaiverRequest,
+  LinkUserToRegistrationRequest,
   RegistrationSummary,
   PhraseTranslation,
   EventRecipient,
@@ -199,6 +200,18 @@ export const Api = {
   /** Parent (or admin) signs a player's waiver. Flips registration-level consent on too if needed. */
   async signRegistrationPlayer(regId: number, rpId: number, payload: SignPlayerWaiverRequest) {
     const r = await api.post<RegistrationDetail>(`/registrations/${regId}/players/${rpId}/sign`, payload)
+    return r.data
+  },
+  /** Admin links a second login as a collaborator on this registration's family. If that user
+   *  has their own ParentAccount, its players/contacts are merged into the primary and the
+   *  secondary ParentAccount is deleted. */
+  async linkUserToRegistration(regId: number, payload: LinkUserToRegistrationRequest) {
+    const r = await api.post<RegistrationDetail>(`/registrations/${regId}/links`, payload)
+    return r.data
+  },
+  /** Admin removes a collaborator. The owner can't be unlinked here. */
+  async unlinkUserFromRegistration(regId: number, userId: string) {
+    const r = await api.delete<RegistrationDetail>(`/registrations/${regId}/links/${encodeURIComponent(userId)}`)
     return r.data
   },
   async listAgeClassifications() {

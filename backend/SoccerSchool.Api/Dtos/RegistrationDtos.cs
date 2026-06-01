@@ -131,7 +131,10 @@ public record RegistrationDetail(
     DateTime? WaiverSignedAt,
     DateTime CreatedAt,
     List<RegistrationPlayerDetail> Players,
-    List<ParentContactDto> AdditionalParents
+    List<ParentContactDto> AdditionalParents,
+    /// <summary>Owner + any admin-linked collaborator logins for the family this registration
+    /// belongs to. Always non-empty (the owner row is included).</summary>
+    List<LinkedLoginDto> LinkedLogins
 );
 
 public record RegistrationPlayerDetail(
@@ -204,6 +207,26 @@ public record SignPlayerWaiverRequest
 {
     [Required] public string SignatureDataUrl { get; init; } = string.Empty;
 }
+
+/// <summary>Admin links an ApplicationUser as a collaborator on a registration's family. If the
+/// user already has their own ParentAccount with players or contacts, those are merged into the
+/// primary family and the secondary ParentAccount (and any registrations under it) is deleted —
+/// the user's login keeps working and now lands on the primary family at /account.</summary>
+public record LinkUserToRegistrationRequest
+{
+    [Required, MaxLength(450)]
+    public string UserId { get; init; } = string.Empty;
+}
+
+/// <summary>One login (owner or collaborator) with access to a family. Drives the admin's
+/// "Linked logins" section on the registration detail panel.</summary>
+public record LinkedLoginDto(
+    string UserId,
+    string Email,
+    string? FirstName,
+    string? LastName,
+    bool IsOwner,
+    DateTime? LinkedAt);
 
 // --- Age classifications (admin-managed DOB buckets) ---
 

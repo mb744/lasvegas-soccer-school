@@ -180,6 +180,23 @@ export interface SignPlayerWaiverRequest {
   signatureDataUrl: string
 }
 
+/** Admin links a second login to an existing family. If the user has their own ParentAccount
+ *  with players, the backend merges them into the primary family. */
+export interface LinkUserToRegistrationRequest {
+  userId: string
+}
+
+/** One login (owner or collaborator) with access to a family — surfaced in the admin
+ *  "Linked logins" section on the registration detail panel. */
+export interface LinkedLogin {
+  userId: string
+  email: string
+  firstName: string | null
+  lastName: string | null
+  isOwner: boolean
+  linkedAt: string | null
+}
+
 // --- Age classifications (admin-managed DOB buckets) ---
 
 export interface AgeClassification {
@@ -238,6 +255,9 @@ export interface RegistrationDetail {
   createdAt: string
   players: RegistrationPlayerDetail[]
   additionalParents: ParentContact[]
+  /** Owner + any admin-linked collaborator logins for this family. Always has at least the
+   *  owner row. */
+  linkedLogins: LinkedLogin[]
 }
 
 // --- Outreach (admin tracking) ---

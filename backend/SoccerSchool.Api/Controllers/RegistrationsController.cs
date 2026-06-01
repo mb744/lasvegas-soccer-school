@@ -147,7 +147,7 @@ public class RegistrationsController : ControllerBase
 
         await AttributeOutreachRegisteredAsync(account.Id, ct);
 
-        return Ok(ToDetail(registration));
+        return Ok(await LoadDetailAsync(registration.Id, ct));
     }
 
     /// <summary>Admin spins up an empty registration shell for an existing parent so they can log
@@ -198,11 +198,20 @@ public class RegistrationsController : ControllerBase
     [HttpGet("mine")]
     public async Task<ActionResult<IEnumerable<RegistrationSummary>>> Mine(CancellationToken ct)
     {
-        var account = await GetAccountAsync(ct);
-        if (account is null) return Unauthorized();
+        var userId = _users.GetUserId(User);
+        if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+        // Accessible families = owned (ParentAccount.UserId match) + collaborator-linked.
+        // A user with no PA of their own but with collaborator links still sees those families.
+        var accessibleIds = await _db.ParentAccounts
+            .Where(p => p.UserId == userId)
+            .Select(p => p.Id)
+            .Union(_db.ParentAccountCollaborators.Where(c => c.UserId == userId).Select(c => c.ParentAccountId))
+            .ToListAsync(ct);
+        if (accessibleIds.Count == 0) return Ok(Array.Empty<RegistrationSummary>());
 
         var items = await _db.Registrations
-            .Where(r => r.ParentAccountId == account.Id)
+            .Where(r => accessibleIds.Contains(r.ParentAccountId))
             .OrderByDescending(r => r.CreatedAt)
             .Select(r => new RegistrationSummary(
                 r.Id, r.Season, r.ParentFirstName, r.ParentLastName, r.Email, r.CellPhone,
@@ -273,7 +282,7 @@ public class RegistrationsController : ControllerBase
         }
 
         await _db.SaveChangesAsync(ct);
-        return Ok(ToDetail(registration));
+        return Ok(await LoadDetailAsync(registration.Id, ct));
     }
 
     [HttpGet("{id:int}")]
@@ -321,7 +330,9 @@ public class RegistrationsController : ControllerBase
     private async Task<(Registration? registration, ActionResult? denied)> LoadAuthorizedAsync(int id, CancellationToken ct)
     {
         var registration = await _db.Registrations
+            .Include(x => x.ParentAccount).ThenInclude(pa => pa!.User)
             .Include(x => x.ParentAccount).ThenInclude(pa => pa!.Contacts)
+            .Include(x => x.ParentAccount).ThenInclude(pa => pa!.Collaborators).ThenInclude(c => c.User)
             .Include(x => x.Players)
                 .ThenInclude(rp => rp.Player)
             .Include(x => x.Players)
@@ -331,9 +342,13 @@ public class RegistrationsController : ControllerBase
 
         if (User.IsInRole(Roles.Admin)) return (registration, null);
 
-        var account = await GetAccountAsync(ct);
-        if (account is null || registration.ParentAccountId != account.Id)
-            return (null, Forbid());
+        var userId = _users.GetUserId(User);
+        if (string.IsNullOrEmpty(userId)) return (null, Forbid());
+
+        // Authorized when this login owns the family, OR has been linked as a collaborator on it.
+        var isOwner = registration.ParentAccount?.UserId == userId;
+        var isCollaborator = registration.ParentAccount?.Collaborators?.Any(c => c.UserId == userId) == true;
+        if (!isOwner && !isCollaborator) return (null, Forbid());
 
         return (registration, null);
     }
@@ -526,6 +541,124 @@ public class RegistrationsController : ControllerBase
         return Ok(await LoadDetailAsync(id, ct));
     }
 
+    /// <summary>Admin links an additional login (ApplicationUser) as a collaborator on this
+    /// registration's family. If that user already owns a separate ParentAccount with players
+    /// or contacts, those are merged into the primary family (players re-parented, primary's
+    /// contact info copied as an additional guardian) and the secondary ParentAccount with its
+    /// registrations is deleted. The user's login keeps working — it now resolves to the primary
+    /// family at /account. No-op + 200 if the user is already linked (owner or collaborator).</summary>
+    [HttpPost("{id:int}/links")]
+    [Authorize(Roles = Roles.Admin)]
+    public async Task<ActionResult<RegistrationDetail>> LinkUser(
+        int id, [FromBody] LinkUserToRegistrationRequest request, CancellationToken ct)
+    {
+        var registration = await _db.Registrations
+            .Include(r => r.ParentAccount).ThenInclude(pa => pa!.Collaborators)
+            .FirstOrDefaultAsync(r => r.Id == id, ct);
+        if (registration is null || registration.ParentAccount is null) return NotFound();
+        var primary = registration.ParentAccount;
+
+        var userToLink = await _users.FindByIdAsync(request.UserId);
+        if (userToLink is null) return BadRequest("User not found.");
+
+        // Already the owner of this family — nothing to do.
+        if (primary.UserId == userToLink.Id) return Ok(await LoadDetailAsync(id, ct));
+        // Already a collaborator — same.
+        if (primary.Collaborators.Any(c => c.UserId == userToLink.Id))
+            return Ok(await LoadDetailAsync(id, ct));
+
+        // If the user has their own ParentAccount, merge it into the primary family.
+        var secondary = await _db.ParentAccounts
+            .Include(p => p.Players)
+            .Include(p => p.Contacts)
+            .Include(p => p.Registrations)
+            .FirstOrDefaultAsync(p => p.UserId == userToLink.Id, ct);
+        if (secondary is not null)
+        {
+            await using var tx = await _db.Database.BeginTransactionAsync(ct);
+
+            // Re-parent every Player from the secondary onto the primary so team rosters and
+            // historical RegistrationPlayer rows on the primary's registrations stay intact.
+            foreach (var p in secondary.Players)
+            {
+                p.ParentAccountId = primary.Id;
+            }
+
+            // Copy the secondary login's contact info as an additional guardian on the primary
+            // family, if no contact already covers the same phone/email. Reuses the existing
+            // ParentContact shape so messaging picks them up automatically.
+            await _db.Entry(primary).Collection(a => a.Contacts).LoadAsync(ct);
+            var alreadyKnownPhone = !string.IsNullOrWhiteSpace(secondary.CellPhone) &&
+                primary.Contacts.Any(c => string.Equals(c.CellPhone, secondary.CellPhone, StringComparison.OrdinalIgnoreCase));
+            var alreadyKnownEmail = !string.IsNullOrWhiteSpace(userToLink.Email) &&
+                primary.Contacts.Any(c => string.Equals(c.Email, userToLink.Email, StringComparison.OrdinalIgnoreCase));
+            if (!alreadyKnownPhone && !alreadyKnownEmail &&
+                (!string.IsNullOrWhiteSpace(secondary.CellPhone) || !string.IsNullOrWhiteSpace(userToLink.Email)))
+            {
+                primary.Contacts.Add(new ParentContact
+                {
+                    ParentAccountId = primary.Id,
+                    FirstName = secondary.FirstName,
+                    LastName = secondary.LastName,
+                    Email = string.IsNullOrWhiteSpace(userToLink.Email) ? null : userToLink.Email,
+                    CellPhone = string.IsNullOrWhiteSpace(secondary.CellPhone) ? null : secondary.CellPhone,
+                    HasWhatsApp = secondary.HasWhatsApp,
+                    Language = secondary.Language,
+                });
+            }
+
+            // Drop the secondary's registrations (RegistrationPlayer rows cascade) and the
+            // ParentAccount itself. Players already moved to primary, so they survive.
+            _db.Registrations.RemoveRange(secondary.Registrations);
+            _db.ParentContacts.RemoveRange(secondary.Contacts);
+            _db.ParentAccounts.Remove(secondary);
+
+            // Record the collaborator link last so the unique index doesn't fight with the
+            // pending secondary deletion.
+            _db.ParentAccountCollaborators.Add(new ParentAccountCollaborator
+            {
+                ParentAccountId = primary.Id,
+                UserId = userToLink.Id,
+            });
+
+            await _db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+        }
+        else
+        {
+            _db.ParentAccountCollaborators.Add(new ParentAccountCollaborator
+            {
+                ParentAccountId = primary.Id,
+                UserId = userToLink.Id,
+            });
+            await _db.SaveChangesAsync(ct);
+        }
+
+        return Ok(await LoadDetailAsync(id, ct));
+    }
+
+    /// <summary>Admin removes a collaborator link. The owner cannot be unlinked here — delete
+    /// or re-assign the registration if the owner has to change.</summary>
+    [HttpDelete("{id:int}/links/{userId}")]
+    [Authorize(Roles = Roles.Admin)]
+    public async Task<ActionResult<RegistrationDetail>> UnlinkUser(
+        int id, string userId, CancellationToken ct)
+    {
+        var registration = await _db.Registrations
+            .Include(r => r.ParentAccount)
+            .FirstOrDefaultAsync(r => r.Id == id, ct);
+        if (registration is null || registration.ParentAccount is null) return NotFound();
+        if (registration.ParentAccount.UserId == userId)
+            return BadRequest("Cannot unlink the owner of this family.");
+
+        var link = await _db.ParentAccountCollaborators
+            .FirstOrDefaultAsync(c => c.ParentAccountId == registration.ParentAccount.Id && c.UserId == userId, ct);
+        if (link is null) return NotFound();
+        _db.ParentAccountCollaborators.Remove(link);
+        await _db.SaveChangesAsync(ct);
+        return Ok(await LoadDetailAsync(id, ct));
+    }
+
     /// <summary>Most-specific age bracket whose inclusive DOB range covers the date, or null.</summary>
     private async Task<int?> AssignAgeClassificationAsync(DateOnly dob, CancellationToken ct)
     {
@@ -536,7 +669,9 @@ public class RegistrationsController : ControllerBase
     private async Task<RegistrationDetail> LoadDetailAsync(int id, CancellationToken ct)
     {
         var registration = await _db.Registrations
+            .Include(x => x.ParentAccount).ThenInclude(pa => pa!.User)
             .Include(x => x.ParentAccount).ThenInclude(pa => pa!.Contacts)
+            .Include(x => x.ParentAccount).ThenInclude(pa => pa!.Collaborators).ThenInclude(c => c.User)
             .Include(x => x.Players).ThenInclude(rp => rp.Player)
             .Include(x => x.Players).ThenInclude(rp => rp.AgeClassification)
             .FirstAsync(x => x.Id == id, ct);
@@ -619,6 +754,28 @@ public class RegistrationsController : ControllerBase
         )).ToList(),
         (r.ParentAccount?.Contacts ?? new List<ParentContact>())
             .OrderBy(c => c.LastName).ThenBy(c => c.FirstName)
-            .Select(ToContactDto).ToList()
+            .Select(ToContactDto).ToList(),
+        BuildLinkedLogins(r)
     );
+
+    /// <summary>Builds the linked-logins list (owner first, then collaborators ordered by link
+    /// time) from a loaded registration. Caller must have included ParentAccount.User and
+    /// ParentAccount.Collaborators.User on the registration query.</summary>
+    private static List<LinkedLoginDto> BuildLinkedLogins(Registration r)
+    {
+        var account = r.ParentAccount;
+        if (account is null) return new List<LinkedLoginDto>();
+        var result = new List<LinkedLoginDto>
+        {
+            new(account.UserId, account.User?.Email ?? string.Empty,
+                account.FirstName, account.LastName, IsOwner: true, LinkedAt: null)
+        };
+        foreach (var c in account.Collaborators.OrderBy(x => x.CreatedAt))
+        {
+            result.Add(new LinkedLoginDto(
+                c.UserId, c.User?.Email ?? string.Empty,
+                FirstName: null, LastName: null, IsOwner: false, LinkedAt: c.CreatedAt));
+        }
+        return result;
+    }
 }

@@ -272,6 +272,8 @@ function RegistrationDetailPanel({
         </div>
       </div>
 
+      <LinkedLoginsSection detail={detail} onChanged={onSaved} onError={onError} />
+
       <div>
         <div className="flex items-center justify-between mb-2">
           <h3 className="font-bold text-emerald-800">{t('admin.playersHeading')}</h3>
@@ -717,6 +719,123 @@ function Definition({ label, value }: { label: string; value: string }) {
       <dt className="text-slate-500">{label}</dt>
       <dd className="text-slate-900">{value || '—'}</dd>
     </>
+  )
+}
+
+/** Lists the family's owner + any collaborator logins; admin can link an additional user
+ *  (which merges that user's own ParentAccount into this family) or unlink a collaborator. */
+function LinkedLoginsSection({
+  detail, onChanged, onError,
+}: {
+  detail: RegistrationDetail
+  onChanged: (updated: RegistrationDetail) => void
+  onError: (msg: string) => void
+}) {
+  const { t } = useTranslation()
+  const [linking, setLinking] = useState(false)
+  const [users, setUsers] = useState<UserSummary[]>([])
+  const [loadingUsers, setLoadingUsers] = useState(false)
+  const [pickedUserId, setPickedUserId] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const linkedIds = new Set(detail.linkedLogins.map(l => l.userId))
+
+  const openLink = async () => {
+    setLinking(true); setPickedUserId(''); setLoadingUsers(true)
+    try {
+      const all = await Api.listUsers()
+      // Already-linked logins (owner + collaborators) are filtered out of the picker.
+      setUsers(all.filter(u => !linkedIds.has(u.id))
+        .sort((a, b) => (a.lastName || a.email).localeCompare(b.lastName || b.email)))
+    } catch (e: any) { onError(e?.message ?? 'Error') }
+    finally { setLoadingUsers(false) }
+  }
+
+  const submit = async () => {
+    if (!pickedUserId) { onError(t('admin.linkPickUser')); return }
+    setBusy(true)
+    try {
+      onChanged(await Api.linkUserToRegistration(detail.id, { userId: pickedUserId }))
+      setLinking(false); setPickedUserId('')
+    } catch (e: any) {
+      onError(e?.response?.data?.title || e?.response?.data || e?.message || 'Error')
+    } finally { setBusy(false) }
+  }
+
+  const unlink = async (userId: string, email: string) => {
+    if (!confirm(t('admin.linkUnlinkConfirm', { email }))) return
+    setBusy(true)
+    try {
+      onChanged(await Api.unlinkUserFromRegistration(detail.id, userId))
+    } catch (e: any) {
+      onError(e?.response?.data?.title || e?.response?.data || e?.message || 'Error')
+    } finally { setBusy(false) }
+  }
+
+  return (
+    <div className="bg-white rounded-md border border-slate-200 p-4">
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="font-bold text-emerald-800">{t('admin.linkedLogins')}</h3>
+        {!linking && (
+          <button onClick={openLink} className="text-sm text-emerald-700 hover:underline">
+            + {t('admin.linkLogin')}
+          </button>
+        )}
+      </div>
+      <p className="text-xs text-slate-500 mb-2">{t('admin.linkedLoginsHelp')}</p>
+      <ul className="text-sm space-y-1">
+        {detail.linkedLogins.map(l => (
+          <li key={l.userId} className="flex items-center justify-between border border-slate-100 rounded px-2 py-1">
+            <div>
+              <span className="font-medium text-slate-800">
+                {l.firstName || l.lastName ? `${l.firstName ?? ''} ${l.lastName ?? ''}`.trim() : l.email}
+              </span>
+              <span className="text-xs text-slate-500 ml-2">{l.email}</span>
+              <span className={`ml-2 inline-block text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded ${l.isOwner ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'}`}>
+                {l.isOwner ? t('admin.linkOwner') : t('admin.linkCollaborator')}
+              </span>
+              {l.linkedAt && (
+                <span className="text-[11px] text-slate-400 ml-2">{new Date(l.linkedAt).toLocaleDateString()}</span>
+              )}
+            </div>
+            {!l.isOwner && (
+              <button onClick={() => unlink(l.userId, l.email)} disabled={busy}
+                className="text-xs text-rose-700 hover:underline disabled:opacity-40">
+                {t('admin.linkUnlink')}
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+
+      {linking && (
+        <div className="mt-3 border border-slate-200 rounded-md p-3 space-y-2">
+          <label className="block text-xs">
+            <RequiredLabel className="text-slate-600">{t('admin.linkPickUser')}</RequiredLabel>
+            <select value={pickedUserId} onChange={e => setPickedUserId(e.target.value)}
+              disabled={loadingUsers || busy}
+              className="mt-1 w-full border border-slate-300 rounded-md px-2 py-2 text-sm">
+              <option value="">{loadingUsers ? t('common.loading') : `— ${t('admin.linkPickUser')} —`}</option>
+              {users.map(u => (
+                <option key={u.id} value={u.id}>
+                  {(u.lastName || u.firstName) ? `${u.lastName}, ${u.firstName} — ${u.email}` : u.email}
+                  {u.parentAccountId !== null ? ` · ${t('admin.linkHasFamily')}` : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="text-xs text-amber-700">{t('admin.linkMergeWarning')}</p>
+          <div className="flex items-center gap-3">
+            <button onClick={submit} disabled={busy || !pickedUserId}
+              className="bg-emerald-700 text-white text-sm font-semibold px-3 py-1.5 rounded-md hover:bg-emerald-800 disabled:opacity-60">
+              {busy ? t('register.submitting') : t('admin.linkConfirm')}
+            </button>
+            <button onClick={() => { setLinking(false); setPickedUserId('') }}
+              className="text-sm text-slate-600 hover:underline">{t('admin.cancel')}</button>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 
