@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Layout } from '../../components/Layout'
+import { RequiredLabel, useRequiredValidation } from '../../components/RequiredField'
 import { Api } from '../../api/client'
 import type {
   RosterTeamSummary,
@@ -34,6 +35,8 @@ export function AdminTeamsPage() {
   const [coachName, setCoachName] = useState('')
   const [coachEmail, setCoachEmail] = useState('')
   const [coachPhone, setCoachPhone] = useState('')
+  const vCreate = useRequiredValidation(['newName'])
+  const vRename = useRequiredValidation(['renameName'])
 
   const refreshTeams = async () => {
     try { setTeams(await Api.listRosterTeams()) }
@@ -63,7 +66,7 @@ export function AdminTeamsPage() {
   const createTeam = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null); setNotice(null)
-    if (!newName.trim()) { setError(t('common.required')); return }
+    if (!vCreate.checkSubmit({ newName })) { setError(t('common.required')); return }
     setBusy(true)
     try {
       const created = await Api.createRosterTeam({ name: newName.trim() })
@@ -76,7 +79,7 @@ export function AdminTeamsPage() {
   }
 
   const submitRename = async (id: number) => {
-    if (!renameName.trim()) { setError(t('common.required')); return }
+    if (!vRename.checkSubmit({ renameName })) { setError(t('common.required')); return }
     setBusy(true)
     try {
       await Api.renameRosterTeam(id, { name: renameName.trim() })
@@ -179,25 +182,34 @@ export function AdminTeamsPage() {
           {/* Teams list */}
           <section className="lg:col-span-1 bg-white border border-slate-200 rounded-lg p-5 space-y-4 h-fit">
             <h2 className="font-bold text-emerald-800">{t('admin.teamsListHeading')}</h2>
-            <form onSubmit={createTeam} className="flex gap-2">
-              <input type="text" value={newName} onChange={e => setNewName(e.target.value)}
-                placeholder={t('admin.teamNamePlaceholder')}
-                className="flex-1 border border-slate-300 rounded-md px-3 py-2 text-sm" />
-              <button type="submit" disabled={busy}
-                className="bg-emerald-700 text-white text-sm font-semibold px-3 py-2 rounded-md hover:bg-emerald-800 disabled:opacity-60">
-                {t('admin.teamCreate')}
-              </button>
+            <form onSubmit={createTeam} noValidate>
+              <RequiredLabel className="text-xs text-slate-600 block mb-1">{t('admin.teamNamePlaceholder')}</RequiredLabel>
+              <div className="flex gap-2">
+                <input ref={vCreate.register('newName')} type="text" value={newName}
+                  onChange={e => setNewName(e.target.value)}
+                  onBlur={e => vCreate.onFieldBlur('newName', e.target.value)}
+                  placeholder={t('admin.teamNamePlaceholder')}
+                  aria-required="true"
+                  className={`flex-1 border border-slate-300 rounded-md px-3 py-2 text-sm ${vCreate.fieldCls('newName')}`} />
+                <button type="submit" disabled={busy}
+                  className="bg-emerald-700 text-white text-sm font-semibold px-3 py-2 rounded-md hover:bg-emerald-800 disabled:opacity-60">
+                  {t('admin.teamCreate')}
+                </button>
+              </div>
             </form>
             <ul className="divide-y divide-slate-100">
               {teams.map(team => (
                 <li key={team.id} className="py-2">
                   {renamingId === team.id ? (
                     <div className="flex gap-2">
-                      <input type="text" value={renameName} onChange={e => setRenameName(e.target.value)}
-                        className="flex-1 border border-slate-300 rounded-md px-2 py-1 text-sm" />
+                      <input ref={vRename.register('renameName')} type="text" value={renameName}
+                        onChange={e => setRenameName(e.target.value)}
+                        onBlur={e => vRename.onFieldBlur('renameName', e.target.value)}
+                        aria-required="true"
+                        className={`flex-1 border border-slate-300 rounded-md px-2 py-1 text-sm ${vRename.fieldCls('renameName')}`} />
                       <button onClick={() => submitRename(team.id)} disabled={busy}
                         className="text-emerald-700 text-sm hover:underline">{t('admin.save')}</button>
-                      <button onClick={() => setRenamingId(null)} className="text-slate-500 text-sm hover:underline">{t('admin.cancel')}</button>
+                      <button onClick={() => { setRenamingId(null); vRename.reset() }} className="text-slate-500 text-sm hover:underline">{t('admin.cancel')}</button>
                     </div>
                   ) : (
                     <div className="flex items-center justify-between gap-2">

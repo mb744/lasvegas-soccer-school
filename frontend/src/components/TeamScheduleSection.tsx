@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Api } from '../api/client'
+import { RequiredLabel, useRequiredValidation } from './RequiredField'
 import type { ScheduledGame, EventAttendanceList, EventAttendanceSummary, AttendanceStatus, WhatsAppTemplate, TemplatePreviewResponse } from '../api/types'
 
 function extractError(e: any): string {
@@ -60,6 +61,10 @@ export function TeamScheduleSection({
   const [seriesEndTime, setSeriesEndTime] = useState('')
   const [seriesDays, setSeriesDays] = useState<Set<number>>(new Set())
 
+  // Single shared validator for the per-event start time and the series date range.
+  const vEvent = useRequiredValidation(['startsAt'])
+  const vSeries = useRequiredValidation(['seriesStartDate', 'seriesEndDate'])
+
   const startNewPractice = () => {
     setEditingId('new-practice'); setEditingKind('practice')
     setStartsAt(''); setEndsAt(''); setLocation(''); setSummary('')
@@ -98,7 +103,7 @@ export function TeamScheduleSection({
   const save = async (e: React.FormEvent) => {
     e.preventDefault()
     if (editingId === 'series') {
-      if (!seriesStartDate || !seriesEndDate) { onError('Start and end date are required.'); return }
+      if (!vSeries.checkSubmit({ seriesStartDate, seriesEndDate })) { onError('Start and end date are required.'); return }
       if (seriesDays.size === 0) { onError('Pick at least one day of the week.'); return }
       try {
         const r = await Api.createPracticeSeries(teamId, {
@@ -116,7 +121,7 @@ export function TeamScheduleSection({
       } catch (e: any) { onError(extractError(e)) }
       return
     }
-    if (!startsAt) { onError('Start date/time is required.'); return }
+    if (!vEvent.checkSubmit({ startsAt })) { onError('Start date/time is required.'); return }
     try {
       const startsAtIso = new Date(startsAt).toISOString()
       const endsAtIso = endsAt ? new Date(endsAt).toISOString() : null
@@ -327,14 +332,16 @@ export function TeamScheduleSection({
         </div>
 
         {editingId !== null && editingId !== 'series' && (
-          <form onSubmit={save} className="border border-slate-200 rounded p-3 grid sm:grid-cols-2 gap-2 mb-3">
+          <form onSubmit={save} noValidate className="border border-slate-200 rounded p-3 grid sm:grid-cols-2 gap-2 mb-3">
             <div className="sm:col-span-2 text-xs uppercase tracking-wide text-slate-500">
               {editingKind === 'game' ? t('admin.msgFormGame') : t('admin.msgFormPractice')}
             </div>
             <label className="block text-sm">
-              <span className="font-medium text-slate-700">{t('admin.msgPracticeStart')}</span>
-              <input type="datetime-local" value={startsAt} onChange={e => setStartsAt(e.target.value)}
-                className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+              <RequiredLabel>{t('admin.msgPracticeStart')}</RequiredLabel>
+              <input ref={vEvent.register('startsAt')} type="datetime-local" value={startsAt}
+                onChange={e => setStartsAt(e.target.value)}
+                onBlur={e => vEvent.onFieldBlur('startsAt', e.target.value)}
+                className={`mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm ${vEvent.fieldCls('startsAt')}`} />
             </label>
             <label className="block text-sm">
               <span className="font-medium text-slate-700">{t('admin.msgPracticeEnd')}</span>
@@ -388,16 +395,20 @@ export function TeamScheduleSection({
         )}
 
         {editingId === 'series' && (
-          <form onSubmit={save} className="border border-slate-200 rounded p-3 grid sm:grid-cols-2 gap-2 mb-3">
+          <form onSubmit={save} noValidate className="border border-slate-200 rounded p-3 grid sm:grid-cols-2 gap-2 mb-3">
             <label className="block text-sm">
-              <span className="font-medium text-slate-700">{t('admin.msgSeriesStartDate')}</span>
-              <input type="date" value={seriesStartDate} onChange={e => setSeriesStartDate(e.target.value)}
-                className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+              <RequiredLabel>{t('admin.msgSeriesStartDate')}</RequiredLabel>
+              <input ref={vSeries.register('seriesStartDate')} type="date" value={seriesStartDate}
+                onChange={e => setSeriesStartDate(e.target.value)}
+                onBlur={e => vSeries.onFieldBlur('seriesStartDate', e.target.value)}
+                className={`mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm ${vSeries.fieldCls('seriesStartDate')}`} />
             </label>
             <label className="block text-sm">
-              <span className="font-medium text-slate-700">{t('admin.msgSeriesEndDate')}</span>
-              <input type="date" value={seriesEndDate} onChange={e => setSeriesEndDate(e.target.value)}
-                className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+              <RequiredLabel>{t('admin.msgSeriesEndDate')}</RequiredLabel>
+              <input ref={vSeries.register('seriesEndDate')} type="date" value={seriesEndDate}
+                onChange={e => setSeriesEndDate(e.target.value)}
+                onBlur={e => vSeries.onFieldBlur('seriesEndDate', e.target.value)}
+                className={`mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm ${vSeries.fieldCls('seriesEndDate')}`} />
             </label>
             <label className="block text-sm">
               <span className="font-medium text-slate-700">{t('admin.msgSeriesStartTime')}</span>

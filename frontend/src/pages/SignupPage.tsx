@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Layout } from '../components/Layout'
+import { RequiredLabel, useRequiredValidation } from '../components/RequiredField'
 import { useAuth } from '../auth/AuthContext'
 import { Api } from '../api/client'
 import type { Language } from '../api/types'
@@ -11,7 +12,9 @@ export function SignupPage() {
   const { signup, providers } = useAuth()
   const navigate = useNavigate()
   const [params] = useSearchParams()
-  const next = params.get('next') || '/register'
+  // New parents land on /account after signup (which falls through to /register when they
+  // don't yet have a registration on file).
+  const next = params.get('next') || '/account'
   const hasGoogle = providers.includes('Google')
   const hasFacebook = providers.includes('Facebook')
   const hasAnyExternal = hasGoogle || hasFacebook
@@ -24,9 +27,11 @@ export function SignupPage() {
   const [smsConsent, setSmsConsent] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const v = useRequiredValidation(['firstName', 'lastName', 'email', 'password'])
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!v.checkSubmit({ firstName, lastName, email, password })) return
     if (phone.trim() && !smsConsent) {
       setError(t('auth.smsConsentRequired'))
       return
@@ -74,20 +79,26 @@ export function SignupPage() {
           </>
         )}
 
-        <form onSubmit={onSubmit} className="space-y-4">
+        <form onSubmit={onSubmit} noValidate className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <label className="flex flex-col text-sm">
-              <span className="font-medium text-slate-700 mb-1">{t('auth.firstName')}</span>
-              <input value={firstName} onChange={e => setFirstName(e.target.value)} required className={inputCls} />
+              <RequiredLabel className="font-medium text-slate-700 mb-1">{t('auth.firstName')}</RequiredLabel>
+              <input ref={v.register('firstName')} value={firstName} onChange={e => setFirstName(e.target.value)}
+                onBlur={e => v.onFieldBlur('firstName', e.target.value)}
+                className={`${inputCls} ${v.fieldCls('firstName')}`} />
             </label>
             <label className="flex flex-col text-sm">
-              <span className="font-medium text-slate-700 mb-1">{t('auth.lastName')}</span>
-              <input value={lastName} onChange={e => setLastName(e.target.value)} required className={inputCls} />
+              <RequiredLabel className="font-medium text-slate-700 mb-1">{t('auth.lastName')}</RequiredLabel>
+              <input ref={v.register('lastName')} value={lastName} onChange={e => setLastName(e.target.value)}
+                onBlur={e => v.onFieldBlur('lastName', e.target.value)}
+                className={`${inputCls} ${v.fieldCls('lastName')}`} />
             </label>
           </div>
           <label className="flex flex-col text-sm">
-            <span className="font-medium text-slate-700 mb-1">{t('auth.email')}</span>
-            <input type="email" value={email} onChange={e => setEmail(e.target.value)} required className={inputCls} />
+            <RequiredLabel className="font-medium text-slate-700 mb-1">{t('auth.email')}</RequiredLabel>
+            <input ref={v.register('email')} type="email" value={email} onChange={e => setEmail(e.target.value)}
+              onBlur={e => v.onFieldBlur('email', e.target.value)}
+              className={`${inputCls} ${v.fieldCls('email')}`} />
           </label>
           <label className="flex flex-col text-sm">
             <span className="font-medium text-slate-700 mb-1">{t('auth.phone')}</span>
@@ -114,8 +125,10 @@ export function SignupPage() {
             </span>
           </label>
           <label className="flex flex-col text-sm">
-            <span className="font-medium text-slate-700 mb-1">{t('auth.password')}</span>
-            <input type="password" value={password} onChange={e => setPassword(e.target.value)} required minLength={8} className={inputCls} />
+            <RequiredLabel className="font-medium text-slate-700 mb-1">{t('auth.password')}</RequiredLabel>
+            <input ref={v.register('password')} type="password" value={password} onChange={e => setPassword(e.target.value)}
+              onBlur={e => v.onFieldBlur('password', e.target.value)}
+              minLength={8} className={`${inputCls} ${v.fieldCls('password')}`} />
             <span className="text-xs text-slate-500 mt-1">{t('auth.passwordHint')}</span>
           </label>
           {error && <div className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-md p-3">{error}</div>}

@@ -12,3 +12,15 @@ body {
   background: #f8fafc;
   color: #0f172a;
 }
+
+/* Required-field error styling: any input/select/textarea inside a `.field-error` wrapper
+ * (used by RegisterPage's <Field>) gets a rose border + ring so the user can see at a glance
+ * which fields are missing. Matches the ERROR_CLS constant from RequiredField.tsx so the two
+ * code paths render the same. */
+.field-error input,
+.field-error select,
+.field-error textarea {
+  border-color: #f43f5e;
+  --tw-ring-color: rgb(254 205 211);
+  box-shadow: 0 0 0 2px var(--tw-ring-color);
+}

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Layout } from '../../components/Layout'
 import { TeamScheduleSection } from '../../components/TeamScheduleSection'
+import { RequiredLabel, useRequiredValidation } from '../../components/RequiredField'
 import { Api } from '../../api/client'
 import type { RosterTeamSummary, RosterTeamDetail, TournamentSummary } from '../../api/types'
 
@@ -142,6 +143,8 @@ function TournamentsTab({
   const [gOpponent, setGOpponent] = useState('')
   const [gHome, setGHome] = useState<'home' | 'away' | 'unknown'>('unknown')
   const [gLocation, setGLocation] = useState('')
+  const vTour = useRequiredValidation(['name', 'teamId', 'scheduleUrl'])
+  const vGame = useRequiredValidation(['startsAt'])
 
   const refresh = async () => {
     try { setTournaments(await Api.listTournaments()) }
@@ -152,9 +155,9 @@ function TournamentsTab({
   const create = async (e: React.FormEvent) => {
     e.preventDefault()
     onError(''); onNotice('')
-    if (!name.trim()) { onError(t('common.required')); return }
-    if (teamId === '') { onError(t('admin.evtPickTeam')); return }
-    if (!scheduleUrl.trim()) { onError(t('admin.evtTournUrlHelp')); return }
+    if (!vTour.checkSubmit({ name, teamId: teamId === '' ? '' : String(teamId), scheduleUrl })) {
+      onError(t('common.required')); return
+    }
     setBusy(true)
     try {
       await Api.createTournament({ name: name.trim(), teamId: Number(teamId), scheduleUrl: scheduleUrl.trim() })
@@ -184,7 +187,7 @@ function TournamentsTab({
   const addGame = async (tour: TournamentSummary, e: React.FormEvent) => {
     e.preventDefault()
     onError(''); onNotice('')
-    if (!gStart) { onError(t('admin.teamStartRequired')); return }
+    if (!vGame.checkSubmit({ startsAt: gStart })) { onError(t('admin.teamStartRequired')); return }
     setBusy(true)
     try {
       await Api.createGame(tour.teamId, {
@@ -206,25 +209,31 @@ function TournamentsTab({
       {/* Create */}
       <section className="bg-white border border-slate-200 rounded-lg p-5">
         <h2 className="font-bold text-emerald-800">{t('admin.evtNewTournament')}</h2>
-        <form onSubmit={create} className="mt-3 grid sm:grid-cols-2 gap-3">
+        <form onSubmit={create} noValidate className="mt-3 grid sm:grid-cols-2 gap-3">
           <label className="block text-sm">
-            <span className="font-medium text-slate-700">{t('admin.evtTournName')}</span>
-            <input type="text" value={name} onChange={e => setName(e.target.value)}
-              className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+            <RequiredLabel>{t('admin.evtTournName')}</RequiredLabel>
+            <input ref={vTour.register('name')} type="text" value={name}
+              onChange={e => setName(e.target.value)}
+              onBlur={e => vTour.onFieldBlur('name', e.target.value)}
+              className={`mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm ${vTour.fieldCls('name')}`} />
           </label>
           <label className="block text-sm">
-            <span className="font-medium text-slate-700">{t('admin.evtTournTeam')}</span>
-            <select value={teamId} onChange={e => setTeamId(e.target.value === '' ? '' : Number(e.target.value))}
-              className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm">
+            <RequiredLabel>{t('admin.evtTournTeam')}</RequiredLabel>
+            <select ref={vTour.register('teamId')} value={teamId}
+              onChange={e => setTeamId(e.target.value === '' ? '' : Number(e.target.value))}
+              onBlur={e => vTour.onFieldBlur('teamId', e.target.value)}
+              className={`mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm ${vTour.fieldCls('teamId')}`}>
               <option value="">{t('admin.evtPickTeam')}</option>
               {teams.map(tm => <option key={tm.id} value={tm.id}>{tm.name}</option>)}
             </select>
           </label>
           <label className="block text-sm sm:col-span-2">
-            <span className="font-medium text-slate-700">{t('admin.evtTournUrl')}</span>
-            <input type="url" value={scheduleUrl} onChange={e => setScheduleUrl(e.target.value)}
+            <RequiredLabel>{t('admin.evtTournUrl')}</RequiredLabel>
+            <input ref={vTour.register('scheduleUrl')} type="url" value={scheduleUrl}
+              onChange={e => setScheduleUrl(e.target.value)}
+              onBlur={e => vTour.onFieldBlur('scheduleUrl', e.target.value)}
               placeholder="https://system.gotsport.com/org_event/events/48082/schedules?team=3764244"
-              className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm font-mono" />
+              className={`mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm font-mono ${vTour.fieldCls('scheduleUrl')}`} />
             <span className="block text-xs text-slate-500 mt-1">{t('admin.evtTournUrlHelp')}</span>
           </label>
           <div className="sm:col-span-2">
@@ -263,11 +272,13 @@ function TournamentsTab({
             </div>
 
             {gameFor === tour.id && (
-              <form onSubmit={e => addGame(tour, e)} className="mt-3 grid sm:grid-cols-2 gap-2 border-t border-slate-100 pt-3">
+              <form onSubmit={e => addGame(tour, e)} noValidate className="mt-3 grid sm:grid-cols-2 gap-2 border-t border-slate-100 pt-3">
                 <label className="block text-sm">
-                  <span className="font-medium text-slate-700">{t('admin.msgPracticeStart')}</span>
-                  <input type="datetime-local" value={gStart} onChange={e => setGStart(e.target.value)}
-                    className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+                  <RequiredLabel>{t('admin.msgPracticeStart')}</RequiredLabel>
+                  <input ref={vGame.register('startsAt')} type="datetime-local" value={gStart}
+                    onChange={e => setGStart(e.target.value)}
+                    onBlur={e => vGame.onFieldBlur('startsAt', e.target.value)}
+                    className={`mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm ${vGame.fieldCls('startsAt')}`} />
                 </label>
                 <label className="block text-sm">
                   <span className="font-medium text-slate-700">{t('admin.msgGameOpponent')}</span>

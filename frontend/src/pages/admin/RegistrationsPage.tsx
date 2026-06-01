@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Layout } from '../../components/Layout'
 import { Api } from '../../api/client'
+import { RequiredLabel, useRequiredValidation } from '../../components/RequiredField'
 import type { Language, ParentContactInput, RegistrationDetail, RegistrationPlayerDetail, RegistrationSummary, UpdateRegistrationRequest, AddRegistrationPlayerRequest, UserSummary } from '../../api/types'
 
 const GRADES = ['Pre-K', 'K', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12']
@@ -327,6 +328,7 @@ function EditRegistrationForm({
       hasWhatsApp: c.hasWhatsApp, language: c.language,
     })))
   const [saving, setSaving] = useState(false)
+  const v = useRequiredValidation(['parentFirstName', 'parentLastName', 'cellPhone', 'email'])
 
   const set = <K extends keyof UpdateRegistrationRequest>(key: K, value: UpdateRegistrationRequest[K]) =>
     setForm(prev => ({ ...prev, [key]: value }))
@@ -340,12 +342,12 @@ function EditRegistrationForm({
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!form.parentFirstName.trim() || !form.parentLastName.trim()) {
-      onError(t('common.required')); return
-    }
-    if (!form.cellPhone.trim() || !form.email.trim()) {
-      onError(t('common.required')); return
-    }
+    if (!v.checkSubmit({
+      parentFirstName: form.parentFirstName,
+      parentLastName: form.parentLastName,
+      cellPhone: form.cellPhone,
+      email: form.email,
+    })) { onError(t('common.required')); return }
     setSaving(true)
     try {
       const updated = await Api.updateRegistration(detail.id, { ...form, additionalParents: contacts })
@@ -360,16 +362,20 @@ function EditRegistrationForm({
   const inputCls = 'border border-slate-300 rounded-md px-2 py-1 text-sm w-full'
 
   return (
-    <form onSubmit={submit} className="grid sm:grid-cols-2 gap-3 text-sm">
+    <form onSubmit={submit} noValidate className="grid sm:grid-cols-2 gap-3 text-sm">
       <label className="block">
-        <span className="text-slate-600 text-xs">{t('register.parent.firstName')}</span>
-        <input className={inputCls} value={form.parentFirstName}
-          onChange={e => set('parentFirstName', e.target.value)} />
+        <span className="text-slate-600 text-xs"><RequiredLabel className="text-slate-600">{t('register.parent.firstName')}</RequiredLabel></span>
+        <input ref={v.register('parentFirstName')}
+          className={`${inputCls} ${v.fieldCls('parentFirstName')}`} value={form.parentFirstName}
+          onChange={e => set('parentFirstName', e.target.value)}
+          onBlur={e => v.onFieldBlur('parentFirstName', e.target.value)} />
       </label>
       <label className="block">
-        <span className="text-slate-600 text-xs">{t('register.parent.lastName')}</span>
-        <input className={inputCls} value={form.parentLastName}
-          onChange={e => set('parentLastName', e.target.value)} />
+        <span className="text-slate-600 text-xs"><RequiredLabel className="text-slate-600">{t('register.parent.lastName')}</RequiredLabel></span>
+        <input ref={v.register('parentLastName')}
+          className={`${inputCls} ${v.fieldCls('parentLastName')}`} value={form.parentLastName}
+          onChange={e => set('parentLastName', e.target.value)}
+          onBlur={e => v.onFieldBlur('parentLastName', e.target.value)} />
       </label>
       <label className="block sm:col-span-2">
         <span className="text-slate-600 text-xs">{t('register.parent.address1')}</span>
@@ -397,14 +403,18 @@ function EditRegistrationForm({
           onChange={e => set('postalCode', e.target.value)} />
       </label>
       <label className="block">
-        <span className="text-slate-600 text-xs">{t('register.parent.cell')}</span>
-        <input type="tel" className={inputCls} value={form.cellPhone}
-          onChange={e => set('cellPhone', e.target.value)} />
+        <span className="text-slate-600 text-xs"><RequiredLabel className="text-slate-600">{t('register.parent.cell')}</RequiredLabel></span>
+        <input ref={v.register('cellPhone')} type="tel"
+          className={`${inputCls} ${v.fieldCls('cellPhone')}`} value={form.cellPhone}
+          onChange={e => set('cellPhone', e.target.value)}
+          onBlur={e => v.onFieldBlur('cellPhone', e.target.value)} />
       </label>
       <label className="block sm:col-span-2">
-        <span className="text-slate-600 text-xs">{t('register.parent.email')}</span>
-        <input type="email" className={inputCls} value={form.email}
-          onChange={e => set('email', e.target.value)} />
+        <span className="text-slate-600 text-xs"><RequiredLabel className="text-slate-600">{t('register.parent.email')}</RequiredLabel></span>
+        <input ref={v.register('email')} type="email"
+          className={`${inputCls} ${v.fieldCls('email')}`} value={form.email}
+          onChange={e => set('email', e.target.value)}
+          onBlur={e => v.onFieldBlur('email', e.target.value)} />
       </label>
       <label className="block">
         <span className="text-slate-600 text-xs">{t('admin.language')}</span>
@@ -491,6 +501,7 @@ function PlayerCard({ regId, idx, p, onChanged, onError }: {
   const [grade, setGrade] = useState(p.schoolGrade)
   const [uniform, setUniform] = useState(p.uniformSize)
   const [shoe, setShoe] = useState(p.shoeSize)
+  const v = useRequiredValidation(['firstName', 'lastName', 'dob'])
 
   const err = (e: any) => onError(e?.response?.data?.title || e?.response?.data || e?.message || 'Error')
 
@@ -509,7 +520,7 @@ function PlayerCard({ regId, idx, p, onChanged, onError }: {
 
   const saveEdit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!firstName.trim() || !lastName.trim() || !dob) { onError(t('common.required')); return }
+    if (!v.checkSubmit({ firstName, lastName, dob })) { onError(t('common.required')); return }
     setSaving(true)
     try {
       const updated = await Api.updateRegistrationPlayer(regId, p.id, {
@@ -542,10 +553,28 @@ function PlayerCard({ regId, idx, p, onChanged, onError }: {
       </div>
 
       {editing ? (
-        <form onSubmit={saveEdit} className="grid grid-cols-2 gap-2">
-          <input className={npInputCls} placeholder={t('register.players.firstName')} value={firstName} onChange={e => setFirstName(e.target.value)} />
-          <input className={npInputCls} placeholder={t('register.players.lastName')} value={lastName} onChange={e => setLastName(e.target.value)} />
-          <input type="date" className={npInputCls} value={dob} onChange={e => setDob(e.target.value)} />
+        <form onSubmit={saveEdit} noValidate className="grid grid-cols-2 gap-2">
+          <label className="block text-xs space-y-1">
+            <RequiredLabel className="text-slate-600">{t('register.players.firstName')}</RequiredLabel>
+            <input ref={v.register('firstName')}
+              className={`${npInputCls} ${v.fieldCls('firstName')}`}
+              value={firstName} onChange={e => setFirstName(e.target.value)}
+              onBlur={e => v.onFieldBlur('firstName', e.target.value)} />
+          </label>
+          <label className="block text-xs space-y-1">
+            <RequiredLabel className="text-slate-600">{t('register.players.lastName')}</RequiredLabel>
+            <input ref={v.register('lastName')}
+              className={`${npInputCls} ${v.fieldCls('lastName')}`}
+              value={lastName} onChange={e => setLastName(e.target.value)}
+              onBlur={e => v.onFieldBlur('lastName', e.target.value)} />
+          </label>
+          <label className="block text-xs space-y-1">
+            <RequiredLabel className="text-slate-600">{t('register.players.dob')}</RequiredLabel>
+            <input ref={v.register('dob')} type="date"
+              className={`${npInputCls} ${v.fieldCls('dob')}`}
+              value={dob} onChange={e => setDob(e.target.value)}
+              onBlur={e => v.onFieldBlur('dob', e.target.value)} />
+          </label>
           <select className={npInputCls} value={grade} onChange={e => setGrade(e.target.value)}>
             <option value="">{t('register.players.grade')}</option>
             {GRADES.map(g => <option key={g} value={g}>{g}</option>)}
@@ -610,10 +639,11 @@ function AddPlayerForm({ regId, onCancel, onSaved, onError }: {
   const [uniform, setUniform] = useState('')
   const [shoe, setShoe] = useState('')
   const [saving, setSaving] = useState(false)
+  const v = useRequiredValidation(['firstName', 'lastName', 'dob'])
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!firstName.trim() || !lastName.trim() || !dob || !grade || !uniform || !shoe.trim()) {
+    if (!v.checkSubmit({ firstName, lastName, dob })) {
       onError(t('common.required')); return
     }
     setSaving(true)
@@ -629,22 +659,47 @@ function AddPlayerForm({ regId, onCancel, onSaved, onError }: {
   }
 
   return (
-    <form onSubmit={submit} className="bg-white border border-slate-200 rounded-md p-3 grid sm:grid-cols-2 gap-2">
+    <form onSubmit={submit} noValidate className="bg-white border border-slate-200 rounded-md p-3 grid sm:grid-cols-2 gap-2">
       <p className="sm:col-span-2 text-xs text-amber-700">{t('admin.addPlayerUnsignedHint')}</p>
-      <input className={npInputCls} placeholder={t('register.players.firstName')} value={firstName} onChange={e => setFirstName(e.target.value)} />
-      <input className={npInputCls} placeholder={t('register.players.lastName')} value={lastName} onChange={e => setLastName(e.target.value)} />
-      <label className="block text-xs text-slate-600">{t('register.players.dob')}
-        <input type="date" className={npInputCls} value={dob} onChange={e => setDob(e.target.value)} />
+      <label className="block text-xs space-y-1">
+        <RequiredLabel>{t('register.players.firstName')}</RequiredLabel>
+        <input ref={v.register('firstName')}
+          className={`${npInputCls} ${v.fieldCls('firstName')}`}
+          value={firstName} onChange={e => setFirstName(e.target.value)}
+          onBlur={e => v.onFieldBlur('firstName', e.target.value)} />
       </label>
-      <select className={npInputCls} value={grade} onChange={e => setGrade(e.target.value)}>
-        <option value="">{t('register.players.grade')}</option>
-        {GRADES.map(g => <option key={g} value={g}>{g}</option>)}
-      </select>
-      <select className={npInputCls} value={uniform} onChange={e => setUniform(e.target.value)}>
-        <option value="">{t('register.players.uniformSize')}</option>
-        {UNIFORM_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
-      </select>
-      <input className={npInputCls} placeholder={t('register.players.shoeSize')} value={shoe} onChange={e => setShoe(e.target.value)} />
+      <label className="block text-xs space-y-1">
+        <RequiredLabel>{t('register.players.lastName')}</RequiredLabel>
+        <input ref={v.register('lastName')}
+          className={`${npInputCls} ${v.fieldCls('lastName')}`}
+          value={lastName} onChange={e => setLastName(e.target.value)}
+          onBlur={e => v.onFieldBlur('lastName', e.target.value)} />
+      </label>
+      <label className="block text-xs space-y-1">
+        <RequiredLabel>{t('register.players.dob')}</RequiredLabel>
+        <input ref={v.register('dob')} type="date"
+          className={`${npInputCls} ${v.fieldCls('dob')}`}
+          value={dob} onChange={e => setDob(e.target.value)}
+          onBlur={e => v.onFieldBlur('dob', e.target.value)} />
+      </label>
+      <label className="block text-xs space-y-1">
+        <span className="text-slate-600">{t('register.players.grade')}</span>
+        <select className={npInputCls} value={grade} onChange={e => setGrade(e.target.value)}>
+          <option value="">—</option>
+          {GRADES.map(g => <option key={g} value={g}>{g}</option>)}
+        </select>
+      </label>
+      <label className="block text-xs space-y-1">
+        <span className="text-slate-600">{t('register.players.uniformSize')}</span>
+        <select className={npInputCls} value={uniform} onChange={e => setUniform(e.target.value)}>
+          <option value="">—</option>
+          {UNIFORM_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+      </label>
+      <label className="block text-xs space-y-1">
+        <span className="text-slate-600">{t('register.players.shoeSize')}</span>
+        <input className={npInputCls} value={shoe} onChange={e => setShoe(e.target.value)} />
+      </label>
       <div className="sm:col-span-2 flex gap-2 pt-1">
         <button type="submit" disabled={saving}
           className="text-xs bg-emerald-700 text-white px-3 py-1.5 rounded-md hover:bg-emerald-800 disabled:opacity-60">
@@ -683,6 +738,7 @@ function CreateRegistrationModal({
   const [saving, setSaving] = useState(false)
   const [localError, setLocalError] = useState<string | null>(null)
   const [existingId, setExistingId] = useState<number | null>(null)
+  const v = useRequiredValidation(['parentAccountId'])
 
   useEffect(() => {
     (async () => {
@@ -702,7 +758,9 @@ function CreateRegistrationModal({
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLocalError(null); setExistingId(null); onError(null)
-    if (parentAccountId === '') { setLocalError(t('admin.regCreatePickParent')); return }
+    if (!v.checkSubmit({ parentAccountId: parentAccountId === '' ? '' : String(parentAccountId) })) {
+      setLocalError(t('admin.regCreatePickParent')); return
+    }
     setSaving(true)
     try {
       const created = await Api.adminCreateRegistration({
@@ -733,9 +791,13 @@ function CreateRegistrationModal({
 
         <form onSubmit={submit} className="space-y-3">
           <label className="block text-sm">
-            <span className="font-medium text-slate-700">{t('admin.regCreateParent')}</span>
-            <select value={parentAccountId} onChange={e => setParentAccountId(e.target.value === '' ? '' : Number(e.target.value))}
-              className="mt-1 w-full border border-slate-300 rounded-md px-2 py-2 text-sm" disabled={loadingUsers || saving}>
+            <RequiredLabel>{t('admin.regCreateParent')}</RequiredLabel>
+            <select ref={v.register('parentAccountId')}
+              value={parentAccountId}
+              onChange={e => setParentAccountId(e.target.value === '' ? '' : Number(e.target.value))}
+              onBlur={e => v.onFieldBlur('parentAccountId', e.target.value)}
+              className={`mt-1 w-full border border-slate-300 rounded-md px-2 py-2 text-sm ${v.fieldCls('parentAccountId')}`}
+              disabled={loadingUsers || saving}>
               <option value="">{loadingUsers ? t('common.loading') : `— ${t('admin.regCreatePickParent')} —`}</option>
               {users.map(u => (
                 <option key={u.parentAccountId!} value={u.parentAccountId!}>

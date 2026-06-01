@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Layout } from '../../components/Layout'
+import { RequiredLabel, useRequiredValidation } from '../../components/RequiredField'
 import { Api } from '../../api/client'
 import { OUTREACH_STATUS_LABELS, type Language, type OutreachResponse } from '../../api/types'
 
@@ -16,6 +17,7 @@ export function AdminOutreachPage() {
   const [error, setError] = useState<string | null>(null)
   const [outreach, setOutreach] = useState<OutreachResponse[]>([])
   const [copiedId, setCopiedId] = useState<number | null>(null)
+  const v = useRequiredValidation(['recipient'])
 
   const load = async () => {
     setError(null)
@@ -27,7 +29,7 @@ export function AdminOutreachPage() {
 
   const send = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!recipient.trim()) {
+    if (!v.checkSubmit({ recipient })) {
       setError(channel === 'email' ? 'Enter an email address.' : 'Enter a phone number.')
       return
     }
@@ -74,7 +76,7 @@ export function AdminOutreachPage() {
 
         <section className="bg-white border border-slate-200 rounded-lg p-6">
           <h2 className="font-bold text-emerald-800">{t('admin.send')}</h2>
-          <form onSubmit={send} className="mt-4 grid sm:grid-cols-2 gap-4">
+          <form onSubmit={send} noValidate className="mt-4 grid sm:grid-cols-2 gap-4">
             <label className="flex flex-col text-sm sm:col-span-2">
               <span className="font-medium text-slate-700 mb-1">{t('admin.deliverBy')}</span>
               <div className="flex gap-2">
@@ -88,15 +90,16 @@ export function AdminOutreachPage() {
             </label>
 
             <label className="flex flex-col text-sm">
-              <span className="font-medium text-slate-700 mb-1">
+              <RequiredLabel className="font-medium text-slate-700 mb-1">
                 {channel === 'email' ? t('admin.emailAddress') : t('admin.phoneNumber')}
-              </span>
+              </RequiredLabel>
               <input
+                ref={v.register('recipient')}
                 type={channel === 'email' ? 'email' : 'tel'}
                 value={recipient}
                 onChange={e => setRecipient(e.target.value)}
-                required
-                className="border border-slate-300 rounded-md px-3 py-2"
+                onBlur={e => v.onFieldBlur('recipient', e.target.value)}
+                className={`border border-slate-300 rounded-md px-3 py-2 ${v.fieldCls('recipient')}`}
               />
             </label>
 

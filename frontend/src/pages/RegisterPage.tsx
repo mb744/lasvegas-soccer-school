@@ -14,9 +14,12 @@ const playerSchema = z.object({
   firstName: z.string().min(1),
   lastName: z.string().min(1),
   dateOfBirth: z.string().min(1),
-  schoolGrade: z.string().min(1),
-  uniformSize: z.string().min(1),
-  shoeSize: z.string().min(1),
+  // Only name + DOB are required everywhere a player is added (admin, /account, public
+  // RegisterPage). Sizes/grade are still typed as `string` (so the API DTO match holds), but
+  // we drop `.min(1)` so empty values are accepted.
+  schoolGrade: z.string(),
+  uniformSize: z.string(),
+  shoeSize: z.string(),
   heardFrom: z.string().optional(),
   waiverParticipantName: z.string().min(1),
   waiverTeamName: z.string().optional(),
@@ -308,8 +311,10 @@ function Field({
   span?: 1 | 2
   required?: boolean
 }) {
+  // `field-error` triggers the descendant-input red-border styling defined in index.css when
+  // RHF reports an error for this field. Asterisk shows always on required fields.
   return (
-    <label className={`flex flex-col text-sm ${span === 2 ? 'sm:col-span-2' : ''}`}>
+    <label className={`flex flex-col text-sm ${span === 2 ? 'sm:col-span-2' : ''} ${error ? 'field-error' : ''}`}>
       <span className="text-slate-700 font-medium mb-1">
         {label}
         {required && <span aria-hidden className="text-rose-600 ml-0.5">*</span>}
@@ -603,19 +608,19 @@ function PlayerCard({
         <Field label={t('register.players.dob')} error={e.dateOfBirth && t('common.required')} required>
           <input type="date" className={inputCls} disabled={usingExisting} {...form.register(`players.${idx}.dateOfBirth`)} />
         </Field>
-        <Field label={t('register.players.grade')} error={e.schoolGrade && t('common.required')} required>
+        <Field label={t('register.players.grade')}>
           <select className={inputCls} {...form.register(`players.${idx}.schoolGrade`)}>
             <option value="">—</option>
             {GRADES.map(g => <option key={g} value={g}>{g}</option>)}
           </select>
         </Field>
-        <Field label={t('register.players.uniformSize')} error={e.uniformSize && t('common.required')} required>
+        <Field label={t('register.players.uniformSize')}>
           <select className={inputCls} {...form.register(`players.${idx}.uniformSize`)}>
             <option value="">—</option>
             {UNIFORM_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
         </Field>
-        <Field label={t('register.players.shoeSize')} error={e.shoeSize && t('common.required')} required>
+        <Field label={t('register.players.shoeSize')}>
           <input className={inputCls} placeholder="e.g. 4Y, 7" {...form.register(`players.${idx}.shoeSize`)} />
         </Field>
         <Field label={t('register.players.heardFrom')} span={2}>

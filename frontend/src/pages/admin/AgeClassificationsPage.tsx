@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Layout } from '../../components/Layout'
+import { RequiredLabel, useRequiredValidation } from '../../components/RequiredField'
 import { Api } from '../../api/client'
 import type { AgeClassification, SaveAgeClassificationRequest } from '../../api/types'
 
@@ -16,6 +17,7 @@ export function AdminAgeClassificationsPage() {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const v = useRequiredValidation(['name', 'dobStart', 'dobEnd'])
 
   const refresh = async () => {
     setError(null)
@@ -41,8 +43,7 @@ export function AdminAgeClassificationsPage() {
   const save = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null); setNotice(null)
-    if (!name.trim()) { setError(t('common.required')); return }
-    if (!dobStart || !dobEnd) { setError(t('admin.ageRangeRequired')); return }
+    if (!v.checkSubmit({ name, dobStart, dobEnd })) { setError(t('common.required')); return }
     if (dobEnd < dobStart) { setError(t('admin.ageRangeInvalid')); return }
     const payload: SaveAgeClassificationRequest = {
       name: name.trim(),
@@ -128,15 +129,16 @@ export function AdminAgeClassificationsPage() {
         </section>
 
         {editingId !== null && (
-          <form onSubmit={save} className="bg-white border border-slate-200 rounded-lg p-6 space-y-3">
+          <form onSubmit={save} noValidate className="bg-white border border-slate-200 rounded-lg p-6 space-y-3">
             <h2 className="font-bold text-emerald-800">
               {editingId === 'new' ? t('admin.ageNew') : t('admin.ageEditingTitle', { name })}
             </h2>
             <label className="block text-sm">
-              <span className="font-medium text-slate-700">{t('admin.ageName')}</span>
-              <input type="text" value={name} onChange={e => setName(e.target.value)}
+              <RequiredLabel>{t('admin.ageName')}</RequiredLabel>
+              <input ref={v.register('name')} type="text" value={name} onChange={e => setName(e.target.value)}
+                onBlur={e => v.onFieldBlur('name', e.target.value)}
                 placeholder="U10"
-                className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+                className={`mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm ${v.fieldCls('name')}`} />
             </label>
             <label className="block text-sm">
               <span className="font-medium text-slate-700">{t('admin.ageDescription')}</span>
@@ -145,14 +147,16 @@ export function AdminAgeClassificationsPage() {
             </label>
             <div className="grid sm:grid-cols-2 gap-3">
               <label className="block text-sm">
-                <span className="font-medium text-slate-700">{t('admin.ageDobStart')}</span>
-                <input type="date" value={dobStart} onChange={e => setDobStart(e.target.value)}
-                  className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+                <RequiredLabel>{t('admin.ageDobStart')}</RequiredLabel>
+                <input ref={v.register('dobStart')} type="date" value={dobStart} onChange={e => setDobStart(e.target.value)}
+                  onBlur={e => v.onFieldBlur('dobStart', e.target.value)}
+                  className={`mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm ${v.fieldCls('dobStart')}`} />
               </label>
               <label className="block text-sm">
-                <span className="font-medium text-slate-700">{t('admin.ageDobEnd')}</span>
-                <input type="date" value={dobEnd} onChange={e => setDobEnd(e.target.value)}
-                  className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+                <RequiredLabel>{t('admin.ageDobEnd')}</RequiredLabel>
+                <input ref={v.register('dobEnd')} type="date" value={dobEnd} onChange={e => setDobEnd(e.target.value)}
+                  onBlur={e => v.onFieldBlur('dobEnd', e.target.value)}
+                  className={`mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm ${v.fieldCls('dobEnd')}`} />
               </label>
             </div>
             <p className="text-xs text-slate-500">{t('admin.ageDobHint')}</p>

@@ -12,9 +12,12 @@ public record RegistrationPlayerInput
     [MaxLength(80)] public string? LastName { get; init; }
     public DateOnly? DateOfBirth { get; init; }
 
-    [Required, MaxLength(40)] public string SchoolGrade { get; init; } = string.Empty;
-    [Required, MaxLength(10)] public string UniformSize { get; init; } = string.Empty;
-    [Required, MaxLength(10)] public string ShoeSize { get; init; } = string.Empty;
+    // Only name + DOB are required across every player-add surface (public submit, admin add,
+    // /account add). Grade/uniform/shoe are kept as the convenience fields they always were but
+    // no longer block submission when blank.
+    [MaxLength(40)] public string SchoolGrade { get; init; } = string.Empty;
+    [MaxLength(10)] public string UniformSize { get; init; } = string.Empty;
+    [MaxLength(10)] public string ShoeSize { get; init; } = string.Empty;
     [MaxLength(120)] public string? HeardFrom { get; init; }
 
     [MaxLength(160)] public string? WaiverParticipantName { get; init; }
@@ -159,28 +162,30 @@ public record UpdatePlayerTrialRequest
 }
 
 /// <summary>Admin adds a player to an existing registration (creates the durable player too).
-/// No signature — the row is enrolled but unsigned until a waiver is captured later.</summary>
+/// No signature — the row is enrolled but unsigned until a waiver is captured later. Only
+/// name + DOB are required; grade/uniform/shoe can be filled in later as that info shows up.</summary>
 public record AddRegistrationPlayerRequest
 {
     [Required, MaxLength(80)] public string FirstName { get; init; } = string.Empty;
     [Required, MaxLength(80)] public string LastName { get; init; } = string.Empty;
     public DateOnly DateOfBirth { get; init; }
-    [Required, MaxLength(40)] public string SchoolGrade { get; init; } = string.Empty;
-    [Required, MaxLength(10)] public string UniformSize { get; init; } = string.Empty;
-    [Required, MaxLength(10)] public string ShoeSize { get; init; } = string.Empty;
+    [MaxLength(40)] public string SchoolGrade { get; init; } = string.Empty;
+    [MaxLength(10)] public string UniformSize { get; init; } = string.Empty;
+    [MaxLength(10)] public string ShoeSize { get; init; } = string.Empty;
     [MaxLength(120)] public string? HeardFrom { get; init; }
 }
 
 /// <summary>Admin edit of an enrolled player: per-season fields plus the durable name/DOB
-/// (DOB change re-assigns the age bracket; name/DOB changes apply to the player everywhere).</summary>
+/// (DOB change re-assigns the age bracket; name/DOB changes apply to the player everywhere).
+/// Only name + DOB are required; the size/grade fields can be left blank.</summary>
 public record UpdateRegistrationPlayerRequest
 {
     [Required, MaxLength(80)] public string FirstName { get; init; } = string.Empty;
     [Required, MaxLength(80)] public string LastName { get; init; } = string.Empty;
     public DateOnly DateOfBirth { get; init; }
-    [Required, MaxLength(40)] public string SchoolGrade { get; init; } = string.Empty;
-    [Required, MaxLength(10)] public string UniformSize { get; init; } = string.Empty;
-    [Required, MaxLength(10)] public string ShoeSize { get; init; } = string.Empty;
+    [MaxLength(40)] public string SchoolGrade { get; init; } = string.Empty;
+    [MaxLength(10)] public string UniformSize { get; init; } = string.Empty;
+    [MaxLength(10)] public string ShoeSize { get; init; } = string.Empty;
 }
 
 /// <summary>Admin spins up an empty registration shell for an existing parent account so the

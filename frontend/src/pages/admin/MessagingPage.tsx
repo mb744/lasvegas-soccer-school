@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Layout } from '../../components/Layout'
+import { RequiredLabel, useRequiredValidation } from '../../components/RequiredField'
 import { Api } from '../../api/client'
 import type {
   AdHocRecipient,
@@ -910,6 +911,8 @@ function GroupsTab({
   const [memberPhone, setMemberPhone] = useState('')
   const [memberEmail, setMemberEmail] = useState('')
   const [memberLanguage, setMemberLanguage] = useState<Language | ''>('') // '' = inherit group default
+  const vGroup = useRequiredValidation(['newName'])
+  const vMember = useRequiredValidation(['memberPhone'])
 
   const loadGroup = async (id: number) => {
     try { setSelected(await Api.getMessagingGroup(id)) }
@@ -918,7 +921,7 @@ function GroupsTab({
 
   const create = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!newName.trim()) { onError('Name is required.'); return }
+    if (!vGroup.checkSubmit({ newName })) { onError('Name is required.'); return }
     try {
       const g = await Api.createMessagingGroup({
         name: newName.trim(),
@@ -949,7 +952,7 @@ function GroupsTab({
   const addMember = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!selected) return
-    if (!memberPhone.trim()) { onError('Phone is required.'); return }
+    if (!vMember.checkSubmit({ memberPhone })) { onError('Phone is required.'); return }
     try {
       await Api.addMessagingGroupMember(selected.id, {
         name: memberName.trim() || null,
@@ -1017,11 +1020,16 @@ function GroupsTab({
             {curated.length === 0 && <li className="text-sm text-slate-400">{t('admin.msgNoGroups')}</li>}
           </ul>
         </div>
-        <form onSubmit={create} className="space-y-2 border-t border-slate-100 pt-3">
+        <form onSubmit={create} noValidate className="space-y-2 border-t border-slate-100 pt-3">
           <h3 className="text-sm font-medium text-slate-700">{t('admin.msgNewGroup')}</h3>
-          <input type="text" value={newName} onChange={e => setNewName(e.target.value)}
-            placeholder={t('admin.msgGroupName')}
-            className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+          <label className="block">
+            <RequiredLabel className="text-xs text-slate-600">{t('admin.msgGroupName')}</RequiredLabel>
+            <input ref={vGroup.register('newName')} type="text" value={newName}
+              onChange={e => setNewName(e.target.value)}
+              onBlur={e => vGroup.onFieldBlur('newName', e.target.value)}
+              placeholder={t('admin.msgGroupName')}
+              className={`w-full border border-slate-300 rounded-md px-3 py-2 text-sm ${vGroup.fieldCls('newName')}`} />
+          </label>
           <input type="text" value={newDescription} onChange={e => setNewDescription(e.target.value)}
             placeholder={t('admin.msgGroupDescOptional')}
             className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
@@ -1069,13 +1077,16 @@ function GroupsTab({
                 </button>
               </div>
             </div>
-            <form onSubmit={addMember} className="grid sm:grid-cols-[1fr_1fr_1fr_auto_auto] gap-2">
+            <form onSubmit={addMember} noValidate className="grid sm:grid-cols-[1fr_1fr_1fr_auto_auto] gap-2">
               <input type="text" value={memberName} onChange={e => setMemberName(e.target.value)}
                 placeholder={t('admin.msgNameOptional')}
                 className="border border-slate-300 rounded-md px-3 py-2 text-sm" />
-              <input type="tel" value={memberPhone} onChange={e => setMemberPhone(e.target.value)}
-                placeholder="+17025551212"
-                className="border border-slate-300 rounded-md px-3 py-2 text-sm" />
+              <input ref={vMember.register('memberPhone')} type="tel" value={memberPhone}
+                onChange={e => setMemberPhone(e.target.value)}
+                onBlur={e => vMember.onFieldBlur('memberPhone', e.target.value)}
+                placeholder="+17025551212 *"
+                aria-required="true"
+                className={`border border-slate-300 rounded-md px-3 py-2 text-sm ${vMember.fieldCls('memberPhone')}`} />
               <input type="email" value={memberEmail} onChange={e => setMemberEmail(e.target.value)}
                 placeholder={t('admin.msgEmailOptional')}
                 className="border border-slate-300 rounded-md px-3 py-2 text-sm" />
@@ -1614,6 +1625,7 @@ function SettingsTab({
   const [updatedAt, setUpdatedAt] = useState<string | null>(null)
   const [loaded, setLoaded] = useState(false)
   const [saving, setSaving] = useState(false)
+  const v = useRequiredValidation(['autoReplyTextEn', 'autoReplyTextEs'])
 
   useEffect(() => {
     Api.getMessagingSettings()
@@ -1630,7 +1642,7 @@ function SettingsTab({
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!autoReplyTextEn.trim() || !autoReplyTextEs.trim()) {
+    if (!v.checkSubmit({ autoReplyTextEn, autoReplyTextEs })) {
       onError(t('admin.msgSettingsBodiesRequired'))
       return
     }
@@ -1657,7 +1669,7 @@ function SettingsTab({
   }
 
   return (
-    <form onSubmit={save} className="bg-white border border-slate-200 rounded-lg p-6 space-y-4 max-w-3xl">
+    <form onSubmit={save} noValidate className="bg-white border border-slate-200 rounded-lg p-6 space-y-4 max-w-3xl">
       <div>
         <h2 className="font-bold text-emerald-800">{t('admin.msgSettingsAutoReplyHeader')}</h2>
         <p className="text-xs text-slate-500 mt-1">{t('admin.msgSettingsAutoReplyHelp')}</p>
@@ -1672,20 +1684,22 @@ function SettingsTab({
       </label>
 
       <label className="block text-sm">
-        <span className="font-medium text-slate-700">{t('admin.msgSettingsAutoReplyEn')}</span>
-        <textarea rows={4} value={autoReplyTextEn}
+        <RequiredLabel>{t('admin.msgSettingsAutoReplyEn')}</RequiredLabel>
+        <textarea ref={v.register('autoReplyTextEn')} rows={4} value={autoReplyTextEn}
           onChange={e => setAutoReplyTextEn(e.target.value)}
+          onBlur={e => v.onFieldBlur('autoReplyTextEn', e.target.value)}
           maxLength={2000}
-          className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+          className={`mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm ${v.fieldCls('autoReplyTextEn')}`} />
         <span className="block text-xs text-slate-500 mt-0.5">{autoReplyTextEn.length} / 2000</span>
       </label>
 
       <label className="block text-sm">
-        <span className="font-medium text-slate-700">{t('admin.msgSettingsAutoReplyEs')}</span>
-        <textarea rows={4} value={autoReplyTextEs}
+        <RequiredLabel>{t('admin.msgSettingsAutoReplyEs')}</RequiredLabel>
+        <textarea ref={v.register('autoReplyTextEs')} rows={4} value={autoReplyTextEs}
           onChange={e => setAutoReplyTextEs(e.target.value)}
+          onBlur={e => v.onFieldBlur('autoReplyTextEs', e.target.value)}
           maxLength={2000}
-          className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+          className={`mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm ${v.fieldCls('autoReplyTextEs')}`} />
         <span className="block text-xs text-slate-500 mt-0.5">{autoReplyTextEs.length} / 2000</span>
       </label>
 
@@ -1887,6 +1901,7 @@ function TemplatesTab({
   const [description, setDescription] = useState('')
   const [previewText, setPreviewText] = useState('')
   const [vars, setVars] = useState<SaveTemplateVariable[]>([])
+  const v = useRequiredValidation(['name', 'contentSid'])
 
   const loadForm = (tpl: WhatsAppTemplate | null) => {
     if (tpl) {
@@ -1912,7 +1927,7 @@ function TemplatesTab({
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!name.trim()) { onError('Name is required.'); return }
+    if (!v.checkSubmit({ name, contentSid })) { onError('Name and ContentSid are required.'); return }
     if (!contentSid.trim().startsWith('HX')) { onError('ContentSid must start with HX.'); return }
     const payload = {
       name: name.trim(),
@@ -1993,19 +2008,23 @@ function TemplatesTab({
           </div>
         )}
         {editingId !== null && (
-          <form onSubmit={save} className="bg-white border border-slate-200 rounded-lg p-4 space-y-3">
+          <form onSubmit={save} noValidate className="bg-white border border-slate-200 rounded-lg p-4 space-y-3">
             <div className="grid sm:grid-cols-2 gap-3">
               <label className="block text-sm">
-                <span className="font-medium text-slate-700">{t('admin.msgTemplateName')}</span>
-                <input type="text" value={name} onChange={e => setName(e.target.value)}
+                <RequiredLabel>{t('admin.msgTemplateName')}</RequiredLabel>
+                <input ref={v.register('name')} type="text" value={name}
+                  onChange={e => setName(e.target.value)}
+                  onBlur={e => v.onFieldBlur('name', e.target.value)}
                   placeholder="practice_today"
-                  className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+                  className={`mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm ${v.fieldCls('name')}`} />
               </label>
               <label className="block text-sm">
-                <span className="font-medium text-slate-700">{t('admin.msgTemplateContentSid')}</span>
-                <input type="text" value={contentSid} onChange={e => setContentSid(e.target.value)}
+                <RequiredLabel>{t('admin.msgTemplateContentSid')}</RequiredLabel>
+                <input ref={v.register('contentSid')} type="text" value={contentSid}
+                  onChange={e => setContentSid(e.target.value)}
+                  onBlur={e => v.onFieldBlur('contentSid', e.target.value)}
                   placeholder="HX..."
-                  className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm font-mono" />
+                  className={`mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm font-mono ${v.fieldCls('contentSid')}`} />
               </label>
               <label className="block text-sm">
                 <span className="font-medium text-slate-700">{t('admin.language')}</span>
@@ -2096,6 +2115,7 @@ function EmailTemplatesSection({
   const [subject, setSubject] = useState('')
   const [body, setBody] = useState('')
   const [vars, setVars] = useState<SaveTemplateVariable[]>([])
+  const v = useRequiredValidation(['name', 'subject', 'body'])
 
   const loadForm = (tpl: EmailTemplate | null) => {
     if (tpl) {
@@ -2121,9 +2141,9 @@ function EmailTemplatesSection({
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!name.trim()) { onError('Name is required.'); return }
-    if (!subject.trim()) { onError('Subject is required.'); return }
-    if (!body.trim()) { onError('Body is required.'); return }
+    if (!v.checkSubmit({ name, subject, body })) {
+      onError('Name, subject, and body are required.'); return
+    }
     const payload = {
       name: name.trim(),
       language,
@@ -2185,13 +2205,15 @@ function EmailTemplatesSection({
           </div>
         )}
         {editingId !== null && (
-          <form onSubmit={save} className="bg-white border border-slate-200 rounded-lg p-4 space-y-3">
+          <form onSubmit={save} noValidate className="bg-white border border-slate-200 rounded-lg p-4 space-y-3">
             <div className="grid sm:grid-cols-2 gap-3">
               <label className="block text-sm">
-                <span className="font-medium text-slate-700">{t('admin.msgTemplateName')}</span>
-                <input type="text" value={name} onChange={e => setName(e.target.value)}
+                <RequiredLabel>{t('admin.msgTemplateName')}</RequiredLabel>
+                <input ref={v.register('name')} type="text" value={name}
+                  onChange={e => setName(e.target.value)}
+                  onBlur={e => v.onFieldBlur('name', e.target.value)}
                   placeholder="practice_reminder"
-                  className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+                  className={`mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm ${v.fieldCls('name')}`} />
               </label>
               <label className="block text-sm">
                 <span className="font-medium text-slate-700">{t('admin.language')}</span>
@@ -2209,17 +2231,21 @@ function EmailTemplatesSection({
             </div>
 
             <label className="block text-sm">
-              <span className="font-medium text-slate-700">{t('admin.msgSubject')}</span>
-              <input type="text" value={subject} onChange={e => setSubject(e.target.value)}
+              <RequiredLabel>{t('admin.msgSubject')}</RequiredLabel>
+              <input ref={v.register('subject')} type="text" value={subject}
+                onChange={e => setSubject(e.target.value)}
+                onBlur={e => v.onFieldBlur('subject', e.target.value)}
                 placeholder={t('admin.msgEmailSubjectTemplatePh')}
-                className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+                className={`mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm ${v.fieldCls('subject')}`} />
             </label>
 
             <label className="block text-sm">
-              <span className="font-medium text-slate-700">{t('admin.msgBody')}</span>
-              <textarea rows={10} value={body} onChange={e => setBody(e.target.value)}
+              <RequiredLabel>{t('admin.msgBody')}</RequiredLabel>
+              <textarea ref={v.register('body')} rows={10} value={body}
+                onChange={e => setBody(e.target.value)}
+                onBlur={e => v.onFieldBlur('body', e.target.value)}
                 placeholder={t('admin.msgEmailBodyTemplatePh')}
-                className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm font-mono" />
+                className={`mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm font-mono ${v.fieldCls('body')}`} />
               <span className="block text-xs text-slate-500 mt-1">{t('admin.msgEmailTemplatePlaceholderHelp')}</span>
             </label>
 
@@ -2739,6 +2765,7 @@ function DictionaryTab({
   const [editingId, setEditingId] = useState<number | 'new' | null>(null)
   const [english, setEnglish] = useState('')
   const [spanish, setSpanish] = useState('')
+  const v = useRequiredValidation(['english', 'spanish'])
 
   const load = async () => {
     try { setEntries(await Api.listPhraseTranslations()) }
@@ -2752,7 +2779,7 @@ function DictionaryTab({
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!english.trim() || !spanish.trim()) { onError('Both English and Spanish required.'); return }
+    if (!v.checkSubmit({ english, spanish })) { onError('Both English and Spanish required.'); return }
     try {
       const payload = { english: english.trim(), spanish: spanish.trim() }
       if (editingId === 'new') await Api.createPhraseTranslation(payload)
@@ -2782,13 +2809,19 @@ function DictionaryTab({
       </div>
 
       {editingId !== null && (
-        <form onSubmit={save} className="border border-slate-200 rounded p-3 grid sm:grid-cols-[1fr_1fr_auto] gap-2 items-start">
-          <input type="text" value={english} onChange={e => setEnglish(e.target.value)}
-            placeholder="English phrase"
-            className="border border-slate-300 rounded-md px-3 py-2 text-sm" autoFocus />
-          <input type="text" value={spanish} onChange={e => setSpanish(e.target.value)}
-            placeholder="Spanish phrase"
-            className="border border-slate-300 rounded-md px-3 py-2 text-sm" />
+        <form onSubmit={save} noValidate className="border border-slate-200 rounded p-3 grid sm:grid-cols-[1fr_1fr_auto] gap-2 items-start">
+          <input ref={v.register('english')} type="text" value={english}
+            onChange={e => setEnglish(e.target.value)}
+            onBlur={e => v.onFieldBlur('english', e.target.value)}
+            placeholder="English phrase *"
+            aria-required="true" autoFocus
+            className={`border border-slate-300 rounded-md px-3 py-2 text-sm ${v.fieldCls('english')}`} />
+          <input ref={v.register('spanish')} type="text" value={spanish}
+            onChange={e => setSpanish(e.target.value)}
+            onBlur={e => v.onFieldBlur('spanish', e.target.value)}
+            placeholder="Spanish phrase *"
+            aria-required="true"
+            className={`border border-slate-300 rounded-md px-3 py-2 text-sm ${v.fieldCls('spanish')}`} />
           <div className="flex gap-2">
             <button type="submit"
               className="bg-emerald-700 text-white text-sm font-semibold px-3 py-2 rounded-md hover:bg-emerald-800">

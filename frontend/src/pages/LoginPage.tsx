@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Layout } from '../components/Layout'
+import { RequiredLabel, useRequiredValidation } from '../components/RequiredField'
 import { useAuth } from '../auth/AuthContext'
 import { Api } from '../api/client'
 
@@ -21,9 +22,11 @@ export function LoginPage() {
   const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const v = useRequiredValidation(['email', 'password'])
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!v.checkSubmit({ email, password })) return
     setSubmitting(true)
     setError(null)
     try {
@@ -74,25 +77,27 @@ export function LoginPage() {
           </>
         )}
 
-        <form onSubmit={onSubmit} className="space-y-4">
+        <form onSubmit={onSubmit} noValidate className="space-y-4">
           <label className="flex flex-col text-sm">
-            <span className="font-medium text-slate-700 mb-1">{t('auth.email')}</span>
+            <RequiredLabel className="font-medium text-slate-700 mb-1">{t('auth.email')}</RequiredLabel>
             <input
+              ref={v.register('email')}
               type="email"
               value={email}
               onChange={e => setEmail(e.target.value)}
-              required
-              className={inputCls}
+              onBlur={e => v.onFieldBlur('email', e.target.value)}
+              className={`${inputCls} ${v.fieldCls('email')}`}
             />
           </label>
           <label className="flex flex-col text-sm">
-            <span className="font-medium text-slate-700 mb-1">{t('auth.password')}</span>
+            <RequiredLabel className="font-medium text-slate-700 mb-1">{t('auth.password')}</RequiredLabel>
             <input
+              ref={v.register('password')}
               type="password"
               value={password}
               onChange={e => setPassword(e.target.value)}
-              required
-              className={inputCls}
+              onBlur={e => v.onFieldBlur('password', e.target.value)}
+              className={`${inputCls} ${v.fieldCls('password')}`}
             />
           </label>
           {error && <div className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-md p-3">{error}</div>}

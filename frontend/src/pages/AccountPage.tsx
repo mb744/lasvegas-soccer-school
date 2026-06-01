@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Layout } from '../components/Layout'
 import { SignaturePad } from '../components/SignaturePad'
+import { RequiredLabel, useRequiredValidation } from '../components/RequiredField'
 import { Api } from '../api/client'
 import type { AddRegistrationPlayerRequest, RegistrationDetail, RegistrationPlayerDetail, RegistrationSummary } from '../api/types'
 
@@ -205,17 +206,23 @@ function AddOwnPlayerForm({ regId, onUpdated, onError }: {
   const [dob, setDob] = useState(''); const [grade, setGrade] = useState('')
   const [uniform, setUniform] = useState(''); const [shoe, setShoe] = useState('')
   const [saving, setSaving] = useState(false)
+  const v = useRequiredValidation(['firstName', 'lastName', 'dob'])
 
-  const reset = () => { setFirst(''); setLast(''); setDob(''); setGrade(''); setUniform(''); setShoe(''); setOpen(false) }
+  const reset = () => {
+    setFirst(''); setLast(''); setDob(''); setGrade(''); setUniform(''); setShoe('')
+    setOpen(false); v.reset()
+  }
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!first.trim() || !last.trim() || !dob) { onError(t('account.addPlayerRequired')); return }
+    if (!v.checkSubmit({ firstName: first, lastName: last, dob })) {
+      onError(t('account.addPlayerRequired')); return
+    }
     setSaving(true)
     try {
       const payload: AddRegistrationPlayerRequest = {
         firstName: first.trim(), lastName: last.trim(), dateOfBirth: dob,
-        schoolGrade: grade.trim() || '—', uniformSize: uniform.trim() || '—', shoeSize: shoe.trim() || '—',
+        schoolGrade: grade.trim(), uniformSize: uniform.trim(), shoeSize: shoe.trim(),
       }
       onUpdated(await Api.addOwnRegistrationPlayer(regId, payload))
       reset()
@@ -229,21 +236,48 @@ function AddOwnPlayerForm({ regId, onUpdated, onError }: {
     )
   }
 
-  const inputCls = 'border border-slate-300 rounded-md px-2 py-1 text-sm w-full'
+  const baseCls = 'border border-slate-300 rounded-md px-2 py-1 text-sm w-full'
   return (
-    <form onSubmit={submit} className="border border-slate-200 rounded p-3 grid sm:grid-cols-2 gap-2">
-      <input className={inputCls} placeholder={t('register.players.firstName')} value={first} onChange={e => setFirst(e.target.value)} />
-      <input className={inputCls} placeholder={t('register.players.lastName')} value={last} onChange={e => setLast(e.target.value)} />
-      <input className={inputCls} type="date" value={dob} onChange={e => setDob(e.target.value)} />
-      <select className={inputCls} value={grade} onChange={e => setGrade(e.target.value)}>
-        <option value="">{t('register.players.grade')}</option>
-        {GRADES.map(g => <option key={g} value={g}>{g}</option>)}
-      </select>
-      <select className={inputCls} value={uniform} onChange={e => setUniform(e.target.value)}>
-        <option value="">{t('register.players.uniformSize')}</option>
-        {UNIFORM_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
-      </select>
-      <input className={inputCls} placeholder={t('register.players.shoeSize')} value={shoe} onChange={e => setShoe(e.target.value)} />
+    <form onSubmit={submit} noValidate className="border border-slate-200 rounded p-3 grid sm:grid-cols-2 gap-2">
+      <label className="block text-xs space-y-1">
+        <RequiredLabel>{t('register.players.firstName')}</RequiredLabel>
+        <input ref={v.register('firstName')}
+          className={`${baseCls} ${v.fieldCls('firstName')}`}
+          value={first} onChange={e => setFirst(e.target.value)}
+          onBlur={e => v.onFieldBlur('firstName', e.target.value)} />
+      </label>
+      <label className="block text-xs space-y-1">
+        <RequiredLabel>{t('register.players.lastName')}</RequiredLabel>
+        <input ref={v.register('lastName')}
+          className={`${baseCls} ${v.fieldCls('lastName')}`}
+          value={last} onChange={e => setLast(e.target.value)}
+          onBlur={e => v.onFieldBlur('lastName', e.target.value)} />
+      </label>
+      <label className="block text-xs space-y-1">
+        <RequiredLabel>{t('register.players.dob')}</RequiredLabel>
+        <input ref={v.register('dob')} type="date"
+          className={`${baseCls} ${v.fieldCls('dob')}`}
+          value={dob} onChange={e => setDob(e.target.value)}
+          onBlur={e => v.onFieldBlur('dob', e.target.value)} />
+      </label>
+      <label className="block text-xs space-y-1">
+        <span className="text-slate-700">{t('register.players.grade')}</span>
+        <select className={baseCls} value={grade} onChange={e => setGrade(e.target.value)}>
+          <option value="">—</option>
+          {GRADES.map(g => <option key={g} value={g}>{g}</option>)}
+        </select>
+      </label>
+      <label className="block text-xs space-y-1">
+        <span className="text-slate-700">{t('register.players.uniformSize')}</span>
+        <select className={baseCls} value={uniform} onChange={e => setUniform(e.target.value)}>
+          <option value="">—</option>
+          {UNIFORM_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+      </label>
+      <label className="block text-xs space-y-1">
+        <span className="text-slate-700">{t('register.players.shoeSize')}</span>
+        <input className={baseCls} value={shoe} onChange={e => setShoe(e.target.value)} />
+      </label>
       <div className="sm:col-span-2 flex gap-2 pt-1">
         <button type="submit" disabled={saving}
           className="text-xs bg-emerald-700 text-white px-3 py-1.5 rounded-md hover:bg-emerald-800 disabled:opacity-60">
