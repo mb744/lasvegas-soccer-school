@@ -33,6 +33,9 @@ import type {
   AttendanceStatus,
   TournamentSummary,
   SaveTournamentRequest,
+  CreateTournamentTeamRequest,
+  TournamentAttendanceList,
+  SendTournamentConfirmationsResult,
   InboundMessage,
   PracticeSeriesCreated,
   SaveGameRequest,
@@ -499,6 +502,29 @@ export const Api = {
   },
   async syncTournament(id: number) {
     const r = await api.post<ScheduleSyncResult>(`/schedule/tournaments/${id}/sync`, {})
+    return r.data
+  },
+  /** Creates the tournament's dedicated team. Admin then builds the roster via the existing
+   *  team-roster endpoints (addRosterMembers, etc.) on the returned tournament. */
+  async createTournamentTeam(tournamentId: number, payload: CreateTournamentTeamRequest) {
+    const r = await api.post<TournamentSummary>(`/schedule/tournaments/${tournamentId}/team`, payload)
+    return r.data
+  },
+  /** Per-player tournament confirmation status; mirrors the event-attendance endpoint. */
+  async getTournamentAttendance(tournamentId: number) {
+    const r = await api.get<TournamentAttendanceList>(`/schedule/tournaments/${tournamentId}/attendance`)
+    return r.data
+  },
+  async setTournamentAttendance(tournamentId: number, playerId: number, status: AttendanceStatus) {
+    const r = await api.put<TournamentAttendanceList>(
+      `/schedule/tournaments/${tournamentId}/attendance/${playerId}`, { status })
+    return r.data
+  },
+  /** Fan-out: sends a WhatsApp tournament_* template once per rostered player. Each broadcast
+   *  is tagged with the tournament so inbound replies update TournamentAttendance. */
+  async sendTournamentConfirmations(tournamentId: number) {
+    const r = await api.post<SendTournamentConfirmationsResult>(
+      `/messaging/tournaments/${tournamentId}/send-confirmations`, {})
     return r.data
   },
   async getEventAttendance(eventId: number) {

@@ -54,6 +54,12 @@ public class Broadcast
     public int? ScheduledGameId { get; set; }
     public ScheduledGame? ScheduledGame { get; set; }
 
+    /// <summary>When this broadcast is a tournament confirmation request (one per rostered
+    /// player), this FK points to the tournament. Lets the webhook attendance parser route
+    /// inbound replies to the right TournamentAttendance row. Null for everything else.</summary>
+    public int? TournamentId { get; set; }
+    public Tournament? Tournament { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public List<BroadcastRecipient> Recipients { get; set; } = new();

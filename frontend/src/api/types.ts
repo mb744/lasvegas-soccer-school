@@ -628,23 +628,69 @@ export interface ScheduledGame {
 export interface TournamentSummary {
   id: number
   name: string
-  teamId: number
-  teamName: string
+  /** Inclusive first day. YYYY-MM-DD; null when admin hasn't filled it in yet. */
+  startDate: string | null
+  /** Inclusive last day. */
+  endDate: string | null
+  /** What LVSS pays to enter — admin tracking only. */
+  totalCost: number | null
+  /** Cost per family — surfaces as template parameter 3 on the confirmation send. */
+  costPerPlayer: number | null
+  /** Dedicated team for this tournament; null until the admin creates one. */
+  teamId: number | null
+  teamName: string | null
   gotSportEventId: number
   gotSportTeamId: number
   lastSyncedAt: string | null
   lastSyncMessage: string | null
   gameCount: number
   upcomingGameCount: number
+  /** Roster size on the tournament team; 0 when there's no team or no players added yet. */
+  rosterCount: number
   createdAt: string
 }
 
 export interface SaveTournamentRequest {
   name: string
-  teamId: number
+  startDate?: string | null
+  endDate?: string | null
+  totalCost?: number | null
+  costPerPlayer?: number | null
+  teamId?: number | null
   gotSportEventId?: number | null
   gotSportTeamId?: number | null
   scheduleUrl?: string | null
+}
+
+export interface CreateTournamentTeamRequest {
+  name: string
+}
+
+export interface TournamentAttendance {
+  playerId: number
+  firstName: string
+  lastName: string
+  parentName: string | null
+  parentPhone: string | null
+  status: AttendanceStatus
+  source: AttendanceSource
+  updatedAt: string | null
+}
+
+export interface TournamentAttendanceList {
+  tournamentId: number
+  confirmed: number
+  declined: number
+  maybe: number
+  pending: number
+  items: TournamentAttendance[]
+}
+
+export interface SendTournamentConfirmationsResult {
+  sent: number
+  skipped: number
+  total: number
+  message: string | null
 }
 
 export interface EventRecipient {

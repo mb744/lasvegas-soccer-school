@@ -5,7 +5,10 @@ import { Layout } from '../../components/Layout'
 import { TeamScheduleSection } from '../../components/TeamScheduleSection'
 import { RequiredLabel, useRequiredValidation } from '../../components/RequiredField'
 import { Api } from '../../api/client'
-import type { RosterTeamSummary, RosterTeamDetail, TournamentSummary } from '../../api/types'
+import type {
+  RosterTeamSummary, RosterTeamDetail, TournamentSummary,
+  AttendanceStatus, TournamentAttendanceList, AvailablePlayer,
+} from '../../api/types'
 
 function errMsg(e: any): string {
   return e?.response?.data?.title || e?.response?.data || e?.message || 'Error'
@@ -115,13 +118,13 @@ function TeamEventsTab({
   )
 }
 
-/** datetime-local value (local time) → UTC ISO string. */
-function toIso(local: string): string {
-  return new Date(local).toISOString()
-}
-
+/** Refactored tournament workflow. Three lifecycle stages per tournament:
+ *  (1) Create the tournament (name + dates + costs).
+ *  (2) Create its dedicated team + pick the roster from registered players.
+ *  (3) Send the WhatsApp tournament_* template to each rostered family and track confirmations
+ *      per player. Inbound WhatsApp replies auto-update the attendance row via the webhook. */
 function TournamentsTab({
-  teams, onError, onNotice,
+  onError, onNotice,
 }: {
   teams: RosterTeamSummary[]
   onError: (e: string) => void
@@ -130,21 +133,14 @@ function TournamentsTab({
   const { t } = useTranslation()
   const [tournaments, setTournaments] = useState<TournamentSummary[]>([])
   const [busy, setBusy] = useState(false)
-  const [syncingId, setSyncingId] = useState<number | null>(null)
+  const [expandedId, setExpandedId] = useState<number | null>(null)
 
-  // Create form
   const [name, setName] = useState('')
-  const [teamId, setTeamId] = useState<number | ''>('')
-  const [scheduleUrl, setScheduleUrl] = useState('')
-
-  // Add-game form (per tournament)
-  const [gameFor, setGameFor] = useState<number | null>(null)
-  const [gStart, setGStart] = useState('')
-  const [gOpponent, setGOpponent] = useState('')
-  const [gHome, setGHome] = useState<'home' | 'away' | 'unknown'>('unknown')
-  const [gLocation, setGLocation] = useState('')
-  const vTour = useRequiredValidation(['name', 'teamId', 'scheduleUrl'])
-  const vGame = useRequiredValidation(['startsAt'])
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
+  const [totalCost, setTotalCost] = useState('')
+  const [costPerPlayer, setCostPerPlayer] = useState('')
+  const vTour = useRequiredValidation(['name', 'startDate', 'endDate', 'costPerPlayer'])
 
   const refresh = async () => {
     try { setTournaments(await Api.listTournaments()) }
@@ -155,27 +151,23 @@ function TournamentsTab({
   const create = async (e: React.FormEvent) => {
     e.preventDefault()
     onError(''); onNotice('')
-    if (!vTour.checkSubmit({ name, teamId: teamId === '' ? '' : String(teamId), scheduleUrl })) {
+    if (!vTour.checkSubmit({ name, startDate, endDate, costPerPlayer })) {
       onError(t('common.required')); return
     }
     setBusy(true)
     try {
-      await Api.createTournament({ name: name.trim(), teamId: Number(teamId), scheduleUrl: scheduleUrl.trim() })
-      setName(''); setTeamId(''); setScheduleUrl('')
+      await Api.createTournament({
+        name: name.trim(),
+        startDate: startDate || null,
+        endDate: endDate || null,
+        totalCost: totalCost === '' ? null : Number(totalCost),
+        costPerPlayer: costPerPlayer === '' ? null : Number(costPerPlayer),
+      })
+      setName(''); setStartDate(''); setEndDate(''); setTotalCost(''); setCostPerPlayer('')
       await refresh()
-      onNotice(t('admin.teamSaved'))
+      onNotice(t('admin.evtTournCreated'))
     } catch (e: any) { onError(errMsg(e)) }
     finally { setBusy(false) }
-  }
-
-  const sync = async (id: number) => {
-    setSyncingId(id); onError(''); onNotice('')
-    try {
-      const r = await Api.syncTournament(id)
-      onNotice(r.message)
-      await refresh()
-    } catch (e: any) { onError(errMsg(e)) }
-    finally { setSyncingId(null) }
   }
 
   const remove = async (id: number) => {
@@ -184,33 +176,13 @@ function TournamentsTab({
     catch (e: any) { onError(errMsg(e)) }
   }
 
-  const addGame = async (tour: TournamentSummary, e: React.FormEvent) => {
-    e.preventDefault()
-    onError(''); onNotice('')
-    if (!vGame.checkSubmit({ startsAt: gStart })) { onError(t('admin.teamStartRequired')); return }
-    setBusy(true)
-    try {
-      await Api.createGame(tour.teamId, {
-        startsAt: toIso(gStart),
-        opponentName: gOpponent.trim() || null,
-        isHome: gHome === 'home' ? true : gHome === 'away' ? false : null,
-        location: gLocation.trim() || null,
-        tournamentId: tour.id,
-      })
-      setGameFor(null); setGStart(''); setGOpponent(''); setGHome('unknown'); setGLocation('')
-      await refresh()
-      onNotice(t('admin.teamSaved'))
-    } catch (e: any) { onError(errMsg(e)) }
-    finally { setBusy(false) }
-  }
-
   return (
     <div className="space-y-5">
-      {/* Create */}
       <section className="bg-white border border-slate-200 rounded-lg p-5">
         <h2 className="font-bold text-emerald-800">{t('admin.evtNewTournament')}</h2>
+        <p className="text-xs text-slate-500 mt-1">{t('admin.evtTournCreateHelp')}</p>
         <form onSubmit={create} noValidate className="mt-3 grid sm:grid-cols-2 gap-3">
-          <label className="block text-sm">
+          <label className="block text-sm sm:col-span-2">
             <RequiredLabel>{t('admin.evtTournName')}</RequiredLabel>
             <input ref={vTour.register('name')} type="text" value={name}
               onChange={e => setName(e.target.value)}
@@ -218,23 +190,33 @@ function TournamentsTab({
               className={`mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm ${vTour.fieldCls('name')}`} />
           </label>
           <label className="block text-sm">
-            <RequiredLabel>{t('admin.evtTournTeam')}</RequiredLabel>
-            <select ref={vTour.register('teamId')} value={teamId}
-              onChange={e => setTeamId(e.target.value === '' ? '' : Number(e.target.value))}
-              onBlur={e => vTour.onFieldBlur('teamId', e.target.value)}
-              className={`mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm ${vTour.fieldCls('teamId')}`}>
-              <option value="">{t('admin.evtPickTeam')}</option>
-              {teams.map(tm => <option key={tm.id} value={tm.id}>{tm.name}</option>)}
-            </select>
+            <RequiredLabel>{t('admin.evtTournStartDate')}</RequiredLabel>
+            <input ref={vTour.register('startDate')} type="date" value={startDate}
+              onChange={e => setStartDate(e.target.value)}
+              onBlur={e => vTour.onFieldBlur('startDate', e.target.value)}
+              className={`mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm ${vTour.fieldCls('startDate')}`} />
           </label>
-          <label className="block text-sm sm:col-span-2">
-            <RequiredLabel>{t('admin.evtTournUrl')}</RequiredLabel>
-            <input ref={vTour.register('scheduleUrl')} type="url" value={scheduleUrl}
-              onChange={e => setScheduleUrl(e.target.value)}
-              onBlur={e => vTour.onFieldBlur('scheduleUrl', e.target.value)}
-              placeholder="https://system.gotsport.com/org_event/events/48082/schedules?team=3764244"
-              className={`mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm font-mono ${vTour.fieldCls('scheduleUrl')}`} />
-            <span className="block text-xs text-slate-500 mt-1">{t('admin.evtTournUrlHelp')}</span>
+          <label className="block text-sm">
+            <RequiredLabel>{t('admin.evtTournEndDate')}</RequiredLabel>
+            <input ref={vTour.register('endDate')} type="date" value={endDate}
+              onChange={e => setEndDate(e.target.value)}
+              onBlur={e => vTour.onFieldBlur('endDate', e.target.value)}
+              className={`mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm ${vTour.fieldCls('endDate')}`} />
+          </label>
+          <label className="block text-sm">
+            <span className="font-medium text-slate-700">{t('admin.evtTournTotalCost')}</span>
+            <input type="number" min={0} step="0.01" value={totalCost}
+              onChange={e => setTotalCost(e.target.value)} placeholder="0.00"
+              className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+          </label>
+          <label className="block text-sm">
+            <RequiredLabel>{t('admin.evtTournCostPerPlayer')}</RequiredLabel>
+            <input ref={vTour.register('costPerPlayer')} type="number" min={0} step="0.01"
+              value={costPerPlayer}
+              onChange={e => setCostPerPlayer(e.target.value)}
+              onBlur={e => vTour.onFieldBlur('costPerPlayer', e.target.value)}
+              placeholder="0.00"
+              className={`mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm ${vTour.fieldCls('costPerPlayer')}`} />
           </label>
           <div className="sm:col-span-2">
             <button type="submit" disabled={busy}
@@ -245,70 +227,14 @@ function TournamentsTab({
         </form>
       </section>
 
-      {/* List */}
       <ul className="space-y-3">
         {tournaments.map(tour => (
-          <li key={tour.id} className="bg-white border border-slate-200 rounded-lg p-4">
-            <div className="flex items-start justify-between gap-3 flex-wrap">
-              <div>
-                <div className="font-bold text-emerald-800">{tour.name}</div>
-                <div className="text-xs text-slate-500">
-                  {tour.teamName} · {t('admin.evtGameCount', { count: tour.gameCount })}
-                  {tour.lastSyncedAt && <> · {t('admin.evtLastSynced')}: {new Date(tour.lastSyncedAt).toLocaleString()}</>}
-                </div>
-                {tour.lastSyncMessage && <div className="text-xs text-slate-400 mt-0.5">{tour.lastSyncMessage}</div>}
-              </div>
-              <div className="text-sm whitespace-nowrap">
-                <button onClick={() => sync(tour.id)} disabled={syncingId === tour.id}
-                  className="text-emerald-700 hover:underline disabled:opacity-60">
-                  {syncingId === tour.id ? t('admin.evtSyncing') : t('admin.evtSync')}
-                </button>
-                <span className="mx-2 text-slate-300">|</span>
-                <button onClick={() => setGameFor(gameFor === tour.id ? null : tour.id)}
-                  className="text-emerald-700 hover:underline">+ {t('admin.evtAddGame')}</button>
-                <span className="mx-2 text-slate-300">|</span>
-                <button onClick={() => remove(tour.id)} className="text-rose-700 hover:underline">{t('admin.delete')}</button>
-              </div>
-            </div>
-
-            {gameFor === tour.id && (
-              <form onSubmit={e => addGame(tour, e)} noValidate className="mt-3 grid sm:grid-cols-2 gap-2 border-t border-slate-100 pt-3">
-                <label className="block text-sm">
-                  <RequiredLabel>{t('admin.msgPracticeStart')}</RequiredLabel>
-                  <input ref={vGame.register('startsAt')} type="datetime-local" value={gStart}
-                    onChange={e => setGStart(e.target.value)}
-                    onBlur={e => vGame.onFieldBlur('startsAt', e.target.value)}
-                    className={`mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm ${vGame.fieldCls('startsAt')}`} />
-                </label>
-                <label className="block text-sm">
-                  <span className="font-medium text-slate-700">{t('admin.msgGameOpponent')}</span>
-                  <input type="text" value={gOpponent} onChange={e => setGOpponent(e.target.value)}
-                    className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
-                </label>
-                <label className="block text-sm">
-                  <span className="font-medium text-slate-700">{t('admin.msgGameHomeAway')}</span>
-                  <select value={gHome} onChange={e => setGHome(e.target.value as 'home' | 'away' | 'unknown')}
-                    className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm">
-                    <option value="unknown">{t('admin.msgGameHomeAwayUnknown')}</option>
-                    <option value="home">{t('admin.msgGameHome')}</option>
-                    <option value="away">{t('admin.msgGameAway')}</option>
-                  </select>
-                </label>
-                <label className="block text-sm">
-                  <span className="font-medium text-slate-700">{t('admin.msgLocation')}</span>
-                  <input type="text" value={gLocation} onChange={e => setGLocation(e.target.value)}
-                    className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
-                </label>
-                <div className="sm:col-span-2 flex items-center gap-3">
-                  <button type="submit" disabled={busy}
-                    className="bg-emerald-700 text-white text-sm font-semibold px-4 py-2 rounded-md hover:bg-emerald-800 disabled:opacity-60">
-                    {t('admin.evtAddGame')}
-                  </button>
-                  <button type="button" onClick={() => setGameFor(null)} className="text-sm text-slate-600 hover:underline">{t('admin.cancel')}</button>
-                </div>
-              </form>
-            )}
-          </li>
+          <TournamentCard key={tour.id} tour={tour}
+            expanded={expandedId === tour.id}
+            onToggle={() => setExpandedId(expandedId === tour.id ? null : tour.id)}
+            onChanged={refresh}
+            onDelete={() => remove(tour.id)}
+            onError={onError} onNotice={onNotice} />
         ))}
         {tournaments.length === 0 && (
           <li className="bg-white border border-dashed border-slate-300 rounded-lg p-8 text-center text-slate-400 text-sm">
@@ -318,4 +244,243 @@ function TournamentsTab({
       </ul>
     </div>
   )
+}
+
+/** Each tournament row: summary + Manage panel (create team / roster / send / attendance). */
+function TournamentCard({
+  tour, expanded, onToggle, onChanged, onDelete, onError, onNotice,
+}: {
+  tour: TournamentSummary
+  expanded: boolean
+  onToggle: () => void
+  onChanged: () => Promise<void> | void
+  onDelete: () => void
+  onError: (e: string) => void
+  onNotice: (n: string) => void
+}) {
+  const { t } = useTranslation()
+
+  const dateLabel = formatDateLabel(tour.startDate, tour.endDate)
+  const costLabel = tour.costPerPlayer !== null ? `$${tour.costPerPlayer.toFixed(2)}/player` : '—'
+
+  return (
+    <li className="bg-white border border-slate-200 rounded-lg p-4">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <div className="font-bold text-emerald-800">{tour.name}</div>
+          <div className="text-xs text-slate-500">
+            {dateLabel} · {costLabel}
+            {tour.teamName
+              ? <> · {tour.teamName} ({t('admin.evtTournRosterCount', { count: tour.rosterCount })})</>
+              : <> · <span className="text-amber-700">{t('admin.evtTournNoTeam')}</span></>}
+          </div>
+        </div>
+        <div className="text-sm whitespace-nowrap">
+          <button onClick={onToggle} className="text-emerald-700 hover:underline">
+            {expanded ? t('admin.hide') : t('admin.evtTournManage')}
+          </button>
+          <span className="mx-2 text-slate-300">|</span>
+          <button onClick={onDelete} className="text-rose-700 hover:underline">{t('admin.delete')}</button>
+        </div>
+      </div>
+
+      {expanded && (
+        <TournamentManage tour={tour} onChanged={onChanged} onError={onError} onNotice={onNotice} />
+      )}
+    </li>
+  )
+}
+
+function TournamentManage({
+  tour, onChanged, onError, onNotice,
+}: {
+  tour: TournamentSummary
+  onChanged: () => Promise<void> | void
+  onError: (e: string) => void
+  onNotice: (n: string) => void
+}) {
+  const { t } = useTranslation()
+  const [teamName, setTeamName] = useState('')
+  const [busy, setBusy] = useState(false)
+  const vTeam = useRequiredValidation(['teamName'])
+
+  const [available, setAvailable] = useState<AvailablePlayer[]>([])
+  const [picked, setPicked] = useState<Set<number>>(new Set())
+  const [search, setSearch] = useState('')
+
+  const [attendance, setAttendance] = useState<TournamentAttendanceList | null>(null)
+  const [sending, setSending] = useState(false)
+
+  const loadAvailable = async () => {
+    if (tour.teamId === null) return
+    try { setAvailable(await Api.listAvailablePlayers(tour.teamId)) }
+    catch (e: any) { onError(errMsg(e)) }
+  }
+  const loadAttendance = async () => {
+    if (tour.teamId === null) return
+    try { setAttendance(await Api.getTournamentAttendance(tour.id)) }
+    catch (e: any) { onError(errMsg(e)) }
+  }
+  useEffect(() => { loadAvailable(); loadAttendance() }, [tour.teamId])
+
+  const createTeam = async (e: React.FormEvent) => {
+    e.preventDefault()
+    onError(''); onNotice('')
+    if (!vTeam.checkSubmit({ teamName })) { onError(t('common.required')); return }
+    setBusy(true)
+    try {
+      await Api.createTournamentTeam(tour.id, { name: teamName.trim() })
+      setTeamName(''); vTeam.reset()
+      await onChanged()
+      onNotice(t('admin.evtTournTeamCreated'))
+    } catch (e: any) { onError(errMsg(e)) }
+    finally { setBusy(false) }
+  }
+
+  const addPicked = async () => {
+    if (tour.teamId === null || picked.size === 0) return
+    setBusy(true); onError(''); onNotice('')
+    try {
+      await Api.addRosterMembers(tour.teamId, { playerIds: [...picked] })
+      setPicked(new Set())
+      await loadAvailable()
+      await loadAttendance()
+      await onChanged()
+      onNotice(t('admin.teamMemberAdded'))
+    } catch (e: any) { onError(errMsg(e)) }
+    finally { setBusy(false) }
+  }
+
+  const sendConfirmations = async () => {
+    if (!confirm(t('admin.evtTournSendConfirm'))) return
+    setSending(true); onError(''); onNotice('')
+    try {
+      const r = await Api.sendTournamentConfirmations(tour.id)
+      onNotice(t('admin.evtTournSendDone', { sent: r.sent, total: r.total }))
+      await loadAttendance()
+    } catch (e: any) { onError(errMsg(e)) }
+    finally { setSending(false) }
+  }
+
+  const setStatus = async (playerId: number, status: AttendanceStatus) => {
+    try { setAttendance(await Api.setTournamentAttendance(tour.id, playerId, status)) }
+    catch (e: any) { onError(errMsg(e)) }
+  }
+
+  if (tour.teamId === null) {
+    return (
+      <div className="mt-3 pt-3 border-t border-slate-100 space-y-3">
+        <p className="text-sm text-slate-600">{t('admin.evtTournCreateTeamHelp')}</p>
+        <form onSubmit={createTeam} noValidate className="flex flex-wrap gap-2 items-end">
+          <label className="block text-sm flex-1 min-w-[180px]">
+            <RequiredLabel className="text-xs text-slate-600">{t('admin.evtTournTeamName')}</RequiredLabel>
+            <input ref={vTeam.register('teamName')} type="text" value={teamName}
+              onChange={e => setTeamName(e.target.value)}
+              onBlur={e => vTeam.onFieldBlur('teamName', e.target.value)}
+              placeholder={`e.g. "${tour.name} roster"`}
+              className={`mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm ${vTeam.fieldCls('teamName')}`} />
+          </label>
+          <button type="submit" disabled={busy}
+            className="bg-emerald-700 text-white text-sm font-semibold px-3 py-2 rounded-md hover:bg-emerald-800 disabled:opacity-60">
+            {t('admin.evtTournCreateTeam')}
+          </button>
+        </form>
+      </div>
+    )
+  }
+
+  const filtered = available.filter(p =>
+    !search.trim() ||
+    `${p.firstName} ${p.lastName}`.toLowerCase().includes(search.trim().toLowerCase()))
+
+  return (
+    <div className="mt-3 pt-3 border-t border-slate-100 space-y-4">
+      <section>
+        <div className="flex items-center justify-between mb-1">
+          <h3 className="font-semibold text-emerald-800 text-sm">{t('admin.evtTournRosterHeader')}</h3>
+          <button onClick={sendConfirmations}
+            disabled={sending || tour.rosterCount === 0 || tour.costPerPlayer === null}
+            className="text-sm bg-emerald-700 text-white px-3 py-1.5 rounded-md hover:bg-emerald-800 disabled:opacity-50">
+            {sending ? t('admin.sending') : t('admin.evtTournSend')}
+          </button>
+        </div>
+        <p className="text-xs text-slate-500">{t('admin.evtTournSendHelp')}</p>
+      </section>
+
+      {attendance && attendance.items.length > 0 && (
+        <section className="bg-slate-50 border border-slate-200 rounded p-3">
+          <div className="text-xs text-emerald-800 font-medium mb-2">
+            {t('admin.attnConfirmed')}: {attendance.confirmed} · {t('admin.attnMaybe')}: {attendance.maybe} · {t('admin.attnDeclined')}: {attendance.declined} · {t('admin.attnPending')}: {attendance.pending}
+          </div>
+          <table className="w-full text-xs">
+            <tbody>
+              {attendance.items.map(it => (
+                <tr key={it.playerId} className="border-b last:border-0">
+                  <td className="py-1 pr-3">
+                    <div className="font-medium text-slate-800">{it.firstName} {it.lastName}</div>
+                    <div className="text-[10px] text-slate-400">{it.parentName ?? ''}{it.parentPhone ? ` · ${it.parentPhone}` : ''}</div>
+                  </td>
+                  <td className="py-1 text-right whitespace-nowrap">
+                    <div className="inline-flex items-center gap-1">
+                      {([1, 3, 2, 0] as AttendanceStatus[]).map(s => (
+                        <button key={s} onClick={() => setStatus(it.playerId, s)}
+                          className={`px-2 py-0.5 rounded border text-[11px] ${it.status === s
+                            ? s === 1 ? 'bg-emerald-600 text-white border-emerald-600'
+                              : s === 3 ? 'bg-amber-500 text-white border-amber-500'
+                              : s === 2 ? 'bg-rose-600 text-white border-rose-600'
+                              : 'bg-slate-500 text-white border-slate-500'
+                            : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-100'}`}>
+                          {s === 1 ? t('admin.attnConfirmed') : s === 3 ? t('admin.attnMaybe') : s === 2 ? t('admin.attnDeclined') : t('admin.attnPending')}
+                        </button>
+                      ))}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
+
+      <section>
+        <h3 className="font-semibold text-emerald-800 text-sm mb-1">{t('admin.evtTournAddPlayers')}</h3>
+        <p className="text-xs text-slate-500 mb-2">{t('admin.evtTournAddHelp')}</p>
+        <input type="text" value={search} onChange={e => setSearch(e.target.value)}
+          placeholder={t('admin.evtTournPlayerSearch')}
+          className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm mb-2" />
+        <div className="max-h-64 overflow-y-auto border border-slate-200 rounded">
+          {filtered.map(p => (
+            <label key={p.playerId} className="flex items-center gap-2 px-2 py-1 text-xs border-b last:border-0 hover:bg-slate-50">
+              <input type="checkbox" checked={picked.has(p.playerId)}
+                onChange={e => setPicked(prev => {
+                  const next = new Set(prev)
+                  if (e.target.checked) next.add(p.playerId); else next.delete(p.playerId)
+                  return next
+                })} />
+              <span className="font-medium">{p.firstName} {p.lastName}</span>
+              <span className="text-slate-400">{p.ageBracket ?? ''}</span>
+              <span className="text-slate-400 ml-auto">{p.parentName ?? ''}</span>
+            </label>
+          ))}
+          {filtered.length === 0 && <div className="text-xs text-slate-400 p-3 text-center">{t('admin.evtTournNoAvailable')}</div>}
+        </div>
+        <div className="mt-2 flex items-center gap-3">
+          <button onClick={addPicked} disabled={busy || picked.size === 0}
+            className="text-sm bg-emerald-700 text-white px-3 py-1.5 rounded-md hover:bg-emerald-800 disabled:opacity-50">
+            {t('admin.evtTournAddPicked', { count: picked.size })}
+          </button>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function formatDateLabel(start: string | null, end: string | null): string {
+  if (!start) return '—'
+  const s = new Date(start + 'T00:00:00')
+  if (!end || end === start) return s.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+  const e = new Date(end + 'T00:00:00')
+  if (s.getFullYear() === e.getFullYear())
+    return `${s.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – ${e.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`
+  return `${s.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })} – ${e.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`
 }

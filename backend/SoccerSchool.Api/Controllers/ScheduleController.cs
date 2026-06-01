@@ -158,7 +158,7 @@ public class ScheduleController : ControllerBase
         return Ok(new ScheduleSyncResultDto(true, result.Added, result.Updated, result.Message));
     }
 
-    // --- Tournaments (a team's GotSport competition entry) ---
+    // --- Tournaments (admin-owned events, optional GotSport import) ---
 
     [HttpGet("tournaments")]
     public async Task<ActionResult<IEnumerable<TournamentSummary>>> ListTournaments(CancellationToken ct)
@@ -168,10 +168,13 @@ public class ScheduleController : ControllerBase
             .Include(t => t.Team)
             .OrderByDescending(t => t.CreatedAt)
             .Select(t => new TournamentSummary(
-                t.Id, t.Name, t.TeamId, t.Team!.Name, t.GotSportEventId, t.GotSportTeamId,
+                t.Id, t.Name, t.StartDate, t.EndDate, t.TotalCost, t.CostPerPlayer,
+                t.TeamId, t.Team != null ? t.Team.Name : null,
+                t.GotSportEventId, t.GotSportTeamId,
                 t.LastSyncedAt, t.LastSyncMessage,
                 t.Games.Count,
                 t.Games.Count(g => g.StartsAt >= now && !g.IsCancelled),
+                t.Team != null ? t.Team.Roster.Count : 0,
                 t.CreatedAt))
             .ToListAsync(ct);
         return Ok(rows);
@@ -181,16 +184,21 @@ public class ScheduleController : ControllerBase
     public async Task<ActionResult<TournamentSummary>> CreateTournament(
         [FromBody] SaveTournamentRequest request, CancellationToken ct)
     {
-        var (name, eventId, gsTeamId, err) = ResolveTournamentIds(request);
-        if (err is not null) return BadRequest(err);
-        if (!await _db.Teams.AnyAsync(t => t.Id == request.TeamId, ct))
+        var name = request.Name?.Trim();
+        if (string.IsNullOrWhiteSpace(name)) return BadRequest("Name is required.");
+        if (request.TeamId is int teamId && !await _db.Teams.AnyAsync(t => t.Id == teamId, ct))
             return BadRequest("Team not found.");
+        var (gsEventId, gsTeamId) = ResolveOptionalGotSportIds(request);
 
         var tournament = new Tournament
         {
             Name = name!,
+            StartDate = request.StartDate,
+            EndDate = request.EndDate,
+            TotalCost = request.TotalCost,
+            CostPerPlayer = request.CostPerPlayer,
             TeamId = request.TeamId,
-            GotSportEventId = eventId,
+            GotSportEventId = gsEventId,
             GotSportTeamId = gsTeamId,
         };
         _db.Tournaments.Add(tournament);
@@ -204,14 +212,19 @@ public class ScheduleController : ControllerBase
     {
         var tournament = await _db.Tournaments.FindAsync(new object?[] { id }, ct);
         if (tournament is null) return NotFound();
-        var (name, eventId, gsTeamId, err) = ResolveTournamentIds(request);
-        if (err is not null) return BadRequest(err);
-        if (!await _db.Teams.AnyAsync(t => t.Id == request.TeamId, ct))
+        var name = request.Name?.Trim();
+        if (string.IsNullOrWhiteSpace(name)) return BadRequest("Name is required.");
+        if (request.TeamId is int teamId && !await _db.Teams.AnyAsync(t => t.Id == teamId, ct))
             return BadRequest("Team not found.");
+        var (gsEventId, gsTeamId) = ResolveOptionalGotSportIds(request);
 
         tournament.Name = name!;
+        tournament.StartDate = request.StartDate;
+        tournament.EndDate = request.EndDate;
+        tournament.TotalCost = request.TotalCost;
+        tournament.CostPerPlayer = request.CostPerPlayer;
         tournament.TeamId = request.TeamId;
-        tournament.GotSportEventId = eventId;
+        tournament.GotSportEventId = gsEventId;
         tournament.GotSportTeamId = gsTeamId;
         await _db.SaveChangesAsync(ct);
         return Ok(await SummarizeTournamentAsync(tournament.Id, ct));
@@ -236,13 +249,33 @@ public class ScheduleController : ControllerBase
         return Ok(new ScheduleSyncResultDto(true, result.Added, result.Updated, result.Message));
     }
 
-    /// <summary>Resolves a tournament's GotSport IDs from explicit fields or a pasted schedule URL.</summary>
-    private static (string? Name, int EventId, int TeamId, string? Error) ResolveTournamentIds(SaveTournamentRequest request)
+    /// <summary>Creates a brand-new Team dedicated to this tournament and links it. The admin
+    /// then builds the roster via the existing team-roster endpoints. No-ops + 409 if the
+    /// tournament already has a team — admins should edit the existing one instead.</summary>
+    [HttpPost("tournaments/{id:int}/team")]
+    public async Task<ActionResult<TournamentSummary>> CreateTeamForTournament(
+        int id, [FromBody] CreateTournamentTeamRequest request, CancellationToken ct)
     {
+        var tournament = await _db.Tournaments.FindAsync(new object?[] { id }, ct);
+        if (tournament is null) return NotFound();
+        if (tournament.TeamId is not null) return Conflict("This tournament already has a team.");
         var name = request.Name?.Trim();
-        if (string.IsNullOrWhiteSpace(name)) return (null, 0, 0, "Name is required.");
-        if (request.TeamId <= 0) return (null, 0, 0, "Team is required.");
+        if (string.IsNullOrWhiteSpace(name)) return BadRequest("Team name is required.");
+        if (await _db.Teams.AnyAsync(t => t.Name == name, ct))
+            return Conflict($"A team named '{name}' already exists.");
 
+        var team = new Team { Name = name! };
+        _db.Teams.Add(team);
+        await _db.SaveChangesAsync(ct);
+        tournament.TeamId = team.Id;
+        await _db.SaveChangesAsync(ct);
+        return Ok(await SummarizeTournamentAsync(tournament.Id, ct));
+    }
+
+    /// <summary>Picks GotSport IDs from the request — either explicit fields or parsed out of
+    /// a pasted schedule URL. New-style tournaments leave both at 0 (no GotSport sync).</summary>
+    private static (int EventId, int TeamId) ResolveOptionalGotSportIds(SaveTournamentRequest request)
+    {
         int eventId = request.GotSportEventId ?? 0;
         int teamId = request.GotSportTeamId ?? 0;
         if ((eventId <= 0 || teamId <= 0) && !string.IsNullOrWhiteSpace(request.ScheduleUrl))
@@ -253,9 +286,7 @@ public class ScheduleController : ControllerBase
             if (em.Success && int.TryParse(em.Groups[1].Value, out var e)) eventId = e;
             if (tm.Success && int.TryParse(tm.Groups[1].Value, out var t)) teamId = t;
         }
-        if (eventId <= 0 || teamId <= 0)
-            return (null, 0, 0, "GotSport event ID and team ID are required. Paste the schedule URL or enter them directly.");
-        return (name, eventId, teamId, null);
+        return (Math.Max(eventId, 0), Math.Max(teamId, 0));
     }
 
     private async Task<TournamentSummary> SummarizeTournamentAsync(int id, CancellationToken ct)
@@ -265,10 +296,13 @@ public class ScheduleController : ControllerBase
             .Where(t => t.Id == id)
             .Include(t => t.Team)
             .Select(t => new TournamentSummary(
-                t.Id, t.Name, t.TeamId, t.Team!.Name, t.GotSportEventId, t.GotSportTeamId,
+                t.Id, t.Name, t.StartDate, t.EndDate, t.TotalCost, t.CostPerPlayer,
+                t.TeamId, t.Team != null ? t.Team.Name : null,
+                t.GotSportEventId, t.GotSportTeamId,
                 t.LastSyncedAt, t.LastSyncMessage,
                 t.Games.Count,
                 t.Games.Count(g => g.StartsAt >= now && !g.IsCancelled),
+                t.Team != null ? t.Team.Roster.Count : 0,
                 t.CreatedAt))
             .FirstAsync(ct);
     }
@@ -662,6 +696,76 @@ public class ScheduleController : ControllerBase
             return new EventAttendanceSummaryDto(id, confirmed, declined, maybe, pending);
         }).ToList();
         return Ok(result);
+    }
+
+    // --- Tournament attendance (mirror of event attendance, scoped by tournament) ---
+
+    /// <summary>Roster of the tournament's team with each player's confirmation status. Players
+    /// with no row default to <see cref="AttendanceStatus.Pending"/>. Returned with the same
+    /// headline counts the event-attendance UI uses.</summary>
+    [HttpGet("tournaments/{tournamentId:int}/attendance")]
+    public async Task<ActionResult<TournamentAttendanceListDto>> GetTournamentAttendance(int tournamentId, CancellationToken ct)
+    {
+        var tournament = await _db.Tournaments
+            .Include(t => t.Team).ThenInclude(team => team!.Roster).ThenInclude(tp => tp.Player).ThenInclude(p => p!.ParentAccount)
+            .FirstOrDefaultAsync(t => t.Id == tournamentId, ct);
+        if (tournament is null) return NotFound();
+        if (tournament.Team is null)
+            return Ok(new TournamentAttendanceListDto(tournamentId, 0, 0, 0, 0, new List<TournamentAttendanceDto>()));
+
+        var attendance = await _db.TournamentAttendances
+            .Where(a => a.TournamentId == tournamentId)
+            .ToDictionaryAsync(a => a.PlayerId, a => a, ct);
+
+        var items = tournament.Team.Roster
+            .Where(tp => tp.Player is not null)
+            .Select(tp =>
+            {
+                attendance.TryGetValue(tp.PlayerId, out var a);
+                var parent = tp.Player!.ParentAccount;
+                var parentName = parent is null ? null : $"{parent.FirstName} {parent.LastName}".Trim();
+                return new TournamentAttendanceDto(
+                    tp.PlayerId, tp.Player.FirstName, tp.Player.LastName,
+                    string.IsNullOrWhiteSpace(parentName) ? null : parentName,
+                    parent?.CellPhone,
+                    a?.Status ?? AttendanceStatus.Pending,
+                    a?.Source ?? AttendanceSource.ParentReply,
+                    a?.UpdatedAt);
+            })
+            .OrderBy(i => i.LastName).ThenBy(i => i.FirstName)
+            .ToList();
+
+        return Ok(new TournamentAttendanceListDto(
+            tournamentId,
+            items.Count(i => i.Status == AttendanceStatus.Confirmed),
+            items.Count(i => i.Status == AttendanceStatus.Declined),
+            items.Count(i => i.Status == AttendanceStatus.Maybe),
+            items.Count(i => i.Status == AttendanceStatus.Pending),
+            items));
+    }
+
+    [HttpPut("tournaments/{tournamentId:int}/attendance/{playerId:int}")]
+    public async Task<ActionResult<TournamentAttendanceListDto>> SetTournamentAttendance(
+        int tournamentId, int playerId, [FromBody] SetAttendanceRequest request, CancellationToken ct)
+    {
+        var tournament = await _db.Tournaments.FirstOrDefaultAsync(t => t.Id == tournamentId, ct);
+        if (tournament is null || tournament.TeamId is null) return NotFound();
+        var onRoster = await _db.TeamPlayers.AnyAsync(tp => tp.TeamId == tournament.TeamId && tp.PlayerId == playerId, ct);
+        if (!onRoster) return BadRequest("Player is not on this tournament's roster.");
+
+        var row = await _db.TournamentAttendances
+            .FirstOrDefaultAsync(a => a.TournamentId == tournamentId && a.PlayerId == playerId, ct);
+        if (row is null)
+        {
+            row = new TournamentAttendance { TournamentId = tournamentId, PlayerId = playerId };
+            _db.TournamentAttendances.Add(row);
+        }
+        row.Status = request.Status;
+        row.Source = AttendanceSource.Admin;
+        row.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+
+        return await GetTournamentAttendance(tournamentId, ct);
     }
 
     private static ScheduledGameDto ToDto(ScheduledGame g, Team team) => new(

@@ -139,6 +139,11 @@ public record CreateBroadcastRequest
     /// for a specific event.</summary>
     public int? ScheduledGameId { get; init; }
 
+    /// <summary>When this broadcast is a tournament confirmation request (one per rostered
+    /// player), the tournament's ID. Stored on the Broadcast so the webhook can route inbound
+    /// replies to TournamentAttendance.</summary>
+    public int? TournamentId { get; init; }
+
     public BroadcastTargetDto Target { get; init; } = new();
 }
 

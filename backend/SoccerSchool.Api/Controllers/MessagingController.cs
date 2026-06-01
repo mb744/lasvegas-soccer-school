@@ -333,7 +333,8 @@ public class MessagingController : ControllerBase
             TargetLabel = resolved.Label,
             WhatsAppTemplateId = template?.Id,
             TemplateVariablesJson = (isWhatsAppTemplate || isEmailTemplate) ? JsonSerializer.Serialize(templateVars) : null,
-            ScheduledGameId = request.ScheduledGameId
+            ScheduledGameId = request.ScheduledGameId,
+            TournamentId = request.TournamentId
         };
         foreach (var r in resolved.Recipients)
         {
@@ -978,6 +979,102 @@ public class MessagingController : ControllerBase
         return await _db.WhatsAppTemplates
             .Include(t => t.Variables)
             .FirstOrDefaultAsync(t => t.Language == language && candidates.Contains(t.Name), ct);
+    }
+
+    private const string TournamentTemplateBaseName = "tournament";
+
+    private async Task<WhatsAppTemplate?> FindTournamentTemplateAsync(Language language, CancellationToken ct)
+    {
+        var suffix = language == Language.English ? new[] { "_english", "_en" } : new[] { "_spanish", "_es" };
+        var candidates = suffix.Select(s => TournamentTemplateBaseName + s)
+            .Concat(new[] { TournamentTemplateBaseName })
+            .ToList();
+        return await _db.WhatsAppTemplates
+            .Include(t => t.Variables)
+            .FirstOrDefaultAsync(t => t.Language == language && candidates.Contains(t.Name), ct);
+    }
+
+    /// <summary>Fans out a tournament confirmation request to every rostered player on the
+    /// tournament's team — one Broadcast per player so each parent gets a message with their
+    /// own kid's name baked into template parameter 2. Variables: 1 = formatted dates,
+    /// 2 = player name, 3 = cost per player. The Broadcast carries this tournament's id so
+    /// inbound WhatsApp replies are routed to <see cref="TournamentAttendance"/> by the webhook.</summary>
+    [HttpPost("tournaments/{tournamentId:int}/send-confirmations")]
+    public async Task<ActionResult<SendTournamentConfirmationsResult>> SendTournamentConfirmations(
+        int tournamentId, CancellationToken ct)
+    {
+        if (!_sender.IsAvailable(MessageChannel.WhatsApp))
+            return BadRequest("WhatsApp not configured on this server.");
+
+        var tournament = await _db.Tournaments
+            .Include(t => t.Team).ThenInclude(team => team!.Roster).ThenInclude(tp => tp.Player)
+            .FirstOrDefaultAsync(t => t.Id == tournamentId, ct);
+        if (tournament is null) return NotFound();
+        if (tournament.TeamId is null || tournament.Team is null)
+            return BadRequest("This tournament has no team yet. Create the team and add players first.");
+        if (tournament.StartDate is null)
+            return BadRequest("Set the tournament's start date before sending confirmations.");
+        if (tournament.CostPerPlayer is null)
+            return BadRequest("Set the cost per player before sending confirmations.");
+        if (tournament.Team.Roster.Count == 0)
+            return BadRequest("The tournament team has no rostered players.");
+
+        var enTemplate = await FindTournamentTemplateAsync(Language.English, ct);
+        var esTemplate = await FindTournamentTemplateAsync(Language.Spanish, ct);
+        if (enTemplate is null && esTemplate is null)
+            return BadRequest($"No tournament templates configured. Add `{TournamentTemplateBaseName}_english` and `{TournamentTemplateBaseName}_spanish` under Messaging → Templates.");
+        var primary = enTemplate ?? esTemplate!;
+
+        var datesStr = FormatTournamentDates(tournament.StartDate.Value, tournament.EndDate);
+        var costStr = tournament.CostPerPlayer.Value.ToString("C", System.Globalization.CultureInfo.GetCultureInfo("en-US"));
+
+        int sent = 0, skipped = 0;
+        foreach (var tp in tournament.Team.Roster)
+        {
+            var player = tp.Player;
+            if (player is null) { skipped++; continue; }
+            var values = new Dictionary<string, string>
+            {
+                ["1"] = datesStr,
+                ["2"] = $"{player.FirstName} {player.LastName}".Trim(),
+                ["3"] = costStr,
+            };
+            var req = new CreateBroadcastRequest
+            {
+                Channel = MessageChannel.WhatsApp,
+                WhatsAppTemplateId = primary.Id,
+                TemplateVariables = values,
+                TournamentId = tournamentId,
+                Target = new BroadcastTargetDto
+                {
+                    Kind = RecipientTargetKindDto.DynamicGroup,
+                    DynamicGroupKey = $"{RecipientResolver.DynamicPlayerPrefix}{player.Id}",
+                },
+            };
+            var result = await CreateBroadcast(req, ct);
+            // CreateBroadcast returns BadRequest when a player has no reachable guardians (no
+            // phone, no email, etc.). Count those as skipped and keep going so one bad player
+            // doesn't abort the whole batch.
+            if (result.Result is ObjectResult ok && ok.StatusCode == 200) sent++;
+            else skipped++;
+        }
+
+        return Ok(new SendTournamentConfirmationsResult(sent, skipped, tournament.Team.Roster.Count, null));
+    }
+
+    /// <summary>"May 31, 2026" for a single day, "May 31 – Jun 2, 2026" when the range stays in
+    /// one year, or full "Dec 30, 2025 – Jan 2, 2026" across years. Matches the seeded phrase
+    /// dictionary's short-month entries so the Spanish render translates the month names too.</summary>
+    private static string FormatTournamentDates(DateOnly start, DateOnly? end)
+    {
+        var us = System.Globalization.CultureInfo.GetCultureInfo("en-US");
+        var startDt = start.ToDateTime(TimeOnly.MinValue);
+        if (end is null || end.Value == start)
+            return startDt.ToString("MMM d, yyyy", us);
+        var endDt = end.Value.ToDateTime(TimeOnly.MinValue);
+        if (startDt.Year == endDt.Year)
+            return $"{startDt.ToString("MMM d", us)} – {endDt.ToString("MMM d, yyyy", us)}";
+        return $"{startDt.ToString("MMM d, yyyy", us)} – {endDt.ToString("MMM d, yyyy", us)}";
     }
 
     [HttpGet("broadcasts")]

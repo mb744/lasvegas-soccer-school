@@ -63,6 +63,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<ScheduledGame> ScheduledGames => Set<ScheduledGame>();
     public DbSet<Tournament> Tournaments => Set<Tournament>();
     public DbSet<EventAttendance> EventAttendances => Set<EventAttendance>();
+    public DbSet<TournamentAttendance> TournamentAttendances => Set<TournamentAttendance>();
     public DbSet<PhraseTranslation> PhraseTranslations => Set<PhraseTranslation>();
     public DbSet<InboundMessage> InboundMessages => Set<InboundMessage>();
     public DbSet<MessagingSettings> MessagingSettings => Set<MessagingSettings>();
@@ -251,6 +252,11 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             .HasForeignKey(b => b.ScheduledGameId)
             .OnDelete(DeleteBehavior.SetNull);
 
+        modelBuilder.Entity<Broadcast>().HasOne(b => b.Tournament)
+            .WithMany()
+            .HasForeignKey(b => b.TournamentId)
+            .OnDelete(DeleteBehavior.SetNull);
+
         modelBuilder.Entity<Team>(b =>
         {
             b.HasIndex(t => t.Name).IsUnique();
@@ -275,10 +281,13 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
 
         modelBuilder.Entity<Tournament>(b =>
         {
+            // Tournament.TeamId is nullable now — admins create the tournament first, then build
+            // its team. SetNull on team-delete so an accidental team delete doesn't take the
+            // tournament's records with it.
             b.HasOne(t => t.Team)
                 .WithMany()
                 .HasForeignKey(t => t.TeamId)
-                .OnDelete(DeleteBehavior.Restrict);
+                .OnDelete(DeleteBehavior.SetNull);
             b.HasMany(t => t.Games)
                 .WithOne(g => g.Tournament!)
                 .HasForeignKey(g => g.TournamentId)
@@ -296,6 +305,19 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
                 .HasForeignKey(a => a.PlayerId)
                 .OnDelete(DeleteBehavior.Restrict);
             b.HasIndex(a => new { a.ScheduledGameId, a.PlayerId }).IsUnique();
+        });
+
+        modelBuilder.Entity<TournamentAttendance>(b =>
+        {
+            b.HasOne(a => a.Tournament)
+                .WithMany(t => t.Attendances)
+                .HasForeignKey(a => a.TournamentId)
+                .OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(a => a.Player)
+                .WithMany()
+                .HasForeignKey(a => a.PlayerId)
+                .OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(a => new { a.TournamentId, a.PlayerId }).IsUnique();
         });
 
         modelBuilder.Entity<ScheduledGame>(b =>

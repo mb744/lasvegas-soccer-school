@@ -142,28 +142,23 @@ public class TwilioWebhookController : ControllerBase
         return Content("<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response></Response>", "application/xml");
     }
 
-    /// <summary>When a reply threads onto a broadcast that announced an event, interpret it as an
-    /// attendance answer and apply it to the replying family's rostered players on that event.
-    /// Skips rows the admin set manually so an old reply can't undo a deliberate correction.</summary>
+    /// <summary>When a reply threads onto a broadcast that announced an event OR a tournament
+    /// confirmation request, interpret it as an attendance answer and apply it to the replying
+    /// family's rostered players on that event/tournament. Skips rows the admin set manually so
+    /// an old reply can't undo a deliberate correction.</summary>
     private async Task MaybeRecordAttendanceAsync(string from, string? body, int? broadcastId, CancellationToken ct)
     {
         if (broadcastId is null) return;
         var status = AttendanceReplyParser.Parse(body);
         if (status is null) return;
 
-        var eventId = await _db.Broadcasts
-            .Where(b => b.Id == broadcastId && b.ScheduledGameId != null)
-            .Select(b => b.ScheduledGameId)
+        var b = await _db.Broadcasts
+            .Where(x => x.Id == broadcastId)
+            .Select(x => new { x.ScheduledGameId, x.TournamentId })
             .FirstOrDefaultAsync(ct);
-        if (eventId is null) return;
+        if (b is null) return;
 
-        var teamId = await _db.ScheduledGames
-            .Where(g => g.Id == eventId)
-            .Select(g => (int?)g.TeamId)
-            .FirstOrDefaultAsync(ct);
-        if (teamId is null) return;
-
-        // Resolve the sender's family account (registered parent or additional guardian).
+        // Resolve the sender's family account once — same lookup for both branches.
         var variants = PhoneNormalizer.Variants(from);
         var accountId = await _db.ParentAccounts
             .Where(p => p.CellPhone != null && variants.Contains(p.CellPhone))
@@ -175,39 +170,90 @@ public class TwilioWebhookController : ControllerBase
             .FirstOrDefaultAsync(ct);
         if (accountId is null) return;
 
-        var playerIds = await _db.TeamPlayers
-            .Where(tp => tp.TeamId == teamId && tp.Player!.ParentAccountId == accountId)
-            .Select(tp => tp.PlayerId)
-            .ToListAsync(ct);
-        if (playerIds.Count == 0) return;
-
-        var existing = await _db.EventAttendances
-            .Where(a => a.ScheduledGameId == eventId && playerIds.Contains(a.PlayerId))
-            .ToListAsync(ct);
-
-        foreach (var pid in playerIds)
+        if (b.ScheduledGameId is int eventId)
         {
-            var row = existing.FirstOrDefault(a => a.PlayerId == pid);
-            if (row is null)
+            var teamId = await _db.ScheduledGames
+                .Where(g => g.Id == eventId)
+                .Select(g => (int?)g.TeamId)
+                .FirstOrDefaultAsync(ct);
+            if (teamId is null) return;
+
+            var playerIds = await _db.TeamPlayers
+                .Where(tp => tp.TeamId == teamId && tp.Player!.ParentAccountId == accountId)
+                .Select(tp => tp.PlayerId)
+                .ToListAsync(ct);
+            if (playerIds.Count == 0) return;
+
+            var existing = await _db.EventAttendances
+                .Where(a => a.ScheduledGameId == eventId && playerIds.Contains(a.PlayerId))
+                .ToListAsync(ct);
+
+            foreach (var pid in playerIds)
             {
-                _db.EventAttendances.Add(new EventAttendance
+                var row = existing.FirstOrDefault(a => a.PlayerId == pid);
+                if (row is null)
                 {
-                    ScheduledGameId = eventId.Value,
-                    PlayerId = pid,
-                    Status = status.Value,
-                    Source = AttendanceSource.ParentReply,
-                });
+                    _db.EventAttendances.Add(new EventAttendance
+                    {
+                        ScheduledGameId = eventId,
+                        PlayerId = pid,
+                        Status = status.Value,
+                        Source = AttendanceSource.ParentReply,
+                    });
+                }
+                else if (row.Source != AttendanceSource.Admin)
+                {
+                    row.Status = status.Value;
+                    row.Source = AttendanceSource.ParentReply;
+                    row.UpdatedAt = DateTime.UtcNow;
+                }
             }
-            else if (row.Source != AttendanceSource.Admin)
-            {
-                row.Status = status.Value;
-                row.Source = AttendanceSource.ParentReply;
-                row.UpdatedAt = DateTime.UtcNow;
-            }
+            await _db.SaveChangesAsync(ct);
+            _logger.LogInformation("Recorded attendance {Status} for {Count} player(s) on event {EventId} from {From}",
+                status, playerIds.Count, eventId, from);
         }
-        await _db.SaveChangesAsync(ct);
-        _logger.LogInformation("Recorded attendance {Status} for {Count} player(s) on event {EventId} from {From}",
-            status, playerIds.Count, eventId, from);
+        else if (b.TournamentId is int tournamentId)
+        {
+            var teamId = await _db.Tournaments
+                .Where(t => t.Id == tournamentId)
+                .Select(t => t.TeamId)
+                .FirstOrDefaultAsync(ct);
+            if (teamId is null) return;
+
+            var playerIds = await _db.TeamPlayers
+                .Where(tp => tp.TeamId == teamId && tp.Player!.ParentAccountId == accountId)
+                .Select(tp => tp.PlayerId)
+                .ToListAsync(ct);
+            if (playerIds.Count == 0) return;
+
+            var existing = await _db.TournamentAttendances
+                .Where(a => a.TournamentId == tournamentId && playerIds.Contains(a.PlayerId))
+                .ToListAsync(ct);
+
+            foreach (var pid in playerIds)
+            {
+                var row = existing.FirstOrDefault(a => a.PlayerId == pid);
+                if (row is null)
+                {
+                    _db.TournamentAttendances.Add(new TournamentAttendance
+                    {
+                        TournamentId = tournamentId,
+                        PlayerId = pid,
+                        Status = status.Value,
+                        Source = AttendanceSource.ParentReply,
+                    });
+                }
+                else if (row.Source != AttendanceSource.Admin)
+                {
+                    row.Status = status.Value;
+                    row.Source = AttendanceSource.ParentReply;
+                    row.UpdatedAt = DateTime.UtcNow;
+                }
+            }
+            await _db.SaveChangesAsync(ct);
+            _logger.LogInformation("Recorded tournament attendance {Status} for {Count} player(s) on tournament {TournamentId} from {From}",
+                status, playerIds.Count, tournamentId, from);
+        }
     }
 
     /// <summary>Sends an admin-configured bilingual "we got your message" reply on the same

@@ -178,33 +178,79 @@ public record SetAttendanceRequest
     public AttendanceStatus Status { get; init; }
 }
 
-// --- Tournaments (a team's GotSport competition entry) ---
+// --- Tournaments (admin-owned event with optional GotSport import) ---
 
 public record TournamentSummary(
     int Id,
     string Name,
-    int TeamId,
-    string TeamName,
+    DateOnly? StartDate,
+    DateOnly? EndDate,
+    decimal? TotalCost,
+    decimal? CostPerPlayer,
+    int? TeamId,
+    string? TeamName,
     int GotSportEventId,
     int GotSportTeamId,
     DateTime? LastSyncedAt,
     string? LastSyncMessage,
     int GameCount,
     int UpcomingGameCount,
+    int RosterCount,
     DateTime CreatedAt);
 
+/// <summary>Create/update fields for a tournament. Only Name is required; dates + costs are
+/// nullable so admins can stub a tournament and fill in details later. GotSport fields stay
+/// for legacy imports; new tournaments leave them at 0.</summary>
 public record SaveTournamentRequest
 {
     [Required, MaxLength(128)]
     public string Name { get; init; } = string.Empty;
 
-    public int TeamId { get; init; }
+    public DateOnly? StartDate { get; init; }
+    public DateOnly? EndDate { get; init; }
+    public decimal? TotalCost { get; init; }
+    public decimal? CostPerPlayer { get; init; }
 
-    /// <summary>Either set EventId + TeamId directly, or paste the schedule URL and the server
-    /// parses them out (same parsing the old team form used).</summary>
+    /// <summary>Optional explicit team id. Normally the admin creates the team via
+    /// <c>POST /tournaments/{id}/team</c> after creating the tournament, so this stays null
+    /// at create time.</summary>
+    public int? TeamId { get; init; }
+
     public int? GotSportEventId { get; init; }
     public int? GotSportTeamId { get; init; }
 
     [MaxLength(1024)]
     public string? ScheduleUrl { get; init; }
 }
+
+/// <summary>Admin inlines the tournament's dedicated team after creating the tournament. The
+/// roster is built afterward via the existing team-roster endpoints.</summary>
+public record CreateTournamentTeamRequest
+{
+    [Required, MaxLength(128)]
+    public string Name { get; init; } = string.Empty;
+}
+
+public record TournamentAttendanceDto(
+    int PlayerId,
+    string FirstName,
+    string LastName,
+    string? ParentName,
+    string? ParentPhone,
+    AttendanceStatus Status,
+    AttendanceSource Source,
+    DateTime? UpdatedAt);
+
+public record TournamentAttendanceListDto(
+    int TournamentId,
+    int Confirmed,
+    int Declined,
+    int Maybe,
+    int Pending,
+    List<TournamentAttendanceDto> Items);
+
+public record SendTournamentConfirmationsResult(
+    int Sent,
+    int Skipped,
+    int Total,
+    string? Message);

@@ -64,9 +64,13 @@ public class ScheduleSyncService : IScheduleSyncService
     {
         var tournament = await _db.Tournaments.Include(t => t.Games).FirstOrDefaultAsync(t => t.Id == tournamentId, ct);
         if (tournament is null) return new ScheduleSyncResult(false, 0, 0, "Tournament not found.");
+        // The legacy GotSport sync only runs for tournaments that have both a team and the
+        // GotSport IDs. New-style admin tournaments don't have GotSport set up and skip this.
+        if (tournament.TeamId is null)
+            return new ScheduleSyncResult(false, 0, 0, "This tournament has no team yet. Create one before syncing.");
 
         var r = await ScrapeAsync(tournament.GotSportEventId, tournament.GotSportTeamId,
-            tournament.TeamId, tournament.Id, tournament.Games.ToList(), ct);
+            tournament.TeamId.Value, tournament.Id, tournament.Games.ToList(), ct);
         tournament.LastSyncedAt = DateTime.UtcNow;
         tournament.LastSyncMessage = r.Message;
         await _db.SaveChangesAsync(ct);
