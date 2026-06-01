@@ -10,5 +10,8 @@ public record UserSummary(
     bool IsBanned,
     DateTime? CreatedAt,
     DateTime? LastLoginAt,
-    int RegistrationCount
+    int RegistrationCount,
+    /// <summary>The user's ParentAccount id, or null when the Identity user has no parent
+    /// profile yet (e.g. seed admin accounts). Targets admin actions that need a parent.</summary>
+    int? ParentAccountId
 );

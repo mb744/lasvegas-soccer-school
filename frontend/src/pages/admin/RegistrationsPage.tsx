@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Layout } from '../../components/Layout'
 import { Api } from '../../api/client'
-import type { Language, ParentContactInput, RegistrationDetail, RegistrationPlayerDetail, RegistrationSummary, UpdateRegistrationRequest, AddRegistrationPlayerRequest } from '../../api/types'
+import type { Language, ParentContactInput, RegistrationDetail, RegistrationPlayerDetail, RegistrationSummary, UpdateRegistrationRequest, AddRegistrationPlayerRequest, UserSummary } from '../../api/types'
 
 const GRADES = ['Pre-K', 'K', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12']
 const UNIFORM_SIZES = ['YXS', 'YS', 'YM', 'YL', 'YXL', 'AS', 'AM', 'AL', 'AXL', 'A2XL']
@@ -16,6 +16,7 @@ export function AdminRegistrationsPage() {
   const [expandedId, setExpandedId] = useState<number | null>(null)
   const [details, setDetails] = useState<Record<number, RegistrationDetail>>({})
   const [loadingDetail, setLoadingDetail] = useState<number | null>(null)
+  const [createOpen, setCreateOpen] = useState(false)
 
   const load = async () => {
     setError(null)
@@ -24,6 +25,14 @@ export function AdminRegistrationsPage() {
   }
 
   useEffect(() => { load() }, [])
+
+  const afterCreate = async (created: RegistrationDetail) => {
+    setCreateOpen(false)
+    await load()
+    // Cache the detail + expand the new row so admin sees the empty player area right away.
+    setDetails(prev => ({ ...prev, [created.id]: created }))
+    setExpandedId(created.id)
+  }
 
   const toggleDetail = async (id: number) => {
     if (expandedId === id) { setExpandedId(null); return }
@@ -78,8 +87,22 @@ export function AdminRegistrationsPage() {
         <section className="bg-white border border-slate-200 rounded-lg p-6">
           <div className="flex items-center justify-between">
             <h2 className="font-bold text-emerald-800">{t('admin.registrations')}</h2>
-            <button onClick={load} className="text-sm text-emerald-700 hover:underline">↻</button>
+            <div className="flex items-center gap-3">
+              <button onClick={() => setCreateOpen(true)} className="text-sm text-emerald-700 hover:underline">
+                + {t('admin.regCreateBtn')}
+              </button>
+              <button onClick={load} className="text-sm text-emerald-700 hover:underline">↻</button>
+            </div>
           </div>
+
+          {createOpen && (
+            <CreateRegistrationModal
+              onClose={() => setCreateOpen(false)}
+              onCreated={afterCreate}
+              onError={setError}
+              onOpenExisting={id => { if (expandedId !== id) toggleDetail(id) }}
+            />
+          )}
           <div className="mt-4 overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -639,5 +662,115 @@ function Definition({ label, value }: { label: string; value: string }) {
       <dt className="text-slate-500">{label}</dt>
       <dd className="text-slate-900">{value || '—'}</dd>
     </>
+  )
+}
+
+/** Modal: admin picks an existing parent + (optional) season → creates an empty registration
+ *  shell. The picker only lists users that have a ParentAccount on file. */
+function CreateRegistrationModal({
+  onClose, onCreated, onError, onOpenExisting,
+}: {
+  onClose: () => void
+  onCreated: (created: RegistrationDetail) => void | Promise<void>
+  onError: (msg: string | null) => void
+  onOpenExisting: (id: number) => void
+}) {
+  const { t } = useTranslation()
+  const [users, setUsers] = useState<UserSummary[]>([])
+  const [loadingUsers, setLoadingUsers] = useState(true)
+  const [parentAccountId, setParentAccountId] = useState<number | ''>('')
+  const [season, setSeason] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [localError, setLocalError] = useState<string | null>(null)
+  const [existingId, setExistingId] = useState<number | null>(null)
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const us = await Api.listUsers()
+        // Only users with a ParentAccount can hold a registration.
+        const eligible = us
+          .filter(u => u.parentAccountId !== null)
+          .sort((a, b) => (a.lastName || a.email).localeCompare(b.lastName || b.email))
+        setUsers(eligible)
+      } catch (e: any) {
+        setLocalError(e?.message ?? 'Error')
+      } finally { setLoadingUsers(false) }
+    })()
+  }, [])
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setLocalError(null); setExistingId(null); onError(null)
+    if (parentAccountId === '') { setLocalError(t('admin.regCreatePickParent')); return }
+    setSaving(true)
+    try {
+      const created = await Api.adminCreateRegistration({
+        parentAccountId: Number(parentAccountId),
+        season: season.trim() || null,
+      })
+      await onCreated(created)
+    } catch (e: any) {
+      const status = e?.response?.status
+      const data = e?.response?.data
+      if (status === 409 && typeof data === 'object' && data?.existingId) {
+        setExistingId(data.existingId as number)
+        setLocalError(data.message ?? t('admin.regCreateDuplicate'))
+      } else {
+        setLocalError(typeof data === 'string' ? data : (data?.title ?? e?.message ?? 'Error'))
+      }
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
+      <div className="bg-white rounded-lg shadow-xl max-w-lg w-full p-5 space-y-3 my-8">
+        <div className="flex items-start justify-between">
+          <h4 className="text-base font-semibold text-slate-800">{t('admin.regCreateTitle')}</h4>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 text-xl leading-none">×</button>
+        </div>
+        <div className="text-xs text-slate-500">{t('admin.regCreateHelp')}</div>
+
+        <form onSubmit={submit} className="space-y-3">
+          <label className="block text-sm">
+            <span className="font-medium text-slate-700">{t('admin.regCreateParent')}</span>
+            <select value={parentAccountId} onChange={e => setParentAccountId(e.target.value === '' ? '' : Number(e.target.value))}
+              className="mt-1 w-full border border-slate-300 rounded-md px-2 py-2 text-sm" disabled={loadingUsers || saving}>
+              <option value="">{loadingUsers ? t('common.loading') : `— ${t('admin.regCreatePickParent')} —`}</option>
+              {users.map(u => (
+                <option key={u.parentAccountId!} value={u.parentAccountId!}>
+                  {(u.lastName || u.firstName) ? `${u.lastName}, ${u.firstName} — ${u.email}` : u.email}
+                  {u.registrationCount > 0 ? ` · ${u.registrationCount} reg` : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block text-sm">
+            <span className="font-medium text-slate-700">{t('admin.regCreateSeason')}</span>
+            <input type="text" value={season} onChange={e => setSeason(e.target.value)}
+              placeholder={t('admin.regCreateSeasonPlaceholder')}
+              className="mt-1 w-full border border-slate-300 rounded-md px-2 py-2 text-sm" disabled={saving} />
+          </label>
+
+          {localError && (
+            <div className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-md p-2">
+              {localError}
+              {existingId !== null && (
+                <button type="button" onClick={() => { onOpenExisting(existingId); onClose() }}
+                  className="ml-2 text-emerald-700 hover:underline">{t('admin.regCreateOpenExisting')}</button>
+              )}
+            </div>
+          )}
+
+          <div className="flex items-center gap-3 pt-1">
+            <button type="submit" disabled={saving || loadingUsers}
+              className="bg-emerald-700 text-white text-sm font-semibold px-4 py-2 rounded-md hover:bg-emerald-800 disabled:opacity-60">
+              {saving ? t('register.submitting') : t('admin.regCreateBtn')}
+            </button>
+            <button type="button" onClick={onClose} className="text-sm text-slate-600 hover:underline">{t('admin.cancel')}</button>
+          </div>
+        </form>
+      </div>
+    </div>
   )
 }

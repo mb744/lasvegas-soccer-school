@@ -10,7 +10,9 @@ export function LoginPage() {
   const { login, providers } = useAuth()
   const navigate = useNavigate()
   const [params] = useSearchParams()
-  const next = params.get('next') || '/register'
+  // Parents land on /account by default — that page falls through to /register when they
+  // don't yet have any registration on file.
+  const next = params.get('next') || '/account'
   const hasGoogle = providers.includes('Google')
   const hasFacebook = providers.includes('Facebook')
   const hasAnyExternal = hasGoogle || hasFacebook

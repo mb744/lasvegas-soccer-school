@@ -22,6 +22,8 @@ import type {
   RegistrationPlayerDetail,
   AddRegistrationPlayerRequest,
   UpdateRegistrationPlayerRequest,
+  AdminCreateRegistrationRequest,
+  SignPlayerWaiverRequest,
   RegistrationSummary,
   PhraseTranslation,
   EventRecipient,
@@ -176,6 +178,28 @@ export const Api = {
   },
   async removeRegistrationPlayer(regId: number, rpId: number) {
     await api.delete(`/registrations/${regId}/players/${rpId}`)
+  },
+  /** Admin creates an empty registration shell for an existing parent (active season by default).
+   *  Parent finishes it (consent + sign waivers) by logging in to /account. */
+  async adminCreateRegistration(payload: AdminCreateRegistrationRequest) {
+    const r = await api.post<RegistrationDetail>('/registrations/admin', payload)
+    return r.data
+  },
+  /** Parent (or admin) ticks the registration-level waiver consent box. */
+  async consentRegistration(id: number) {
+    const r = await api.post<RegistrationDetail>(`/registrations/${id}/consent`, {})
+    return r.data
+  },
+  /** Parent adds a player to their own registration (owner-gated equivalent of the admin
+   *  AddPlayer endpoint). Enrolled unsigned; sign via signRegistrationPlayer. */
+  async addOwnRegistrationPlayer(regId: number, payload: AddRegistrationPlayerRequest) {
+    const r = await api.post<RegistrationDetail>(`/registrations/${regId}/players/self`, payload)
+    return r.data
+  },
+  /** Parent (or admin) signs a player's waiver. Flips registration-level consent on too if needed. */
+  async signRegistrationPlayer(regId: number, rpId: number, payload: SignPlayerWaiverRequest) {
+    const r = await api.post<RegistrationDetail>(`/registrations/${regId}/players/${rpId}/sign`, payload)
+    return r.data
   },
   async listAgeClassifications() {
     const r = await api.get<AgeClassification[]>('/age-classifications')

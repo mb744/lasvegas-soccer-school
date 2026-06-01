@@ -59,7 +59,8 @@ public class AdminUsersController : ControllerBase
             u.LockoutEnd is { } end && end > now,
             u.Account?.CreatedAt,
             u.LastLoginAt,
-            u.RegistrationCount
+            u.RegistrationCount,
+            u.Account?.Id
         )).ToList());
     }
 

@@ -167,6 +167,19 @@ export interface UpdateRegistrationPlayerRequest {
   shoeSize: string
 }
 
+/** Admin creates an empty registration shell for an existing parent. The parent then
+ *  logs in to /account, consents, and signs each player's waiver. */
+export interface AdminCreateRegistrationRequest {
+  parentAccountId: number
+  /** Defaults to the active season when null/blank. */
+  season?: string | null
+}
+
+/** Parent signs a specific player's waiver. The signature is a data:image/png URL. */
+export interface SignPlayerWaiverRequest {
+  signatureDataUrl: string
+}
+
 // --- Age classifications (admin-managed DOB buckets) ---
 
 export interface AgeClassification {
@@ -263,6 +276,8 @@ export interface UserSummary {
   createdAt: string | null
   lastLoginAt: string | null
   registrationCount: number
+  /** Null when the Identity user hasn't created a parent profile yet (e.g. seed admin accounts). */
+  parentAccountId: number | null
 }
 
 export const OUTREACH_STATUS_LABELS: Record<OutreachStatus, string> = {

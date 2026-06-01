@@ -183,6 +183,23 @@ public record UpdateRegistrationPlayerRequest
     [Required, MaxLength(10)] public string ShoeSize { get; init; } = string.Empty;
 }
 
+/// <summary>Admin spins up an empty registration shell for an existing parent account so the
+/// parent can log in and finish it (consent + sign waivers per player). Backend blocks duplicates
+/// in the same season — admins should edit the existing one instead.</summary>
+public record AdminCreateRegistrationRequest
+{
+    [Required] public int ParentAccountId { get; init; }
+    /// <summary>Season label. When null/blank, the backend defaults to the configured active season.</summary>
+    [MaxLength(40)] public string? Season { get; init; }
+}
+
+/// <summary>Parent captures the signature for a single enrolled player. Stamps SignedAt and, when
+/// the registration hasn't been waiver-consented yet, marks the whole registration consented too.</summary>
+public record SignPlayerWaiverRequest
+{
+    [Required] public string SignatureDataUrl { get; init; } = string.Empty;
+}
+
 // --- Age classifications (admin-managed DOB buckets) ---
 
 public record AgeClassificationDto(

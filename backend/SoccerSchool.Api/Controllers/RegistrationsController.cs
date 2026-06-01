@@ -150,6 +150,51 @@ public class RegistrationsController : ControllerBase
         return Ok(ToDetail(registration));
     }
 
+    /// <summary>Admin spins up an empty registration shell for an existing parent so they can log
+    /// in and finish it (consent + sign waivers per player). Blocks duplicates in the same season —
+    /// admins should add players to the existing one rather than create a parallel registration.</summary>
+    [HttpPost("admin")]
+    [Authorize(Roles = Roles.Admin)]
+    public async Task<ActionResult<RegistrationDetail>> AdminCreate(
+        [FromBody] AdminCreateRegistrationRequest request, CancellationToken ct)
+    {
+        var account = await _db.ParentAccounts
+            .Include(p => p.Contacts)
+            .Include(p => p.User)
+            .FirstOrDefaultAsync(p => p.Id == request.ParentAccountId, ct);
+        if (account is null) return BadRequest("Parent account not found.");
+
+        var season = string.IsNullOrWhiteSpace(request.Season) ? _app.ActiveSeason : request.Season.Trim();
+        var existing = await _db.Registrations
+            .FirstOrDefaultAsync(r => r.ParentAccountId == account.Id && r.Season == season, ct);
+        if (existing is not null)
+            return Conflict(new { existingId = existing.Id, message = $"This parent already has a {season} registration." });
+
+        var registration = new Registration
+        {
+            ParentAccountId = account.Id,
+            Season = season,
+            ParentFirstName = account.FirstName ?? string.Empty,
+            ParentLastName = account.LastName ?? string.Empty,
+            AddressLine1 = account.AddressLine1 ?? string.Empty,
+            AddressLine2 = account.AddressLine2,
+            City = account.City ?? string.Empty,
+            State = account.State ?? string.Empty,
+            PostalCode = account.PostalCode ?? string.Empty,
+            CellPhone = account.CellPhone ?? string.Empty,
+            Email = account.User?.Email ?? string.Empty,
+            Language = account.Language,
+            HasWhatsApp = account.HasWhatsApp,
+            // Parent ticks consent + signs each player's waiver on /account.
+            WaiverConsent = false,
+            WaiverSignedAt = null,
+            CreatedAt = DateTime.UtcNow,
+        };
+        _db.Registrations.Add(registration);
+        await _db.SaveChangesAsync(ct);
+        return Ok(await LoadDetailAsync(registration.Id, ct));
+    }
+
     [HttpGet("mine")]
     public async Task<ActionResult<IEnumerable<RegistrationSummary>>> Mine(CancellationToken ct)
     {
@@ -395,6 +440,90 @@ public class RegistrationsController : ControllerBase
         _db.RegistrationPlayers.Remove(rp);
         await _db.SaveChangesAsync(ct);
         return NoContent();
+    }
+
+    /// <summary>Parent (or admin) confirms the registration-level waiver consent. Stamps the
+    /// consent timestamp; per-player signatures are captured separately via SignPlayer.</summary>
+    [HttpPost("{id:int}/consent")]
+    public async Task<ActionResult<RegistrationDetail>> Consent(int id, CancellationToken ct)
+    {
+        var (registration, denied) = await LoadAuthorizedAsync(id, ct);
+        if (denied is not null) return denied;
+        if (!registration!.WaiverConsent)
+        {
+            registration.WaiverConsent = true;
+            registration.WaiverSignedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync(ct);
+        }
+        return Ok(await LoadDetailAsync(id, ct));
+    }
+
+    /// <summary>Parent adds a player to their own registration. Same effect as the admin AddPlayer
+    /// endpoint but gated by ownership (admins use AddPlayer to be explicit about admin-side adds).
+    /// Enrolled unsigned; parent immediately signs via the sign endpoint.</summary>
+    [HttpPost("{id:int}/players/self")]
+    public async Task<ActionResult<RegistrationDetail>> AddPlayerSelf(
+        int id, [FromBody] AddRegistrationPlayerRequest request, CancellationToken ct)
+    {
+        var (registration, denied) = await LoadAuthorizedAsync(id, ct);
+        if (denied is not null) return denied;
+        if (string.IsNullOrWhiteSpace(request.FirstName) || string.IsNullOrWhiteSpace(request.LastName) || request.DateOfBirth == default)
+            return BadRequest("First name, last name, and date of birth are required.");
+
+        var player = new Player
+        {
+            ParentAccountId = registration!.ParentAccountId,
+            FirstName = request.FirstName.Trim(),
+            LastName = request.LastName.Trim(),
+            DateOfBirth = request.DateOfBirth,
+        };
+        _db.Players.Add(player);
+        _db.RegistrationPlayers.Add(new RegistrationPlayer
+        {
+            RegistrationId = registration.Id,
+            Player = player,
+            SchoolGrade = request.SchoolGrade.Trim(),
+            UniformSize = request.UniformSize.Trim(),
+            ShoeSize = request.ShoeSize.Trim(),
+            HeardFrom = request.HeardFrom?.Trim(),
+            WaiverParticipantName = $"{player.FirstName} {player.LastName}".Trim(),
+            WaiverParentGuardianName = $"{registration.ParentFirstName} {registration.ParentLastName}".Trim(),
+            WaiverPhone = registration.CellPhone,
+            WaiverEmail = registration.Email,
+            SignatureDataUrl = null,
+            SignedAt = null,
+            AgeClassificationId = await AssignAgeClassificationAsync(request.DateOfBirth, ct),
+        });
+        await _db.SaveChangesAsync(ct);
+        return Ok(await LoadDetailAsync(id, ct));
+    }
+
+    /// <summary>Parent (or admin) signs a specific player's waiver. Stamps SignatureDataUrl +
+    /// SignedAt and, if the registration-level consent flag is still off, flips it on with the
+    /// same timestamp (signing a player implies whole-registration consent).</summary>
+    [HttpPost("{id:int}/players/{rpId:int}/sign")]
+    public async Task<ActionResult<RegistrationDetail>> SignPlayer(
+        int id, int rpId, [FromBody] SignPlayerWaiverRequest request, CancellationToken ct)
+    {
+        var (registration, denied) = await LoadAuthorizedAsync(id, ct);
+        if (denied is not null) return denied;
+        if (string.IsNullOrWhiteSpace(request.SignatureDataUrl) ||
+            !request.SignatureDataUrl.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase))
+            return BadRequest("A valid signature image is required.");
+
+        var rp = registration!.Players.FirstOrDefault(p => p.Id == rpId);
+        if (rp is null) return NotFound();
+
+        var now = DateTime.UtcNow;
+        rp.SignatureDataUrl = request.SignatureDataUrl;
+        rp.SignedAt = now;
+        if (!registration.WaiverConsent)
+        {
+            registration.WaiverConsent = true;
+            registration.WaiverSignedAt = now;
+        }
+        await _db.SaveChangesAsync(ct);
+        return Ok(await LoadDetailAsync(id, ct));
     }
 
     /// <summary>Most-specific age bracket whose inclusive DOB range covers the date, or null.</summary>

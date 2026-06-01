@@ -1,6 +1,7 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { LandingPage } from './pages/LandingPage'
 import { RegisterPage } from './pages/RegisterPage'
+import { AccountPage } from './pages/AccountPage'
 import { AdminPage } from './pages/AdminPage'
 import { AdminOutreachPage } from './pages/admin/OutreachPage'
 import { AdminRegistrationsPage } from './pages/admin/RegistrationsPage'
@@ -35,6 +36,10 @@ export default function App() {
           <Route
             path="/register"
             element={<RequireAuth><RegisterPage /></RequireAuth>}
+          />
+          <Route
+            path="/account"
+            element={<RequireAuth><AccountPage /></RequireAuth>}
           />
           <Route
             path="/admin"
