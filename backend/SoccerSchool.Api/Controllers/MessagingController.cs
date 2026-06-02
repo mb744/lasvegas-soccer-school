@@ -981,7 +981,7 @@ public class MessagingController : ControllerBase
             .FirstOrDefaultAsync(t => t.Language == language && candidates.Contains(t.Name), ct);
     }
 
-    private const string TournamentTemplateBaseName = "tournament";
+    private const string TournamentTemplateBaseName = "tournamentparticipation";
 
     private async Task<WhatsAppTemplate?> FindTournamentTemplateAsync(Language language, CancellationToken ct)
     {
@@ -1022,7 +1022,7 @@ public class MessagingController : ControllerBase
         var enTemplate = await FindTournamentTemplateAsync(Language.English, ct);
         var esTemplate = await FindTournamentTemplateAsync(Language.Spanish, ct);
         if (enTemplate is null && esTemplate is null)
-            return BadRequest($"No tournament templates configured. Add `{TournamentTemplateBaseName}_english` and `{TournamentTemplateBaseName}_spanish` under Messaging → Templates.");
+            return BadRequest($"No tournament templates configured. Add `{TournamentTemplateBaseName}_english` and `{TournamentTemplateBaseName}_spanish` under Messaging → Templates first.");
         var primary = enTemplate ?? esTemplate!;
 
         var datesStr = FormatTournamentDates(tournament.StartDate.Value, tournament.EndDate);
