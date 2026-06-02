@@ -320,6 +320,8 @@ const es: Translations = {
     evtTournSendPreviewTitle: 'Enviar confirmaciones del torneo — vista previa',
     evtTournSendPreviewHelp: 'Se enviará un WhatsApp con plantilla por cada jugador del roster ({{count}} en total). Cada guardián recibe la versión en su idioma preferido. El ejemplo abajo usa el primer jugador del roster; los envíos reales completan el nombre de cada hijo/a.',
     evtTournSendPreviewSample: 'Ejemplo para {{name}}',
+    evtTournRemovePlayer: 'Quitar del roster',
+    evtTournRemovePlayerConfirm: '¿Quitar a {{name}} del roster de este equipo?',
     attnConfirm: 'Confirmar jugadores',
     attnHeading: 'Quién asiste',
     attnConfirmed: 'Confirmado',

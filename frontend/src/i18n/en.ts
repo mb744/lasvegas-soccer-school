@@ -318,6 +318,8 @@ const en = {
     evtTournSendPreviewTitle: 'Send tournament confirmations — preview',
     evtTournSendPreviewHelp: 'One templated WhatsApp will go out per rostered player ({{count}} total). Each guardian receives the version matching their language preference. Sample below uses the first roster player\'s name; the actual sends fill in each kid\'s.',
     evtTournSendPreviewSample: 'Sample for {{name}}',
+    evtTournRemovePlayer: 'Remove from roster',
+    evtTournRemovePlayerConfirm: 'Remove {{name}} from this team\'s roster?',
     attnConfirm: 'Confirm players',
     attnHeading: 'Who\'s coming',
     attnConfirmed: 'Confirmed',

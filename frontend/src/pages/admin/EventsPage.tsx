@@ -451,6 +451,17 @@ function TournamentTeamPanel({
     } catch (e: any) { onError(errMsg(e)) }
   }
 
+  const removeFromRoster = async (playerId: number, displayName: string) => {
+    if (!confirm(t('admin.evtTournRemovePlayerConfirm', { name: displayName }))) return
+    onError(''); onNotice('')
+    try {
+      await Api.removeRosterMember(tt.teamId, playerId)
+      await reloadAll()
+      await onChanged()
+      onNotice(t('admin.teamMemberRemoved'))
+    } catch (e: any) { onError(errMsg(e)) }
+  }
+
   const saveGotSport = async (e: React.FormEvent) => {
     e.preventDefault()
     onError(''); onNotice('')
@@ -686,6 +697,11 @@ function TournamentTeamPanel({
                             {s === 1 ? t('admin.attnConfirmed') : s === 3 ? t('admin.attnMaybe') : s === 2 ? t('admin.attnDeclined') : t('admin.attnPending')}
                           </button>
                         ))}
+                        <button onClick={() => removeFromRoster(it.playerId, `${it.firstName} ${it.lastName}`)}
+                          title={t('admin.evtTournRemovePlayer')}
+                          className="ml-1 px-1.5 py-0.5 rounded border text-[11px] text-rose-600 border-rose-200 hover:bg-rose-50">
+                          ×
+                        </button>
                       </div>
                     </td>
                   </tr>
