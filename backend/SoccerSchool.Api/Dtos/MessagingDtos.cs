@@ -148,6 +148,10 @@ public record CreateBroadcastRequest
     /// the player's ID. Stored so the resend flow can find the last delivery status per player.</summary>
     public int? PlayerId { get; init; }
 
+    /// <summary>Shared id across all broadcasts in one fan-out batch. Set by the tournament
+    /// send/re-send flow; null for individual sends.</summary>
+    public Guid? BatchId { get; init; }
+
     public BroadcastTargetDto Target { get; init; } = new();
 }
 
@@ -163,7 +167,9 @@ public record BroadcastSummary(
     int Total,
     int Queued,
     int Delivered,
-    int Failed);
+    int Failed,
+    Guid? BatchId,
+    int BatchSize);
 
 public record BroadcastRecipientDto(
     int Id,

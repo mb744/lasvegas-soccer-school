@@ -336,6 +336,7 @@ public class MessagingController : ControllerBase
             ScheduledGameId = request.ScheduledGameId,
             TournamentId = request.TournamentId,
             PlayerId = request.PlayerId,
+            BatchId = request.BatchId,
         };
         foreach (var r in resolved.Recipients)
         {
@@ -1143,25 +1144,31 @@ public class MessagingController : ControllerBase
             .Select(a => a.PlayerId)
             .ToHashSetAsync(ct);
 
+        // Buckets are disjoint: each Pending player falls into exactly one based on last
+        // delivery. Players who already responded (Confirmed/Declined/Maybe) are skipped.
         var include = new HashSet<int>();
         foreach (var pid in rosterIds)
         {
-            if (request.IncludeNoResponse
-                && (pendingAttendance.Contains(pid) || !hasAttendanceRow.Contains(pid)))
-            {
-                include.Add(pid); continue;
-            }
-            if (lastStatusesByPlayer.TryGetValue(pid, out var statuses) && statuses.Count > 0)
-            {
-                var anySuccess = statuses.Any(s => s == MessageDeliveryStatus.Sent || s == MessageDeliveryStatus.Delivered);
-                var allFailed = !anySuccess && statuses.All(s => s == MessageDeliveryStatus.Failed || s == MessageDeliveryStatus.Undelivered);
-                if (request.IncludeFailed && allFailed) include.Add(pid);
-            }
-            else if (request.IncludeUndelivered)
+            var isPending = pendingAttendance.Contains(pid) || !hasAttendanceRow.Contains(pid);
+            if (!isPending) continue;
+            if (!lastStatusesByPlayer.TryGetValue(pid, out var statuses) || statuses.Count == 0)
             {
                 // No PlayerId-tagged broadcast on record (player added after the original send,
                 // or only legacy broadcasts exist).
-                include.Add(pid);
+                if (request.IncludeUndelivered) include.Add(pid);
+                continue;
+            }
+            var anySuccess = statuses.Any(s => s == MessageDeliveryStatus.Sent || s == MessageDeliveryStatus.Delivered);
+            if (anySuccess)
+            {
+                // Family received the message but hasn't replied yet.
+                if (request.IncludeNoResponse) include.Add(pid);
+            }
+            else
+            {
+                // Every family recipient failed/undelivered (or only intermediate statuses with
+                // no success) — treat as Failed.
+                if (request.IncludeFailed) include.Add(pid);
             }
         }
 
@@ -1203,6 +1210,9 @@ public class MessagingController : ControllerBase
         var datesStr = FormatTournamentDates(tournament.StartDate.Value, tournament.EndDate);
         var costStr = tournament.CostPerPlayer.Value.ToString("C", System.Globalization.CultureInfo.GetCultureInfo("en-US"));
 
+        // One batch id per fan-out so the History view can collapse the per-player rows into
+        // one summary line ("Tournament X — confirmations (N players)").
+        var batchId = Guid.NewGuid();
         int sent = 0, skipped = 0, targeted = 0;
         foreach (var tp in team.Roster)
         {
@@ -1228,6 +1238,7 @@ public class MessagingController : ControllerBase
                 TemplateVariables = values,
                 TournamentId = tournamentId,
                 PlayerId = player.Id,
+                BatchId = batchId,
                 Target = new BroadcastTargetDto
                 {
                     Kind = RecipientTargetKindDto.DynamicGroup,
@@ -1318,10 +1329,14 @@ public class MessagingController : ControllerBase
     [HttpGet("broadcasts")]
     public async Task<ActionResult<IEnumerable<BroadcastSummary>>> ListBroadcasts(CancellationToken ct)
     {
-        var items = await _db.Broadcasts
+        // Pull recent broadcasts then group fan-out batches (one BatchId = N per-player rows)
+        // into a single summary so the History view doesn't drown in per-player rows. Take a
+        // wider raw window so we don't truncate the children of a large batch.
+        var raw = await _db.Broadcasts
             .OrderByDescending(b => b.CreatedAt)
-            .Take(200)
-            .Select(b => new BroadcastSummary(
+            .Take(2000)
+            .Select(b => new
+            {
                 b.Id,
                 b.Channel,
                 b.BodyEn,
@@ -1330,12 +1345,67 @@ public class MessagingController : ControllerBase
                 b.SubjectEs,
                 b.TargetLabel,
                 b.CreatedAt,
-                b.Recipients.Count,
-                b.Recipients.Count(r => r.Status == MessageDeliveryStatus.Queued || r.Status == MessageDeliveryStatus.Sent || r.Status == MessageDeliveryStatus.Pending),
-                b.Recipients.Count(r => r.Status == MessageDeliveryStatus.Delivered),
-                b.Recipients.Count(r => r.Status == MessageDeliveryStatus.Failed || r.Status == MessageDeliveryStatus.Undelivered)))
+                b.BatchId,
+                Total = b.Recipients.Count,
+                Queued = b.Recipients.Count(r => r.Status == MessageDeliveryStatus.Queued || r.Status == MessageDeliveryStatus.Sent || r.Status == MessageDeliveryStatus.Pending),
+                Delivered = b.Recipients.Count(r => r.Status == MessageDeliveryStatus.Delivered),
+                Failed = b.Recipients.Count(r => r.Status == MessageDeliveryStatus.Failed || r.Status == MessageDeliveryStatus.Undelivered),
+            })
             .ToListAsync(ct);
+
+        var items = raw
+            .GroupBy(b => b.BatchId.HasValue ? $"batch:{b.BatchId.Value}" : $"id:{b.Id}")
+            .Select(g =>
+            {
+                var head = g.OrderByDescending(x => x.CreatedAt).First();
+                return new BroadcastSummary(
+                    head.Id,
+                    head.Channel,
+                    head.BodyEn,
+                    head.BodyEs,
+                    head.SubjectEn,
+                    head.SubjectEs,
+                    head.TargetLabel,
+                    g.Max(x => x.CreatedAt),
+                    g.Sum(x => x.Total),
+                    g.Sum(x => x.Queued),
+                    g.Sum(x => x.Delivered),
+                    g.Sum(x => x.Failed),
+                    head.BatchId,
+                    g.Count());
+            })
+            .OrderByDescending(x => x.CreatedAt)
+            .Take(200)
+            .ToList();
         return Ok(items);
+    }
+
+    /// <summary>Returns all per-player child broadcasts for a fan-out batch, with their
+    /// recipients flattened into one list. Used by the History view's batch row expand.</summary>
+    [HttpGet("batches/{batchId:guid}")]
+    public async Task<ActionResult<BroadcastDetail>> GetBatch(Guid batchId, CancellationToken ct)
+    {
+        var rows = await _db.Broadcasts
+            .Include(b => b.Recipients)
+            .Where(b => b.BatchId == batchId)
+            .OrderBy(b => b.CreatedAt)
+            .ToListAsync(ct);
+        if (rows.Count == 0) return NotFound();
+        var head = rows[0];
+        var recipients = rows
+            .SelectMany(b => b.Recipients.Select(r => new BroadcastRecipientDto(
+                r.Id, r.Name, r.Phone, r.Email, r.Language, r.Status, r.StatusMessage, r.TwilioSid, r.TemplateUsed)))
+            .ToList();
+        return Ok(new BroadcastDetail(
+            head.Id,
+            head.Channel,
+            head.BodyEn,
+            head.BodyEs,
+            head.SubjectEn,
+            head.SubjectEs,
+            head.TargetLabel,
+            head.CreatedAt,
+            recipients));
     }
 
     [HttpGet("broadcasts/{id:int}")]

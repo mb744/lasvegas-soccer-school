@@ -428,6 +428,10 @@ export interface BroadcastSummary {
   queued: number
   delivered: number
   failed: number
+  /** When set, this row represents a fan-out batch (currently: tournament confirmations).
+   *  Counts are aggregated across batchSize per-player broadcasts. */
+  batchId: string | null
+  batchSize: number
 }
 
 export interface BroadcastRecipientRow {

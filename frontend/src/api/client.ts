@@ -351,6 +351,12 @@ export const Api = {
     const r = await api.get<BroadcastDetail>(`/messaging/broadcasts/${id}`)
     return r.data
   },
+  /** Expands a fan-out batch row: returns all per-player child broadcasts' recipients
+   *  flattened into one list. Used by History for tournament confirmation batches. */
+  async getBroadcastBatch(batchId: string) {
+    const r = await api.get<BroadcastDetail>(`/messaging/batches/${batchId}`)
+    return r.data
+  },
   async createConversation(payload: CreateGroupConversationRequest) {
     const r = await api.post<GroupConversationDetail>('/messaging/conversations', payload)
     return r.data

@@ -66,6 +66,11 @@ public class Broadcast
     public int? PlayerId { get; set; }
     public Player? Player { get; set; }
 
+    /// <summary>Shared id across all broadcasts in one fan-out batch (currently: a tournament
+    /// confirmation send or re-send). Lets the History view collapse N per-player rows into
+    /// one batch row with aggregated counts. Null for individual sends.</summary>
+    public Guid? BatchId { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public List<BroadcastRecipient> Recipients { get; set; } = new();

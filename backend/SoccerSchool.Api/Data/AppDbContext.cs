@@ -263,6 +263,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             .HasForeignKey(b => b.PlayerId)
             .OnDelete(DeleteBehavior.SetNull);
         modelBuilder.Entity<Broadcast>().HasIndex(b => new { b.TournamentId, b.PlayerId, b.CreatedAt });
+        modelBuilder.Entity<Broadcast>().HasIndex(b => new { b.BatchId, b.CreatedAt });
 
         modelBuilder.Entity<Team>(b =>
         {

@@ -1759,11 +1759,13 @@ function HistoryTab({
     await Promise.all([onRefresh(), loadInbound()])
   }
 
-  const toggle = async (id: number) => {
-    if (expandedId === id) { setExpandedId(null); setExpanded(null); return }
+  const toggle = async (b: BroadcastSummary) => {
+    if (expandedId === b.id) { setExpandedId(null); setExpanded(null); return }
     try {
-      setExpanded(await Api.getBroadcast(id))
-      setExpandedId(id)
+      setExpanded(b.batchId
+        ? await Api.getBroadcastBatch(b.batchId)
+        : await Api.getBroadcast(b.id))
+      setExpandedId(b.id)
     } catch (e: any) { /* swallow */ void e }
   }
 
@@ -1790,7 +1792,14 @@ function HistoryTab({
               <tr className="border-b last:border-0 align-top">
                 <td className="py-2 pr-4 whitespace-nowrap text-slate-500">{new Date(b.createdAt).toLocaleString()}</td>
                 <td className="py-2 pr-4">{MESSAGE_CHANNEL_LABELS[b.channel]}</td>
-                <td className="py-2 pr-4">{b.targetLabel ?? '—'}</td>
+                <td className="py-2 pr-4">
+                  {b.targetLabel ?? '—'}
+                  {b.batchSize > 1 && (
+                    <span className="ml-1 text-[10px] text-slate-500">
+                      ({t('admin.msgBatchPlayers', { count: b.batchSize })})
+                    </span>
+                  )}
+                </td>
                 <td className="py-2 pr-4 text-xs">
                   <span className="text-emerald-700">✓{b.delivered}</span>{' '}
                   <span className="text-slate-500">…{b.queued}</span>{' '}
@@ -1802,7 +1811,7 @@ function HistoryTab({
                   {b.bodyEs && <div className="truncate" title={b.bodyEs}><span className="text-xs text-slate-400">ES:</span> {b.bodyEs}</div>}
                 </td>
                 <td className="py-2 pr-4">
-                  <button onClick={() => toggle(b.id)} className="text-emerald-700 hover:underline">
+                  <button onClick={() => toggle(b)} className="text-emerald-700 hover:underline">
                     {expandedId === b.id ? t('admin.hide') : t('admin.details')}
                   </button>
                 </td>
