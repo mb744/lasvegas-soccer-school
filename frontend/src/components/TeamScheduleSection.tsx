@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Api } from '../api/client'
+import { pickLatestTemplate } from '../api/templateNaming'
 import { RequiredLabel, useRequiredValidation } from './RequiredField'
 import type { ScheduledGame, EventAttendanceList, EventAttendanceSummary, AttendanceStatus, WhatsAppTemplate, TemplatePreviewResponse } from '../api/types'
 
@@ -216,13 +217,12 @@ export function TeamScheduleSection({
     setCancelLoading(ev.id); onError(''); onNotice('')
     try {
       const templates = await Api.listWhatsAppTemplates()
-      const kindMatch = (tmpl: WhatsAppTemplate) => {
-        const n = tmpl.name.toLowerCase()
-        return ev.kind === 1 ? n.includes('practice') : n.includes('game')
-      }
-      // English-first (language=0) so values are authored in EN; the preview/send pipeline routes
-      // Spanish recipients to the paired template with translated values.
-      const tmpl = templates.filter(kindMatch).sort((a, b) => a.language - b.language)[0]
+      const baseName = ev.kind === 1 ? 'practice' : 'game'
+      // English-first (the values are authored in EN; the preview/send pipeline routes Spanish
+      // recipients to the paired template with translated values). Falls back to ES if the
+      // admin only configured the Spanish side. Highest version of `{base}v{N}_english`
+      // wins per the shared convention.
+      const tmpl = pickLatestTemplate(baseName, 0, templates) ?? pickLatestTemplate(baseName, 1, templates)
       if (!tmpl) {
         onError(t('admin.evtCancelNoTemplate', { kind: kindLabel(ev) }))
         return

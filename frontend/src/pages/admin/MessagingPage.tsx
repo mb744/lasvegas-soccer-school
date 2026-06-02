@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { Layout } from '../../components/Layout'
 import { RequiredLabel, useRequiredValidation } from '../../components/RequiredField'
 import { Api } from '../../api/client'
+import { pickLatestTemplate } from '../../api/templateNaming'
 import type {
   AdHocRecipient,
   BroadcastDetail,
@@ -2383,13 +2384,13 @@ function pickTemplateForEvent(
   event: ScheduledGame,
   templates: WhatsAppTemplate[],
 ): number | '' {
-  const kindMatch = (t: WhatsAppTemplate): boolean => {
-    const n = t.name.toLowerCase()
-    return event.kind === 1 ? n.includes('practice') : n.includes('game')
-  }
-  const englishFirst = (a: WhatsAppTemplate, b: WhatsAppTemplate) => a.language - b.language
-  const match = templates.filter(kindMatch).sort(englishFirst)[0]
-  return match?.id ?? ''
+  const baseName = event.kind === 1 ? 'practice' : 'game'
+  // English first (the values are authored in EN; the paired ES template renders the same
+  // shape at send time). If only ES exists, use that.
+  const en = pickLatestTemplate(baseName, 0, templates)
+  if (en) return en.id
+  const es = pickLatestTemplate(baseName, 1, templates)
+  return es?.id ?? ''
 }
 
 /**

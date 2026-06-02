@@ -969,29 +969,41 @@ public class MessagingController : ControllerBase
     }
 
     private async Task<WhatsAppTemplate?> FindMonthlyFeeTemplateAsync(Language language, CancellationToken ct)
-    {
-        // Match the user-defined templates by base name + language. Allows any suffix the admin
-        // happened to use (_english, _en, _spanish, _es) — same matcher the regular pair logic uses.
-        var suffix = language == Language.English ? new[] { "_english", "_en" } : new[] { "_spanish", "_es" };
-        var candidates = suffix.Select(s => MonthlyFeeTemplateBaseName + s)
-            .Concat(new[] { MonthlyFeeTemplateBaseName })
-            .ToList();
-        return await _db.WhatsAppTemplates
-            .Include(t => t.Variables)
-            .FirstOrDefaultAsync(t => t.Language == language && candidates.Contains(t.Name), ct);
-    }
+        => await FindLatestVersionedTemplateAsync(MonthlyFeeTemplateBaseName, language, ct);
 
     private const string TournamentTemplateBaseName = "tournamentparticipation";
 
     private async Task<WhatsAppTemplate?> FindTournamentTemplateAsync(Language language, CancellationToken ct)
+        => await FindLatestVersionedTemplateAsync(TournamentTemplateBaseName, language, ct);
+
+    /// <summary>Picks the highest-versioned WhatsApp template matching the convention
+    /// <c>{baseName}_{english|spanish|en|es}</c> (treated as v1) or
+    /// <c>{baseName}v{N}_{english|spanish|en|es}</c> for vN. An optional underscore is allowed
+    /// before the <c>v{N}</c> token, so both <c>monthlyfeev2_english</c> and
+    /// <c>monthlyfee_v2_english</c> are accepted. Returns null when nothing matches — caller
+    /// surfaces the "no template configured" error.
+    ///
+    /// Lets admins iterate template copy by uploading <c>{base}v2_english</c> alongside the
+    /// existing v1; the next send automatically picks v2 without any code change.</summary>
+    private async Task<WhatsAppTemplate?> FindLatestVersionedTemplateAsync(string baseName, Language language, CancellationToken ct)
     {
-        var suffix = language == Language.English ? new[] { "_english", "_en" } : new[] { "_spanish", "_es" };
-        var candidates = suffix.Select(s => TournamentTemplateBaseName + s)
-            .Concat(new[] { TournamentTemplateBaseName })
-            .ToList();
-        return await _db.WhatsAppTemplates
+        var langSuffixes = language == Language.English
+            ? new[] { "_english", "_en" }
+            : new[] { "_spanish", "_es" };
+        var pattern = $"^{System.Text.RegularExpressions.Regex.Escape(baseName)}(?:_?v(\\d+))?({string.Join("|", langSuffixes.Select(System.Text.RegularExpressions.Regex.Escape))})$";
+        var rx = new System.Text.RegularExpressions.Regex(pattern, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        var all = await _db.WhatsAppTemplates
             .Include(t => t.Variables)
-            .FirstOrDefaultAsync(t => t.Language == language && candidates.Contains(t.Name), ct);
+            .Where(t => t.Language == language)
+            .ToListAsync(ct);
+
+        return all
+            .Select(t => new { Template = t, Match = rx.Match(t.Name) })
+            .Where(x => x.Match.Success)
+            // No v{N} group = v1. Anything else parses the captured number; bigger wins.
+            .OrderByDescending(x => x.Match.Groups[1].Success && int.TryParse(x.Match.Groups[1].Value, out var v) ? v : 1)
+            .FirstOrDefault()?.Template;
     }
 
     /// <summary>Fans out a tournament confirmation request to every rostered player on the
