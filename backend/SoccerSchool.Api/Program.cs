@@ -59,7 +59,10 @@ builder.Services.ConfigureApplicationCookie(opts =>
     opts.Cookie.HttpOnly = true;
     opts.Cookie.SameSite = SameSiteMode.Lax;
     opts.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
-    opts.ExpireTimeSpan = TimeSpan.FromDays(30);
+    // 6h idle timeout. SlidingExpiration resets the clock on each request, so an active
+    // user stays signed in indefinitely; if they stop using the app for 6 hours, the next
+    // request 401s and they're sent to /login.
+    opts.ExpireTimeSpan = TimeSpan.FromHours(6);
     opts.SlidingExpiration = true;
 
     // API requests get JSON-friendly status codes instead of redirects.
