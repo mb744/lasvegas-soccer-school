@@ -837,7 +837,7 @@ public class MessagingController : ControllerBase
         var sourceForVars = enTemplate ?? esTemplate;
         var variables = sourceForVars?.Variables
             .OrderBy(v => v.Position)
-            .Select(v => new WhatsAppTemplateVariableDto(v.Id, v.Position, v.Label, v.Example))
+            .Select(v => new WhatsAppTemplateVariableDto(v.Id, v.Position, v.Label, v.Example, v.PropertyKey))
             .ToList() ?? new List<WhatsAppTemplateVariableDto>();
 
         // Suggest sensible defaults for the two variables on the monthly-fee template. The
@@ -1052,24 +1052,33 @@ public class MessagingController : ControllerBase
         // Reuse the existing TemplatePreview action so the EN/ES rendering pipeline (paired
         // template lookup + phrase-dictionary translation for the variable values) is identical
         // to the Compose tab's preview.
+        var props = BuildTournamentProperties(tournament, team, samplePlayer);
+        var legacy = new Dictionary<int, string> { [1] = datesStr, [2] = sampleName, [3] = costStr };
+        var sampleValues = BuildVariableValuesFromMapping(template, props, legacy);
         var previewResult = await TemplatePreview(new TemplatePreviewRequest
         {
             TemplateId = template.Id,
-            Values = new Dictionary<string, string>
-            {
-                ["1"] = datesStr,
-                ["2"] = sampleName,
-                ["3"] = costStr,
-            },
+            Values = sampleValues,
         }, ct);
         if (previewResult.Result is not OkObjectResult ok || ok.Value is not TemplatePreviewResponse p)
             return BadRequest("Could not build the preview. Check the template configuration.");
+
+        var variableDtos = template.Variables
+            .OrderBy(v => v.Position)
+            .Select(v => new TournamentSendPreviewVariableDto(
+                v.Position,
+                v.Label,
+                v.PropertyKey,
+                sampleValues.TryGetValue(v.Position.ToString(System.Globalization.CultureInfo.InvariantCulture), out var val) ? val : ""))
+            .ToList();
 
         return Ok(new TournamentSendPreviewDto(
             SamplePlayerName: sampleName,
             DatesValue: datesStr,
             CostValue: costStr,
             RosterCount: team.Roster.Count,
+            TemplateId: template.Id,
+            Variables: variableDtos,
             EnglishTemplateName: p.English.TemplateName,
             EnglishRendered: p.English.Rendered,
             SpanishTemplateName: p.Spanish.TemplateName,
@@ -1125,12 +1134,17 @@ public class MessagingController : ControllerBase
         {
             var player = tp.Player;
             if (player is null) { skipped++; continue; }
-            var values = new Dictionary<string, string>
+            // Resolve per-player properties + variable values via the template's mapping.
+            // Falls back to the legacy hard-coded positions when the template hasn't been
+            // mapped yet, so this is safe to call on any tournament template.
+            var props = BuildTournamentProperties(tournament, team, player);
+            var legacy = new Dictionary<int, string>
             {
-                ["1"] = datesStr,
-                ["2"] = $"{player.FirstName} {player.LastName}".Trim(),
-                ["3"] = costStr,
+                [1] = datesStr,
+                [2] = $"{player.FirstName} {player.LastName}".Trim(),
+                [3] = costStr,
             };
+            var values = BuildVariableValuesFromMapping(primary, props, legacy);
             var req = new CreateBroadcastRequest
             {
                 Channel = MessageChannel.WhatsApp,
@@ -1149,6 +1163,63 @@ public class MessagingController : ControllerBase
         }
 
         return Ok(new SendTournamentConfirmationsResult(sent, skipped, team.Roster.Count, null));
+    }
+
+    /// <summary>Per-property resolved values for a tournament confirmation send. Keys here match
+    /// the property registry exposed by <see cref="TemplatePropertyRegistry"/>; mapped variables
+    /// pull their value from this dict at fan-out time.</summary>
+    private static Dictionary<string, string> BuildTournamentProperties(
+        Tournament tournament, Domain.Team team, Domain.Player player)
+    {
+        var us = System.Globalization.CultureInfo.GetCultureInfo("en-US");
+        return new Dictionary<string, string>
+        {
+            ["tournament.dates"] = tournament.StartDate is null ? string.Empty
+                : FormatTournamentDates(tournament.StartDate.Value, tournament.EndDate),
+            ["tournament.startDate"] = tournament.StartDate?.ToString("MMM d, yyyy", us) ?? string.Empty,
+            ["tournament.endDate"] = tournament.EndDate?.ToString("MMM d, yyyy", us) ?? string.Empty,
+            ["tournament.name"] = tournament.Name,
+            ["tournament.costPerPlayer"] = tournament.CostPerPlayer?.ToString("C", us) ?? string.Empty,
+            ["tournament.totalCost"] = tournament.TotalCost?.ToString("C", us) ?? string.Empty,
+            ["team.name"] = team.Name,
+            ["player.firstName"] = player.FirstName,
+            ["player.lastName"] = player.LastName,
+            ["player.fullName"] = $"{player.FirstName} {player.LastName}".Trim(),
+        };
+    }
+
+    /// <summary>Walks the template's variables and fills each one from the resolved property
+    /// dict using <see cref="WhatsAppTemplateVariable.PropertyKey"/>. Falls back to the
+    /// caller's positional defaults for variables that haven't been mapped yet (so legacy
+    /// templates still send correctly until admin assigns mappings).</summary>
+    private static Dictionary<string, string> BuildVariableValuesFromMapping(
+        WhatsAppTemplate template,
+        IReadOnlyDictionary<string, string> properties,
+        IReadOnlyDictionary<int, string> legacyByPosition)
+    {
+        var values = new Dictionary<string, string>();
+        foreach (var v in template.Variables.OrderBy(v => v.Position))
+        {
+            var key = v.Position.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            if (!string.IsNullOrEmpty(v.PropertyKey) &&
+                properties.TryGetValue(v.PropertyKey, out var resolved) &&
+                !string.IsNullOrEmpty(resolved))
+            {
+                values[key] = resolved;
+            }
+            else if (legacyByPosition.TryGetValue(v.Position, out var legacy))
+            {
+                values[key] = legacy;
+            }
+            else
+            {
+                // Placeholder so the broadcast validator (every variable must be non-empty)
+                // doesn't reject the send. Surfaces to the admin as a literal em-dash in the
+                // preview — a clear signal that the variable needs a mapping.
+                values[key] = "—";
+            }
+        }
+        return values;
     }
 
     /// <summary>"May 31, 2026" for a single day, "May 31 – Jun 2, 2026" when the range stays in
@@ -1353,6 +1424,7 @@ public class MessagingController : ControllerBase
             Language = request.Language,
             Description = request.Description?.Trim(),
             PreviewText = request.PreviewText?.Trim(),
+            Context = request.Context,
             Variables = MapVariables(request.Variables)
         };
         _db.WhatsAppTemplates.Add(template);
@@ -1382,11 +1454,39 @@ public class MessagingController : ControllerBase
         template.Language = request.Language;
         template.Description = request.Description?.Trim();
         template.PreviewText = request.PreviewText?.Trim();
+        template.Context = request.Context;
         // Wipe existing variables and replace — simpler than diffing for a small list.
         _db.WhatsAppTemplateVariables.RemoveRange(template.Variables);
         template.Variables = MapVariables(request.Variables);
         await _db.SaveChangesAsync(ct);
         return Ok(ToDto(template, await FindPairAsync(template, ct)));
+    }
+
+    /// <summary>Lists the property registry for a given <see cref="TemplateContext"/>. Drives
+    /// the admin's per-variable "Map to" dropdown so they don't have to memorize key strings.</summary>
+    [HttpGet("template-properties/{context}")]
+    public ActionResult<IEnumerable<TemplatePropertyDto>> ListTemplateProperties(TemplateContext context)
+    {
+        var props = TemplatePropertyRegistry.ForContext(context)
+            .Select(p => new TemplatePropertyDto(p.Key, p.Label))
+            .ToList();
+        return Ok(props);
+    }
+
+    /// <summary>Hard-coded list of the contexts the admin can pick from for a template, used
+    /// to populate the Context dropdown on the Templates tab.</summary>
+    [HttpGet("template-contexts")]
+    public ActionResult<IEnumerable<TemplateContextOptionDto>> ListTemplateContexts()
+    {
+        var opts = new[]
+        {
+            new TemplateContextOptionDto(TemplateContext.FreeForm, "Free-form (admin fills variables manually)"),
+            new TemplateContextOptionDto(TemplateContext.TournamentConfirmation, "Tournament confirmation"),
+            new TemplateContextOptionDto(TemplateContext.EventReminder, "Event reminder (game/practice) — coming soon"),
+            new TemplateContextOptionDto(TemplateContext.EventCancellation, "Event cancellation — coming soon"),
+            new TemplateContextOptionDto(TemplateContext.MonthlyFee, "Monthly fee — coming soon"),
+        };
+        return Ok(opts);
     }
 
     [HttpDelete("whatsapp-templates/{id:int}")]
@@ -1713,13 +1813,13 @@ public class MessagingController : ControllerBase
             p.Id, p.Name, p.Phone, p.TwilioParticipantSid)).ToList());
 
     private static WhatsAppTemplateDto ToDto(WhatsAppTemplate t, WhatsAppTemplate? pair = null) => new(
-        t.Id, t.Name, t.ContentSid, t.Language, t.Description, t.PreviewText, t.CreatedAt,
+        t.Id, t.Name, t.ContentSid, t.Language, t.Description, t.PreviewText, t.Context, t.CreatedAt,
         t.Variables.OrderBy(v => v.Position).Select(v => new WhatsAppTemplateVariableDto(
-            v.Id, v.Position, v.Label, v.Example)).ToList(),
+            v.Id, v.Position, v.Label, v.Example, v.PropertyKey)).ToList(),
         pair is null ? null : new TemplatePairDto(
             pair.Id, pair.Name, pair.ContentSid, pair.Language, pair.PreviewText,
             pair.Variables.OrderBy(v => v.Position).Select(v => new WhatsAppTemplateVariableDto(
-                v.Id, v.Position, v.Label, v.Example)).ToList()));
+                v.Id, v.Position, v.Label, v.Example, v.PropertyKey)).ToList()));
 
     /// <summary>Strips a trailing language suffix from a template name so pairs share a base
     /// name. Recognizes <c>_en</c>, <c>_es</c>, <c>_english</c>, <c>_spanish</c>. So
@@ -1802,7 +1902,8 @@ public class MessagingController : ControllerBase
             {
                 Position = v.Position,
                 Label = v.Label.Trim(),
-                Example = v.Example?.Trim()
+                Example = v.Example?.Trim(),
+                PropertyKey = string.IsNullOrWhiteSpace(v.PropertyKey) ? null : v.PropertyKey.Trim()
             })
             .ToList();
 }

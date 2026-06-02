@@ -496,11 +496,26 @@ export interface GroupConversationDetail {
   participants: GroupConversationParticipantRow[]
 }
 
+export type TemplateContext = 0 | 1 | 2 | 3 | 4 // FreeForm | TournamentConfirmation | EventReminder | EventCancellation | MonthlyFee
+
 export interface WhatsAppTemplateVariable {
   id: number
   position: number
   label: string
   example: string | null
+  /** When set, the send pipeline pulls this variable's value from the template's context
+   *  registry (see TemplateContext). Null = legacy positional behavior. */
+  propertyKey: string | null
+}
+
+export interface TemplateProperty {
+  key: string
+  label: string
+}
+
+export interface TemplateContextOption {
+  context: TemplateContext
+  label: string
 }
 
 export interface TemplatePair {
@@ -519,6 +534,8 @@ export interface WhatsAppTemplate {
   language: Language
   description: string | null
   previewText: string | null
+  /** Drives the per-variable property mapping UI and the send-time resolver. */
+  context: TemplateContext
   createdAt: string
   variables: WhatsAppTemplateVariable[]
   /** Opposite-language counterpart auto-detected by base name (e.g. `practice_or_game` ↔ `practice_or_game_es`). */
@@ -529,6 +546,8 @@ export interface SaveTemplateVariable {
   position: number
   label: string
   example?: string | null
+  /** Optional mapping to a property from the template's Context registry. */
+  propertyKey?: string | null
 }
 
 export interface SaveWhatsAppTemplateRequest {
@@ -537,6 +556,7 @@ export interface SaveWhatsAppTemplateRequest {
   language: Language
   description?: string | null
   previewText?: string | null
+  context?: TemplateContext
   variables: SaveTemplateVariable[]
 }
 
@@ -737,10 +757,21 @@ export interface TournamentSendPreview {
   datesValue: string
   costValue: string
   rosterCount: number
+  /** Frontend uses `templateId` + `variables` to render editable inputs and call
+   *  `/template-preview` with updated values on change for live re-rendering. */
+  templateId: number
+  variables: TournamentSendPreviewVariable[]
   englishTemplateName: string
   englishRendered: string | null
   spanishTemplateName: string
   spanishRendered: string | null
+}
+
+export interface TournamentSendPreviewVariable {
+  position: number
+  label: string
+  propertyKey: string | null
+  value: string
 }
 
 export interface EventRecipient {

@@ -231,7 +231,7 @@ public record GroupConversationDetail(
 
 // --- WhatsApp templates ---
 
-public record WhatsAppTemplateVariableDto(int Id, int Position, string Label, string? Example);
+public record WhatsAppTemplateVariableDto(int Id, int Position, string Label, string? Example, string? PropertyKey);
 
 /// <summary>Lightweight reference to a template's opposite-language counterpart. WhatsApp templates
 /// are language-locked at approval time, so a bilingual broadcast needs two separate templates;
@@ -251,6 +251,7 @@ public record WhatsAppTemplateDto(
     Language Language,
     string? Description,
     string? PreviewText,
+    TemplateContext Context,
     DateTime CreatedAt,
     IReadOnlyList<WhatsAppTemplateVariableDto> Variables,
     TemplatePairDto? Paired);
@@ -264,7 +265,16 @@ public record SaveTemplateVariableDto
 
     [MaxLength(256)]
     public string? Example { get; init; }
+
+    /// <summary>Maps this variable to a property in the parent template's <see cref="TemplateContext"/>.
+    /// Pickable keys come from <c>GET /api/messaging/template-properties/{context}</c>.</summary>
+    [MaxLength(64)]
+    public string? PropertyKey { get; init; }
 }
+
+public record TemplatePropertyDto(string Key, string Label);
+
+public record TemplateContextOptionDto(TemplateContext Context, string Label);
 
 // --- Email templates ---
 
@@ -326,6 +336,8 @@ public record SaveWhatsAppTemplateRequest
 
     [MaxLength(2000)]
     public string? PreviewText { get; init; }
+
+    public TemplateContext Context { get; init; } = TemplateContext.FreeForm;
 
     public List<SaveTemplateVariableDto> Variables { get; init; } = new();
 }

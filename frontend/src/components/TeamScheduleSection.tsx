@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Api } from '../api/client'
 import { pickLatestTemplate } from '../api/templateNaming'
@@ -180,6 +180,29 @@ export function TeamScheduleSection({
   } | null>(null)
   const [cancelLoading, setCancelLoading] = useState<number | null>(null)
   const [cancelSending, setCancelSending] = useState(false)
+
+  // Track the values dict the current `cancelState.preview` was built from. When the admin
+  // edits one of the variable inputs in the modal, the values object changes; we debounce a
+  // re-fetch of /template-preview so both EN and ES panes refresh with the new wording.
+  const lastFetchedCancelValuesRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!cancelState) { lastFetchedCancelValuesRef.current = null; return }
+    const current = JSON.stringify(cancelState.values)
+    if (current === lastFetchedCancelValuesRef.current) return
+    if (lastFetchedCancelValuesRef.current === null) {
+      // First time we see this values set — openCancel just produced it + the initial preview.
+      lastFetchedCancelValuesRef.current = current
+      return
+    }
+    const id = setTimeout(async () => {
+      try {
+        const p = await Api.templatePreview({ templateId: cancelState.template.id, values: cancelState.values })
+        setCancelState(s => s ? { ...s, preview: p } : s)
+        lastFetchedCancelValuesRef.current = current
+      } catch { /* leave previous render in place */ }
+    }, 400)
+    return () => clearTimeout(id)
+  }, [cancelState])
 
   const kindLabel = (ev: ScheduledGame) =>
     ev.kind === 0 ? t('admin.msgKindGame') : t('admin.msgKindPractice')
@@ -568,6 +591,25 @@ export function TeamScheduleSection({
                   {kindLabel(cancelState.event)} · {new Date(cancelState.event.startsAt).toLocaleString()}
                   {cancelState.event.location ? ` · ${cancelState.event.location}` : ''}
                 </div>
+              </div>
+              <div className="border border-slate-200 rounded p-3 bg-slate-50 space-y-2">
+                <div className="text-[10px] uppercase tracking-wide text-slate-500">{t('admin.evtPreviewEditParams')}</div>
+                {cancelState.template.variables
+                  .slice()
+                  .sort((a, b) => a.position - b.position)
+                  .map(v => {
+                    const key = String(v.position)
+                    return (
+                      <label key={v.position} className="grid grid-cols-[6rem_1fr] items-center gap-2 text-xs">
+                        <span className="text-slate-600">
+                          {`{{${v.position}}}`} {v.label}
+                        </span>
+                        <input type="text" value={cancelState.values[key] ?? ''}
+                          onChange={e => setCancelState(s => s ? { ...s, values: { ...s.values, [key]: e.target.value } } : s)}
+                          className="border border-slate-300 rounded-md px-2 py-1 text-sm bg-white" />
+                      </label>
+                    )
+                  })}
               </div>
               <div className="grid md:grid-cols-2 gap-3">
                 <div className="border border-slate-200 rounded p-3 bg-slate-50 text-sm whitespace-pre-wrap">

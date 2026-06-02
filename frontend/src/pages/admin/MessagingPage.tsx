@@ -21,6 +21,9 @@ import type {
   PhraseTranslation,
   SaveTemplateVariable,
   ScheduledGame,
+  TemplateContext,
+  TemplateContextOption,
+  TemplateProperty,
   TemplatePreviewResponse,
   TemplatePreviewSide,
   WhatsAppTemplate,
@@ -1902,24 +1905,38 @@ function TemplatesTab({
   const [description, setDescription] = useState('')
   const [previewText, setPreviewText] = useState('')
   const [vars, setVars] = useState<SaveTemplateVariable[]>([])
+  const [context, setContext] = useState<TemplateContext>(0)
+  const [contextOptions, setContextOptions] = useState<TemplateContextOption[]>([])
+  const [propertyOptions, setPropertyOptions] = useState<TemplateProperty[]>([])
   const v = useRequiredValidation(['name', 'contentSid'])
+
+  // Load the static list of contexts once per session.
+  useEffect(() => {
+    Api.listTemplateContexts().then(setContextOptions).catch(() => { /* non-fatal */ })
+  }, [])
+
+  // Refresh the per-variable property dropdown options whenever the picked context changes.
+  useEffect(() => {
+    Api.listTemplateProperties(context).then(setPropertyOptions).catch(() => setPropertyOptions([]))
+  }, [context])
 
   const loadForm = (tpl: WhatsAppTemplate | null) => {
     if (tpl) {
       setEditingId(tpl.id)
       setName(tpl.name); setContentSid(tpl.contentSid); setLanguage(tpl.language)
       setDescription(tpl.description ?? ''); setPreviewText(tpl.previewText ?? '')
-      setVars(tpl.variables.map(v => ({ position: v.position, label: v.label, example: v.example })))
+      setContext(tpl.context)
+      setVars(tpl.variables.map(v => ({ position: v.position, label: v.label, example: v.example, propertyKey: v.propertyKey })))
     } else {
       setEditingId('new')
       setName(''); setContentSid(''); setLanguage(0)
-      setDescription(''); setPreviewText(''); setVars([])
+      setDescription(''); setPreviewText(''); setContext(0); setVars([])
     }
   }
 
   const addVar = () => {
     const next = vars.length === 0 ? 1 : Math.max(...vars.map(v => v.position)) + 1
-    setVars(prev => [...prev, { position: next, label: '', example: '' }])
+    setVars(prev => [...prev, { position: next, label: '', example: '', propertyKey: null }])
   }
   const updateVar = (idx: number, patch: Partial<SaveTemplateVariable>) =>
     setVars(prev => prev.map((v, i) => i === idx ? { ...v, ...patch } : v))
@@ -1936,6 +1953,7 @@ function TemplatesTab({
       language,
       description: description.trim() || null,
       previewText: previewText.trim() || null,
+      context,
       variables: vars.filter(v => v.label.trim()),
     }
     try {
@@ -2040,6 +2058,16 @@ function TemplatesTab({
                 <input type="text" value={description} onChange={e => setDescription(e.target.value)}
                   className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
               </label>
+              <label className="block text-sm sm:col-span-2">
+                <span className="font-medium text-slate-700">{t('admin.msgTemplateContext')}</span>
+                <select value={context} onChange={e => setContext(Number(e.target.value) as TemplateContext)}
+                  className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm">
+                  {contextOptions.map(c => (
+                    <option key={c.context} value={c.context}>{c.label}</option>
+                  ))}
+                </select>
+                <span className="block text-xs text-slate-500 mt-1">{t('admin.msgTemplateContextHelp')}</span>
+              </label>
             </div>
 
             <label className="block text-sm">
@@ -2059,7 +2087,7 @@ function TemplatesTab({
               <p className="text-xs text-slate-500 mb-2">{t('admin.msgTemplateVariablesHelp')}</p>
               {vars.length === 0 && <p className="text-xs text-slate-400">{t('admin.msgTemplateNoVariables')}</p>}
               {vars.map((v, idx) => (
-                <div key={idx} className="grid grid-cols-[5rem_1fr_1fr_2rem] items-center gap-2 mb-1">
+                <div key={idx} className="grid grid-cols-[3.5rem_1fr_1fr_1fr_2rem] items-center gap-2 mb-1">
                   <input type="number" min={1} value={v.position}
                     onChange={e => updateVar(idx, { position: Number(e.target.value) })}
                     className="border border-slate-300 rounded-md px-2 py-1 text-sm" />
@@ -2069,6 +2097,16 @@ function TemplatesTab({
                   <input type="text" value={v.example ?? ''} placeholder={t('admin.msgTemplateVarExample')}
                     onChange={e => updateVar(idx, { example: e.target.value })}
                     className="border border-slate-300 rounded-md px-2 py-1 text-sm" />
+                  <select value={v.propertyKey ?? ''}
+                    onChange={e => updateVar(idx, { propertyKey: e.target.value || null })}
+                    disabled={propertyOptions.length === 0}
+                    title={t('admin.msgTemplateVarPropertyHelp')}
+                    className="border border-slate-300 rounded-md px-2 py-1 text-sm disabled:bg-slate-50 disabled:text-slate-400">
+                    <option value="">— {t('admin.msgTemplateVarNoMap')} —</option>
+                    {propertyOptions.map(p => (
+                      <option key={p.key} value={p.key}>{p.label}</option>
+                    ))}
+                  </select>
                   <button type="button" onClick={() => removeVar(idx)}
                     className="text-rose-700 text-sm">✕</button>
                 </div>

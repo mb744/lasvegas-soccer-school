@@ -30,6 +30,11 @@ public class WhatsAppTemplate
     [MaxLength(2000)]
     public string? PreviewText { get; set; }
 
+    /// <summary>Which send pipeline this template is for. Drives the property registry shown
+    /// in the admin's variable mapping UI and the send-time resolver. <see cref="TemplateContext.FreeForm"/>
+    /// is the legacy default — variables stay positional and admin fills them by hand.</summary>
+    public TemplateContext Context { get; set; } = TemplateContext.FreeForm;
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public List<WhatsAppTemplateVariable> Variables { get; set; } = new();

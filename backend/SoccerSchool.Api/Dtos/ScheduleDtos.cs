@@ -304,13 +304,25 @@ public record SendTournamentConfirmationsResult(
 /// <summary>Side-by-side EN/ES preview of the tournament confirmation message before the admin
 /// confirms the fan-out. Built from one sample roster player; the actual send fills the player
 /// name variable per recipient. Format strings (dates, cost) come from the same code path the
-/// send uses, so the preview is byte-identical to what parents will see.</summary>
+/// send uses, so the preview is byte-identical to what parents will see.
+///
+/// The frontend uses <see cref="TemplateId"/> + <see cref="Variables"/> to render editable
+/// inputs in the preview modal — admin edits a value, calls /template-preview with the
+/// updated values, and the EN/ES panes re-render live.</summary>
 public record TournamentSendPreviewDto(
     string SamplePlayerName,
     string DatesValue,
     string CostValue,
     int RosterCount,
+    int TemplateId,
+    List<TournamentSendPreviewVariableDto> Variables,
     string EnglishTemplateName,
     string? EnglishRendered,
     string SpanishTemplateName,
     string? SpanishRendered);
+
+public record TournamentSendPreviewVariableDto(
+    int Position,
+    string Label,
+    string? PropertyKey,
+    string Value);

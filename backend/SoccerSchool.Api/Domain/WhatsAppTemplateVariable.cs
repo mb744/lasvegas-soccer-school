@@ -22,4 +22,11 @@ public class WhatsAppTemplateVariable
 
     [MaxLength(256)]
     public string? Example { get; set; }
+
+    /// <summary>Optional mapping to a property in the template's <see cref="TemplateContext"/>
+    /// registry (e.g. "tournament.dates", "player.fullName"). When set, the send pipeline pulls
+    /// the resolved value from the context's resolver instead of relying on hard-coded variable
+    /// positions, so admins can re-order variables in the template body without a code change.</summary>
+    [MaxLength(64)]
+    public string? PropertyKey { get; set; }
 }

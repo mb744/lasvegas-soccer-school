@@ -77,6 +77,9 @@ import type {
   SaveCoachRequest,
   TemplatePreviewRequest,
   TemplatePreviewResponse,
+  TemplateProperty,
+  TemplateContext,
+  TemplateContextOption,
   TranslateRequest,
   TranslateResponse,
   UserSummary,
@@ -656,6 +659,17 @@ export const Api = {
   },
   async templatePreview(payload: TemplatePreviewRequest) {
     const r = await api.post<TemplatePreviewResponse>('/messaging/template-preview', payload)
+    return r.data
+  },
+  /** Lists the property keys exposed by a TemplateContext, used by the admin Templates UI
+   *  to populate the per-variable "Map to" dropdown. */
+  async listTemplateProperties(context: TemplateContext) {
+    const r = await api.get<TemplateProperty[]>(`/messaging/template-properties/${context}`)
+    return r.data
+  },
+  /** Hard-coded list of TemplateContext options for the Context dropdown on the Templates tab. */
+  async listTemplateContexts() {
+    const r = await api.get<TemplateContextOption[]>('/messaging/template-contexts')
     return r.data
   },
 }

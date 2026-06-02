@@ -877,10 +877,10 @@ function formatDateLabel(start: string | null, end: string | null): string {
   return `${s.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })} – ${e.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`
 }
 
-/** Bilingual preview before fanning out tournament confirmations. The English and Spanish
- *  panes show exactly what each guardian will receive (the send pipeline routes each parent
- *  to their preferred language automatically); the sample uses the first rostered player for
- *  the player-name variable, with a disclaimer noting the actual sends iterate the roster. */
+/** Bilingual preview with editable per-variable inputs. Each input change debounces a
+ *  template-preview API call so the EN/ES panes re-render live. The send button only fans out
+ *  AFTER the admin confirms with the final wording shown. Note: edits override the values for
+ *  THIS preview only; the actual send still varies the player-name variable per recipient. */
 function TournamentSendPreviewModal({
   preview, sending, onConfirm, onCancel,
 }: {
@@ -890,6 +890,30 @@ function TournamentSendPreviewModal({
   onCancel: () => void
 }) {
   const { t } = useTranslation()
+  // Local editable copy of each variable's value, plus the live-rendered EN/ES sides.
+  const initialValues = Object.fromEntries(preview.variables.map(v => [String(v.position), v.value]))
+  const [values, setValues] = useState<Record<string, string>>(initialValues)
+  const [en, setEn] = useState<{ name: string; rendered: string | null }>({
+    name: preview.englishTemplateName, rendered: preview.englishRendered,
+  })
+  const [es, setEs] = useState<{ name: string; rendered: string | null }>({
+    name: preview.spanishTemplateName, rendered: preview.spanishRendered,
+  })
+
+  // Debounce re-render on any value change so we don't hammer the API on each keystroke.
+  useEffect(() => {
+    const dirty = preview.variables.some(v => values[String(v.position)] !== v.value)
+    if (!dirty) return
+    const id = setTimeout(async () => {
+      try {
+        const r = await Api.templatePreview({ templateId: preview.templateId, values })
+        setEn({ name: r.english.templateName, rendered: r.english.rendered })
+        setEs({ name: r.spanish.templateName, rendered: r.spanish.rendered })
+      } catch { /* leave previous render in place */ }
+    }, 400)
+    return () => clearTimeout(id)
+  }, [values, preview.templateId])
+
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full p-5 space-y-3 my-8">
@@ -900,22 +924,35 @@ function TournamentSendPreviewModal({
         <div className="text-xs text-slate-500">
           <div>{t('admin.evtTournSendPreviewHelp', { count: preview.rosterCount })}</div>
           <div className="mt-1 text-slate-700">
-            {t('admin.evtTournSendPreviewSample', { name: preview.samplePlayerName })} ·
-            {' '}{preview.datesValue} · {preview.costValue}
+            {t('admin.evtTournSendPreviewSample', { name: preview.samplePlayerName })}
           </div>
+        </div>
+        <div className="border border-slate-200 rounded p-3 bg-slate-50 space-y-2">
+          <div className="text-[10px] uppercase tracking-wide text-slate-500">{t('admin.evtPreviewEditParams')}</div>
+          {preview.variables.map(v => (
+            <label key={v.position} className="grid grid-cols-[6rem_1fr] items-center gap-2 text-xs">
+              <span className="text-slate-600">
+                {`{{${v.position}}}`} {v.label}
+                {v.propertyKey && <span className="block text-[10px] text-slate-400">{v.propertyKey}</span>}
+              </span>
+              <input type="text" value={values[String(v.position)] ?? ''}
+                onChange={e => setValues(prev => ({ ...prev, [String(v.position)]: e.target.value }))}
+                className="border border-slate-300 rounded-md px-2 py-1 text-sm bg-white" />
+            </label>
+          ))}
         </div>
         <div className="grid md:grid-cols-2 gap-3">
           <div className="border border-slate-200 rounded p-3 bg-slate-50 text-sm whitespace-pre-wrap">
             <div className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">
-              English · {preview.englishTemplateName}
+              English · {en.name}
             </div>
-            {preview.englishRendered ?? '—'}
+            {en.rendered ?? '—'}
           </div>
           <div className="border border-slate-200 rounded p-3 bg-slate-50 text-sm whitespace-pre-wrap">
             <div className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">
-              Español · {preview.spanishTemplateName}
+              Español · {es.name}
             </div>
-            {preview.spanishRendered ?? '—'}
+            {es.rendered ?? '—'}
           </div>
         </div>
         <div className="flex items-center gap-3 pt-1">
