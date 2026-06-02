@@ -38,6 +38,7 @@ import type {
   UpdateTournamentTeamRequest,
   TournamentAttendanceList,
   SendTournamentConfirmationsResult,
+  ResendTournamentConfirmationsRequest,
   TournamentSendPreview,
   InboundMessage,
   PracticeSeriesCreated,
@@ -568,6 +569,15 @@ export const Api = {
   async sendTournamentTeamConfirmations(tournamentId: number, teamId: number) {
     const r = await api.post<SendTournamentConfirmationsResult>(
       `/messaging/tournaments/${tournamentId}/teams/${teamId}/send-confirmations`, {})
+    return r.data
+  },
+  /** Per-team re-send scoped to a subset of the roster: failed delivery, never delivered
+   *  (player added after the original send, or only legacy broadcasts), and/or no response yet. */
+  async resendTournamentTeamConfirmations(
+    tournamentId: number, teamId: number, filter: ResendTournamentConfirmationsRequest,
+  ) {
+    const r = await api.post<SendTournamentConfirmationsResult>(
+      `/messaging/tournaments/${tournamentId}/teams/${teamId}/resend-confirmations`, filter)
     return r.data
   },
   /** Pre-send bilingual preview of the tournament confirmation message, using the first

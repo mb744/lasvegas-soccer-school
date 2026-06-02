@@ -144,6 +144,10 @@ public record CreateBroadcastRequest
     /// replies to TournamentAttendance.</summary>
     public int? TournamentId { get; init; }
 
+    /// <summary>When this broadcast targets a single player (per-player tournament confirmation),
+    /// the player's ID. Stored so the resend flow can find the last delivery status per player.</summary>
+    public int? PlayerId { get; init; }
+
     public BroadcastTargetDto Target { get; init; } = new();
 }
 

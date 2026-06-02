@@ -60,6 +60,12 @@ public class Broadcast
     public int? TournamentId { get; set; }
     public Tournament? Tournament { get; set; }
 
+    /// <summary>When this broadcast was a per-player send (currently: per-player tournament
+    /// confirmation), the player it targeted. Lets the resend flow find the last delivery
+    /// status for a given player without phone-string round-trips.</summary>
+    public int? PlayerId { get; set; }
+    public Player? Player { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public List<BroadcastRecipient> Recipients { get; set; } = new();

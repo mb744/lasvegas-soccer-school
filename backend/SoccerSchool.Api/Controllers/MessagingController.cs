@@ -334,7 +334,8 @@ public class MessagingController : ControllerBase
             WhatsAppTemplateId = template?.Id,
             TemplateVariablesJson = (isWhatsAppTemplate || isEmailTemplate) ? JsonSerializer.Serialize(templateVars) : null,
             ScheduledGameId = request.ScheduledGameId,
-            TournamentId = request.TournamentId
+            TournamentId = request.TournamentId,
+            PlayerId = request.PlayerId,
         };
         foreach (var r in resolved.Recipients)
         {
@@ -1013,7 +1014,7 @@ public class MessagingController : ControllerBase
     /// inbound WhatsApp replies are routed to <see cref="TournamentAttendance"/> by the webhook.</summary>
     [HttpPost("tournaments/{tournamentId:int}/send-confirmations")]
     public Task<ActionResult<SendTournamentConfirmationsResult>> SendTournamentConfirmations(
-        int tournamentId, CancellationToken ct) => SendTournamentTeamConfirmationsInternal(tournamentId, teamId: null, ct);
+        int tournamentId, CancellationToken ct) => SendTournamentTeamConfirmationsInternal(tournamentId, teamId: null, includePlayerIds: null, ct);
 
     /// <summary>Builds the side-by-side EN/ES preview shown in the admin's "Send confirmations"
     /// modal. Uses the first rostered player as a sample for variable 2 (player name); variables
@@ -1092,10 +1093,83 @@ public class MessagingController : ControllerBase
     [HttpPost("tournaments/{tournamentId:int}/teams/{teamId:int}/send-confirmations")]
     public Task<ActionResult<SendTournamentConfirmationsResult>> SendTournamentTeamConfirmations(
         int tournamentId, int teamId, CancellationToken ct) =>
-        SendTournamentTeamConfirmationsInternal(tournamentId, teamId, ct);
+        SendTournamentTeamConfirmationsInternal(tournamentId, teamId, includePlayerIds: null, ct);
+
+    /// <summary>Per-team resend: same fan-out as send-confirmations but scoped to a subset of
+    /// the roster computed from the filter checkboxes (failed delivery / never delivered / no
+    /// response). The admin picks which buckets to include; we union the matching player ids
+    /// and resend only to those.</summary>
+    [HttpPost("tournaments/{tournamentId:int}/teams/{teamId:int}/resend-confirmations")]
+    public async Task<ActionResult<SendTournamentConfirmationsResult>> ResendTournamentTeamConfirmations(
+        int tournamentId, int teamId,
+        [FromBody] ResendTournamentConfirmationsRequest request,
+        CancellationToken ct)
+    {
+        if (!request.IncludeFailed && !request.IncludeUndelivered && !request.IncludeNoResponse)
+            return BadRequest("Pick at least one re-send filter.");
+
+        var rosterIds = await _db.TeamPlayers
+            .Where(tp => tp.TeamId == teamId)
+            .Select(tp => tp.PlayerId)
+            .ToListAsync(ct);
+        if (rosterIds.Count == 0)
+            return BadRequest("This team has no rostered players.");
+
+        // Last broadcast per player for this tournament (PlayerId-tagged sends only — legacy
+        // sends without PlayerId are treated as "no broadcast on record").
+        var lastBroadcastByPlayer = await _db.Broadcasts
+            .Where(b => b.TournamentId == tournamentId && b.PlayerId != null && rosterIds.Contains(b.PlayerId!.Value))
+            .GroupBy(b => b.PlayerId!.Value)
+            .Select(g => new { PlayerId = g.Key, LastBroadcastId = g.OrderByDescending(b => b.CreatedAt).First().Id })
+            .ToListAsync(ct);
+        var lastBroadcastIds = lastBroadcastByPlayer.Select(x => x.LastBroadcastId).ToList();
+        var statusesByBroadcast = await _db.BroadcastRecipients
+            .Where(r => lastBroadcastIds.Contains(r.BroadcastId))
+            .GroupBy(r => r.BroadcastId)
+            .Select(g => new { BroadcastId = g.Key, Statuses = g.Select(r => r.Status).ToList() })
+            .ToDictionaryAsync(x => x.BroadcastId, x => x.Statuses, ct);
+        var lastStatusesByPlayer = lastBroadcastByPlayer
+            .ToDictionary(x => x.PlayerId, x => statusesByBroadcast.TryGetValue(x.LastBroadcastId, out var s) ? s : new List<MessageDeliveryStatus>());
+
+        var pendingAttendance = await _db.TournamentAttendances
+            .Where(a => a.TournamentId == tournamentId
+                && rosterIds.Contains(a.PlayerId)
+                && a.Status == AttendanceStatus.Pending)
+            .Select(a => a.PlayerId)
+            .ToHashSetAsync(ct);
+        // Players with NO TournamentAttendance row at all also count as Pending (never replied).
+        var hasAttendanceRow = await _db.TournamentAttendances
+            .Where(a => a.TournamentId == tournamentId && rosterIds.Contains(a.PlayerId))
+            .Select(a => a.PlayerId)
+            .ToHashSetAsync(ct);
+
+        var include = new HashSet<int>();
+        foreach (var pid in rosterIds)
+        {
+            if (request.IncludeNoResponse
+                && (pendingAttendance.Contains(pid) || !hasAttendanceRow.Contains(pid)))
+            {
+                include.Add(pid); continue;
+            }
+            if (lastStatusesByPlayer.TryGetValue(pid, out var statuses) && statuses.Count > 0)
+            {
+                var anySuccess = statuses.Any(s => s == MessageDeliveryStatus.Sent || s == MessageDeliveryStatus.Delivered);
+                var allFailed = !anySuccess && statuses.All(s => s == MessageDeliveryStatus.Failed || s == MessageDeliveryStatus.Undelivered);
+                if (request.IncludeFailed && allFailed) include.Add(pid);
+            }
+            else if (request.IncludeUndelivered)
+            {
+                // No PlayerId-tagged broadcast on record (player added after the original send,
+                // or only legacy broadcasts exist).
+                include.Add(pid);
+            }
+        }
+
+        return await SendTournamentTeamConfirmationsInternal(tournamentId, teamId, include, ct);
+    }
 
     private async Task<ActionResult<SendTournamentConfirmationsResult>> SendTournamentTeamConfirmationsInternal(
-        int tournamentId, int? teamId, CancellationToken ct)
+        int tournamentId, int? teamId, IReadOnlySet<int>? includePlayerIds, CancellationToken ct)
     {
         if (!_sender.IsAvailable(MessageChannel.WhatsApp))
             return BadRequest("WhatsApp not configured on this server.");
@@ -1129,11 +1203,13 @@ public class MessagingController : ControllerBase
         var datesStr = FormatTournamentDates(tournament.StartDate.Value, tournament.EndDate);
         var costStr = tournament.CostPerPlayer.Value.ToString("C", System.Globalization.CultureInfo.GetCultureInfo("en-US"));
 
-        int sent = 0, skipped = 0;
+        int sent = 0, skipped = 0, targeted = 0;
         foreach (var tp in team.Roster)
         {
             var player = tp.Player;
             if (player is null) { skipped++; continue; }
+            if (includePlayerIds is not null && !includePlayerIds.Contains(player.Id)) continue;
+            targeted++;
             // Resolve per-player properties + variable values via the template's mapping.
             // Falls back to the legacy hard-coded positions when the template hasn't been
             // mapped yet, so this is safe to call on any tournament template.
@@ -1151,6 +1227,7 @@ public class MessagingController : ControllerBase
                 WhatsAppTemplateId = primary.Id,
                 TemplateVariables = values,
                 TournamentId = tournamentId,
+                PlayerId = player.Id,
                 Target = new BroadcastTargetDto
                 {
                     Kind = RecipientTargetKindDto.DynamicGroup,
@@ -1162,7 +1239,8 @@ public class MessagingController : ControllerBase
             else skipped++;
         }
 
-        return Ok(new SendTournamentConfirmationsResult(sent, skipped, team.Roster.Count, null));
+        var total = includePlayerIds is null ? team.Roster.Count : targeted;
+        return Ok(new SendTournamentConfirmationsResult(sent, skipped, total, null));
     }
 
     /// <summary>Per-property resolved values for a tournament confirmation send. Keys here match

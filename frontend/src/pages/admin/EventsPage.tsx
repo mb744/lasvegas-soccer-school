@@ -444,6 +444,12 @@ function TournamentTeamPanel({
 
   const [preview, setPreview] = useState<TournamentSendPreview | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
+  const [showResend, setShowResend] = useState(false)
+  const [resendFilter, setResendFilter] = useState({
+    includeFailed: true,
+    includeUndelivered: true,
+    includeNoResponse: true,
+  })
 
   const openSendPreview = async () => {
     setPreviewLoading(true); onError(''); onNotice('')
@@ -461,6 +467,22 @@ function TournamentTeamPanel({
       const att = await Api.getTournamentTeamAttendance(tour.id, tt.teamId)
       setAttendance(att)
       setPreview(null)
+    } catch (e: any) { onError(errMsg(e)) }
+    finally { setSending(false) }
+  }
+
+  const runResend = async () => {
+    if (!resendFilter.includeFailed && !resendFilter.includeUndelivered && !resendFilter.includeNoResponse) {
+      onError(t('admin.evtTournResendPickFilter'))
+      return
+    }
+    setSending(true); onError(''); onNotice('')
+    try {
+      const r = await Api.resendTournamentTeamConfirmations(tour.id, tt.teamId, resendFilter)
+      onNotice(t('admin.evtTournResendDone', { sent: r.sent, total: r.total }))
+      const att = await Api.getTournamentTeamAttendance(tour.id, tt.teamId)
+      setAttendance(att)
+      setShowResend(false)
     } catch (e: any) { onError(errMsg(e)) }
     finally { setSending(false) }
   }
@@ -675,15 +697,53 @@ function TournamentTeamPanel({
 
       {/* Roster + Send confirmations + Attendance */}
       <section>
-        <div className="flex items-center justify-between mb-1">
+        <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
           <h3 className="font-semibold text-emerald-800 text-sm">{t('admin.evtTournRosterHeader')}</h3>
-          <button onClick={openSendPreview}
-            disabled={previewLoading || sending || tt.rosterCount === 0 || tour.costPerPlayer === null}
-            className="text-sm bg-emerald-700 text-white px-3 py-1.5 rounded-md hover:bg-emerald-800 disabled:opacity-50">
-            {previewLoading ? t('admin.evtCancelLoading') : sending ? t('admin.sending') : t('admin.evtTournSend')}
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setShowResend(s => !s)}
+              disabled={sending || tt.rosterCount === 0 || tour.costPerPlayer === null}
+              className="text-sm border border-emerald-700 text-emerald-700 px-3 py-1.5 rounded-md hover:bg-emerald-50 disabled:opacity-50">
+              {t('admin.evtTournResend')}
+            </button>
+            <button onClick={openSendPreview}
+              disabled={previewLoading || sending || tt.rosterCount === 0 || tour.costPerPlayer === null}
+              className="text-sm bg-emerald-700 text-white px-3 py-1.5 rounded-md hover:bg-emerald-800 disabled:opacity-50">
+              {previewLoading ? t('admin.evtCancelLoading') : sending ? t('admin.sending') : t('admin.evtTournSend')}
+            </button>
+          </div>
         </div>
         <p className="text-xs text-slate-500 mb-2">{t('admin.evtTournSendHelp')}</p>
+
+        {showResend && (
+          <div className="bg-white border border-emerald-200 rounded p-3 mb-3 space-y-2">
+            <div className="text-xs font-medium text-emerald-800">{t('admin.evtTournResendHeader')}</div>
+            <p className="text-[11px] text-slate-500">{t('admin.evtTournResendHelp')}</p>
+            <label className="flex items-center gap-2 text-xs text-slate-700">
+              <input type="checkbox" checked={resendFilter.includeFailed}
+                onChange={e => setResendFilter(f => ({ ...f, includeFailed: e.target.checked }))} />
+              <span>{t('admin.evtTournResendFailed')}</span>
+            </label>
+            <label className="flex items-center gap-2 text-xs text-slate-700">
+              <input type="checkbox" checked={resendFilter.includeUndelivered}
+                onChange={e => setResendFilter(f => ({ ...f, includeUndelivered: e.target.checked }))} />
+              <span>{t('admin.evtTournResendUndelivered')}</span>
+            </label>
+            <label className="flex items-center gap-2 text-xs text-slate-700">
+              <input type="checkbox" checked={resendFilter.includeNoResponse}
+                onChange={e => setResendFilter(f => ({ ...f, includeNoResponse: e.target.checked }))} />
+              <span>{t('admin.evtTournResendNoResponse')}</span>
+            </label>
+            <div className="flex gap-2 pt-1">
+              <button onClick={runResend} disabled={sending}
+                className="text-xs bg-emerald-700 text-white px-3 py-1.5 rounded-md hover:bg-emerald-800 disabled:opacity-50">
+                {sending ? t('admin.sending') : t('admin.evtTournResendGo')}
+              </button>
+              <button onClick={() => setShowResend(false)} className="text-xs text-slate-600 hover:underline">
+                {t('admin.cancel')}
+              </button>
+            </div>
+          </div>
+        )}
 
         {preview && (
           <TournamentSendPreviewModal

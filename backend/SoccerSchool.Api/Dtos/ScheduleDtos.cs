@@ -305,6 +305,21 @@ public record SendTournamentConfirmationsResult(
     int Total,
     string? Message);
 
+/// <summary>Filters for the per-team "Re-send confirmations" flow. The admin opens a small
+/// dialog and ticks which buckets to include — each filter ORs into the included set:
+/// <list type="bullet">
+///   <item>IncludeFailed: last-broadcast delivery status was Failed or Undelivered (every family
+///   recipient failed).</item>
+///   <item>IncludeUndelivered: never had a broadcast with PlayerId — e.g. a player added after
+///   the original send. Also covers stuck Pending/Queued/Sent that never got a status callback.</item>
+///   <item>IncludeNoResponse: TournamentAttendance.Status is still Pending (no Yes/No reply yet).</item>
+/// </list>
+/// At least one filter must be true; if none match any player, the response Sent=0.</summary>
+public record ResendTournamentConfirmationsRequest(
+    bool IncludeFailed,
+    bool IncludeUndelivered,
+    bool IncludeNoResponse);
+
 /// <summary>Side-by-side EN/ES preview of the tournament confirmation message before the admin
 /// confirms the fan-out. Built from one sample roster player; the actual send fills the player
 /// name variable per recipient. Format strings (dates, cost) come from the same code path the

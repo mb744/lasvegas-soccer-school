@@ -755,6 +755,13 @@ export interface SendTournamentConfirmationsResult {
   message: string | null
 }
 
+/** Filter buckets for the per-team "Re-send confirmations" flow. At least one must be true. */
+export interface ResendTournamentConfirmationsRequest {
+  includeFailed: boolean
+  includeUndelivered: boolean
+  includeNoResponse: boolean
+}
+
 /** Pre-send EN/ES preview for tournament confirmations. The sample uses the first rostered
  *  player's name for variable 2; dates and cost are formatted identically to the actual send. */
 export interface TournamentSendPreview {
