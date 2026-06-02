@@ -167,7 +167,7 @@ public class ScheduleController : ControllerBase
         var rows = await _db.Tournaments
             .OrderByDescending(t => t.CreatedAt)
             .Select(t => new TournamentSummary(
-                t.Id, t.Name, t.StartDate, t.EndDate, t.TotalCost, t.CostPerPlayer,
+                t.Id, t.Name, t.Kind, t.StartDate, t.EndDate, t.TotalCost, t.CostPerPlayer,
                 t.TeamId, t.Team != null ? t.Team.Name : null,
                 t.GotSportEventId, t.GotSportTeamId,
                 t.LastSyncedAt, t.LastSyncMessage,
@@ -199,6 +199,7 @@ public class ScheduleController : ControllerBase
         var tournament = new Tournament
         {
             Name = name!,
+            Kind = request.Kind,
             StartDate = request.StartDate,
             EndDate = request.EndDate,
             TotalCost = request.TotalCost,
@@ -225,6 +226,7 @@ public class ScheduleController : ControllerBase
         var (gsEventId, gsTeamId) = ResolveOptionalGotSportIds(request);
 
         tournament.Name = name!;
+        tournament.Kind = request.Kind;
         tournament.StartDate = request.StartDate;
         tournament.EndDate = request.EndDate;
         tournament.TotalCost = request.TotalCost;
@@ -412,7 +414,7 @@ public class ScheduleController : ControllerBase
         return await _db.Tournaments
             .Where(t => t.Id == id)
             .Select(t => new TournamentSummary(
-                t.Id, t.Name, t.StartDate, t.EndDate, t.TotalCost, t.CostPerPlayer,
+                t.Id, t.Name, t.Kind, t.StartDate, t.EndDate, t.TotalCost, t.CostPerPlayer,
                 t.TeamId, t.Team != null ? t.Team.Name : null,
                 t.GotSportEventId, t.GotSportTeamId,
                 t.LastSyncedAt, t.LastSyncMessage,
@@ -583,6 +585,71 @@ public class ScheduleController : ControllerBase
     [HttpPost("practices/{id:int}/cancel")]
     public Task<ActionResult<ScheduledGameDto>> CancelPractice(int id, CancellationToken ct) =>
         CancelEventInternal(id, ScheduledEventKind.Practice, ct);
+
+    // --- Manual miscellaneous CRUD ---
+    //
+    // One-off team events that aren't games or practices (banquets, team photos, fundraisers).
+    // Same shape as practice rows (date + location + summary), just Kind=Miscellaneous so they
+    // surface in their own tab and don't get confused with weekly practice scheduling.
+
+    [HttpPost("teams/{teamId:int}/misc-events")]
+    public async Task<ActionResult<ScheduledGameDto>> CreateMiscEvent(
+        int teamId, [FromBody] SavePracticeRequest request, CancellationToken ct)
+    {
+        var team = await _db.Teams.Include(t => t.MessageGroup).FirstOrDefaultAsync(t => t.Id == teamId, ct);
+        if (team is null) return NotFound();
+        if (request.StartsAt == default) return BadRequest("Start time is required.");
+
+        var ev = new ScheduledGame
+        {
+            TeamId = team.Id,
+            Kind = ScheduledEventKind.Miscellaneous,
+            ExternalUid = $"misc-{Guid.NewGuid():N}",
+            StartsAt = DateTime.SpecifyKind(request.StartsAt, DateTimeKind.Utc),
+            EndsAt = request.EndsAt.HasValue ? DateTime.SpecifyKind(request.EndsAt.Value, DateTimeKind.Utc) : null,
+            Location = string.IsNullOrWhiteSpace(request.Location) ? null : request.Location.Trim(),
+            Summary = string.IsNullOrWhiteSpace(request.Summary) ? "Event" : request.Summary.Trim(),
+            CreatedAt = DateTime.UtcNow,
+            LastSeenAt = DateTime.UtcNow
+        };
+        _db.ScheduledGames.Add(ev);
+        await _db.SaveChangesAsync(ct);
+        return Ok(ToDto(ev, team));
+    }
+
+    [HttpPut("misc-events/{id:int}")]
+    public async Task<ActionResult<ScheduledGameDto>> UpdateMiscEvent(
+        int id, [FromBody] SavePracticeRequest request, CancellationToken ct)
+    {
+        var ev = await _db.ScheduledGames
+            .Include(g => g.Team).ThenInclude(t => t!.MessageGroup)
+            .FirstOrDefaultAsync(g => g.Id == id && g.Kind == ScheduledEventKind.Miscellaneous, ct);
+        if (ev is null) return NotFound();
+        if (request.StartsAt == default) return BadRequest("Start time is required.");
+
+        ev.StartsAt = DateTime.SpecifyKind(request.StartsAt, DateTimeKind.Utc);
+        ev.EndsAt = request.EndsAt.HasValue ? DateTime.SpecifyKind(request.EndsAt.Value, DateTimeKind.Utc) : null;
+        ev.Location = string.IsNullOrWhiteSpace(request.Location) ? null : request.Location.Trim();
+        ev.Summary = string.IsNullOrWhiteSpace(request.Summary) ? "Event" : request.Summary.Trim();
+        ev.LastSeenAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        return Ok(ToDto(ev, ev.Team!));
+    }
+
+    [HttpDelete("misc-events/{id:int}")]
+    public async Task<IActionResult> DeleteMiscEvent(int id, CancellationToken ct)
+    {
+        var ev = await _db.ScheduledGames
+            .FirstOrDefaultAsync(g => g.Id == id && g.Kind == ScheduledEventKind.Miscellaneous, ct);
+        if (ev is null) return NotFound();
+        _db.ScheduledGames.Remove(ev);
+        await _db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
+    [HttpPost("misc-events/{id:int}/cancel")]
+    public Task<ActionResult<ScheduledGameDto>> CancelMiscEvent(int id, CancellationToken ct) =>
+        CancelEventInternal(id, ScheduledEventKind.Miscellaneous, ct);
 
     // --- Manual game CRUD ---
     //

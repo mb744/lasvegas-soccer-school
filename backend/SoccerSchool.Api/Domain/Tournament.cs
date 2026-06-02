@@ -20,6 +20,10 @@ public class Tournament
     [Required, MaxLength(128)]
     public string Name { get; set; } = string.Empty;
 
+    /// <summary>Tournament vs League. Shares the rest of the schema; only the UI labeling and
+    /// default cadence differ. Defaults to <see cref="TournamentKind.Tournament"/>.</summary>
+    public TournamentKind Kind { get; set; } = TournamentKind.Tournament;
+
     /// <summary>Inclusive first day of the tournament. Used as half of the formatted date string
     /// the WhatsApp template renders as parameter 1.</summary>
     public DateOnly? StartDate { get; set; }

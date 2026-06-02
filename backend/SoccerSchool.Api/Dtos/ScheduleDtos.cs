@@ -183,6 +183,7 @@ public record SetAttendanceRequest
 public record TournamentSummary(
     int Id,
     string Name,
+    TournamentKind Kind,
     DateOnly? StartDate,
     DateOnly? EndDate,
     decimal? TotalCost,
@@ -209,6 +210,9 @@ public record SaveTournamentRequest
 {
     [Required, MaxLength(128)]
     public string Name { get; init; } = string.Empty;
+
+    /// <summary>Tournament or League. Defaults to Tournament for backward compat.</summary>
+    public TournamentKind Kind { get; init; } = TournamentKind.Tournament;
 
     public DateOnly? StartDate { get; init; }
     public DateOnly? EndDate { get; init; }

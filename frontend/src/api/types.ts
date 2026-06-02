@@ -625,7 +625,7 @@ export interface TeamSummary {
   createdAt: string
 }
 
-export type ScheduledEventKind = 0 | 1 // Game | Practice
+export type ScheduledEventKind = 0 | 1 | 2 // Game | Practice | Miscellaneous
 
 export interface ScheduledGame {
   id: number
@@ -649,9 +649,13 @@ export interface ScheduledGame {
   tournamentName: string | null
 }
 
+export type TournamentKind = 0 | 1 // Tournament | League
+
 export interface TournamentSummary {
   id: number
   name: string
+  /** Tournament or League. Shares the same data shape; only labeling differs. */
+  kind: TournamentKind
   /** Inclusive first day. YYYY-MM-DD; null when admin hasn't filled it in yet. */
   startDate: string | null
   /** Inclusive last day. */
@@ -709,6 +713,7 @@ export interface UpdateTournamentTeamRequest {
 
 export interface SaveTournamentRequest {
   name: string
+  kind?: TournamentKind
   startDate?: string | null
   endDate?: string | null
   totalCost?: number | null

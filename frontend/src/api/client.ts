@@ -477,6 +477,22 @@ export const Api = {
     const r = await api.post<ScheduledGame>(`/schedule/practices/${id}/cancel`, {})
     return r.data
   },
+  // Miscellaneous events (banquets, photos, fundraisers) — same shape as practice.
+  async createMiscEvent(teamId: number, payload: SavePracticeRequest) {
+    const r = await api.post<ScheduledGame>(`/schedule/teams/${teamId}/misc-events`, payload)
+    return r.data
+  },
+  async updateMiscEvent(id: number, payload: SavePracticeRequest) {
+    const r = await api.put<ScheduledGame>(`/schedule/misc-events/${id}`, payload)
+    return r.data
+  },
+  async deleteMiscEvent(id: number) {
+    await api.delete(`/schedule/misc-events/${id}`)
+  },
+  async cancelMiscEvent(id: number) {
+    const r = await api.post<ScheduledGame>(`/schedule/misc-events/${id}/cancel`, {})
+    return r.data
+  },
   async createGame(teamId: number, payload: SaveGameRequest) {
     const r = await api.post<ScheduledGame>(`/schedule/teams/${teamId}/games`, payload)
     return r.data

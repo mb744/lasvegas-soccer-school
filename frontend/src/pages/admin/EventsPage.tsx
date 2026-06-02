@@ -6,7 +6,7 @@ import { TeamScheduleSection } from '../../components/TeamScheduleSection'
 import { RequiredLabel, useRequiredValidation } from '../../components/RequiredField'
 import { Api } from '../../api/client'
 import type {
-  RosterTeamSummary, RosterTeamDetail, TournamentSummary, TournamentTeam,
+  RosterTeamSummary, RosterTeamDetail, TournamentSummary, TournamentTeam, TournamentKind,
   AttendanceStatus, TournamentAttendanceList, AvailablePlayer,
   TeamDetail, ScheduledGame, TournamentSendPreview,
 } from '../../api/types'
@@ -15,7 +15,7 @@ function errMsg(e: any): string {
   return e?.response?.data?.title || e?.response?.data || e?.message || 'Error'
 }
 
-type Tab = 'practices' | 'games' | 'tournaments'
+type Tab = 'practices' | 'games' | 'tournaments' | 'misc'
 
 export function AdminEventsPage() {
   const { t } = useTranslation()
@@ -47,10 +47,11 @@ export function AdminEventsPage() {
           <p className="text-sm text-slate-600 mt-1">{t('admin.evtBlurb')}</p>
         </div>
 
-        <div className="flex gap-1 border-b border-slate-200">
+        <div className="flex gap-1 border-b border-slate-200 flex-wrap">
           {tabBtn('practices', t('admin.evtTabPractices'))}
           {tabBtn('games', t('admin.evtTabGames'))}
-          {tabBtn('tournaments', t('admin.evtTabTournaments'))}
+          {tabBtn('tournaments', t('admin.evtTabTournamentsLeagues'))}
+          {tabBtn('misc', t('admin.evtTabMisc'))}
         </div>
 
         {error && <div className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-md p-3">{error}</div>}
@@ -65,17 +66,21 @@ export function AdminEventsPage() {
         {tab === 'tournaments' && (
           <TournamentsTab teams={teams} onError={setError} onNotice={setNotice} />
         )}
+        {tab === 'misc' && (
+          <TeamEventsTab teams={teams} kind="misc" onError={setError} onNotice={setNotice} />
+        )}
       </div>
     </Layout>
   )
 }
 
-/** Practices/Games tab: pick a team, then reuse the schedule editor (filtered to one kind). */
+/** Practices/Games/Miscellaneous tab: pick a team, then reuse the schedule editor filtered
+ *  to one kind. */
 function TeamEventsTab({
   teams, kind, onError, onNotice,
 }: {
   teams: RosterTeamSummary[]
-  kind: 'practice' | 'game'
+  kind: 'practice' | 'game' | 'misc'
   onError: (e: string) => void
   onNotice: (n: string) => void
 }) {
@@ -137,6 +142,7 @@ function TournamentsTab({
   const [expandedId, setExpandedId] = useState<number | null>(null)
 
   const [name, setName] = useState('')
+  const [kind, setKind] = useState<TournamentKind>(0)
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [totalCost, setTotalCost] = useState('')
@@ -159,12 +165,13 @@ function TournamentsTab({
     try {
       await Api.createTournament({
         name: name.trim(),
+        kind,
         startDate: startDate || null,
         endDate: endDate || null,
         totalCost: totalCost === '' ? null : Number(totalCost),
         costPerPlayer: costPerPlayer === '' ? null : Number(costPerPlayer),
       })
-      setName(''); setStartDate(''); setEndDate(''); setTotalCost(''); setCostPerPlayer('')
+      setName(''); setKind(0); setStartDate(''); setEndDate(''); setTotalCost(''); setCostPerPlayer('')
       await refresh()
       onNotice(t('admin.evtTournCreated'))
     } catch (e: any) { onError(errMsg(e)) }
@@ -183,12 +190,20 @@ function TournamentsTab({
         <h2 className="font-bold text-emerald-800">{t('admin.evtNewTournament')}</h2>
         <p className="text-xs text-slate-500 mt-1">{t('admin.evtTournCreateHelp')}</p>
         <form onSubmit={create} noValidate className="mt-3 grid sm:grid-cols-2 gap-3">
-          <label className="block text-sm sm:col-span-2">
+          <label className="block text-sm">
             <RequiredLabel>{t('admin.evtTournName')}</RequiredLabel>
             <input ref={vTour.register('name')} type="text" value={name}
               onChange={e => setName(e.target.value)}
               onBlur={e => vTour.onFieldBlur('name', e.target.value)}
               className={`mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm ${vTour.fieldCls('name')}`} />
+          </label>
+          <label className="block text-sm">
+            <span className="font-medium text-slate-700">{t('admin.evtTournKind')}</span>
+            <select value={kind} onChange={e => setKind(Number(e.target.value) as TournamentKind)}
+              className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm">
+              <option value={0}>{t('admin.evtTournKindTournament')}</option>
+              <option value={1}>{t('admin.evtTournKindLeague')}</option>
+            </select>
           </label>
           <label className="block text-sm">
             <RequiredLabel>{t('admin.evtTournStartDate')}</RequiredLabel>
@@ -271,7 +286,14 @@ function TournamentCard({
     <li className="bg-white border border-slate-200 rounded-lg p-4">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
-          <div className="font-bold text-emerald-800">{tour.name}</div>
+          <div className="font-bold text-emerald-800 flex items-center gap-2">
+            <span>{tour.name}</span>
+            <span className={`text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded ${tour.kind === 1
+              ? 'bg-indigo-100 text-indigo-800'
+              : 'bg-sky-100 text-sky-800'}`}>
+              {tour.kind === 1 ? t('admin.evtTournKindLeague') : t('admin.evtTournKindTournament')}
+            </span>
+          </div>
           <div className="text-xs text-slate-500">
             {dateLabel} · {costLabel} · {teamsLabel}
           </div>

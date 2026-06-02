@@ -31,22 +31,25 @@ export function TeamScheduleSection({
   onError: (e: string) => void
   onNotice: (n: string) => void
   /** Restrict the table + add-buttons to one event kind. Omit to show practices and games together. */
-  kind?: 'practice' | 'game'
+  kind?: 'practice' | 'game' | 'misc'
 }) {
   const { t } = useTranslation()
-  // Time-sorted list, optionally filtered to one kind (0 = Game, 1 = Practice).
+  // Time-sorted list, optionally filtered to one kind (0 = Game, 1 = Practice, 2 = Misc).
   const events = useMemo(
     () => [...games]
-      .filter(g => kind === undefined || (kind === 'game' ? g.kind === 0 : g.kind === 1))
+      .filter(g => kind === undefined
+        || (kind === 'game' && g.kind === 0)
+        || (kind === 'practice' && g.kind === 1)
+        || (kind === 'misc' && g.kind === 2))
       .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime()),
     [games, kind])
 
   // `editingId` discriminator:
-  //   'new-practice' | 'new-game' | 'series' → opening one of the three new forms
+  //   'new-practice' | 'new-game' | 'new-misc' | 'series' → opening one of the four new forms
   //   number → editing an existing row (Kind taken from the row)
   //   null → no form open
-  const [editingId, setEditingId] = useState<number | 'new-practice' | 'new-game' | 'series' | null>(null)
-  const [editingKind, setEditingKind] = useState<'practice' | 'game'>('practice')
+  const [editingId, setEditingId] = useState<number | 'new-practice' | 'new-game' | 'new-misc' | 'series' | null>(null)
+  const [editingKind, setEditingKind] = useState<'practice' | 'game' | 'misc'>('practice')
   // Game-specific fields (only meaningful when the active form is a game form):
   const [opponentName, setOpponentName] = useState('')
   const [isHome, setIsHome] = useState<boolean | null>(null)
@@ -71,6 +74,11 @@ export function TeamScheduleSection({
     setStartsAt(''); setEndsAt(''); setLocation(''); setSummary('')
     setOpponentName(''); setIsHome(null)
   }
+  const startNewMisc = () => {
+    setEditingId('new-misc'); setEditingKind('misc')
+    setStartsAt(''); setEndsAt(''); setLocation(''); setSummary('')
+    setOpponentName(''); setIsHome(null)
+  }
   const startNewGame = () => {
     setEditingId('new-game'); setEditingKind('game')
     setStartsAt(''); setEndsAt(''); setLocation(''); setSummary('')
@@ -91,7 +99,7 @@ export function TeamScheduleSection({
   }
   const startEdit = (ev: ScheduledGame) => {
     setEditingId(ev.id)
-    setEditingKind(ev.kind === 0 ? 'game' : 'practice')
+    setEditingKind(ev.kind === 0 ? 'game' : ev.kind === 2 ? 'misc' : 'practice')
     // datetime-local wants YYYY-MM-DDTHH:mm in local time (no timezone). Strip seconds/ms.
     setStartsAt(toDateTimeLocal(ev.startsAt))
     setEndsAt(ev.endsAt ? toDateTimeLocal(ev.endsAt) : '')
@@ -140,6 +148,16 @@ export function TeamScheduleSection({
         if (editingId === 'new-game') await Api.createGame(teamId, payload)
         else if (typeof editingId === 'number') await Api.updateGame(editingId, payload)
         onNotice(t('admin.msgGameSaved'))
+      } else if (editingKind === 'misc') {
+        const payload = {
+          startsAt: startsAtIso,
+          endsAt: endsAtIso,
+          location: trimmedLocation,
+          summary: trimmedSummary,
+        }
+        if (editingId === 'new-misc') await Api.createMiscEvent(teamId, payload)
+        else if (typeof editingId === 'number') await Api.updateMiscEvent(editingId, payload)
+        onNotice(t('admin.msgMiscSaved'))
       } else {
         const payload = {
           startsAt: startsAtIso,
@@ -157,10 +175,11 @@ export function TeamScheduleSection({
   }
 
   const remove = async (ev: ScheduledGame) => {
-    const label = ev.kind === 0 ? 'game' : 'practice'
+    const label = ev.kind === 0 ? 'game' : ev.kind === 2 ? 'event' : 'practice'
     if (!confirm(`Delete this ${label} on ${new Date(ev.startsAt).toLocaleString()}?`)) return
     try {
       if (ev.kind === 0) await Api.deleteGame(ev.id)
+      else if (ev.kind === 2) await Api.deleteMiscEvent(ev.id)
       else await Api.deletePractice(ev.id)
       await onChanged()
     } catch (e: any) { onError(extractError(e)) }
@@ -205,7 +224,9 @@ export function TeamScheduleSection({
   }, [cancelState])
 
   const kindLabel = (ev: ScheduledGame) =>
-    ev.kind === 0 ? t('admin.msgKindGame') : t('admin.msgKindPractice')
+    ev.kind === 0 ? t('admin.msgKindGame')
+    : ev.kind === 2 ? t('admin.msgKindMisc')
+    : t('admin.msgKindPractice')
 
   // Build the template variable map by walking the template's own variables and filling each
   // position by label substring (matches Compose's autofill convention). For a game cancellation
@@ -338,17 +359,21 @@ export function TeamScheduleSection({
           <h3 className="font-medium text-slate-700">{t('admin.msgTeamScheduleHeader')}</h3>
           {editingId === null && (
             <div className="flex gap-3 flex-wrap">
-              {kind !== 'practice' && (
+              {(kind === undefined || kind === 'game') && (
                 <button onClick={startNewGame}
                   className="text-sm text-emerald-700 hover:underline">+ {t('admin.msgAddGame')}</button>
               )}
-              {kind !== 'game' && (
+              {(kind === undefined || kind === 'practice') && (
                 <>
                   <button onClick={startNewPractice}
                     className="text-sm text-emerald-700 hover:underline">+ {t('admin.msgAddPractice')}</button>
                   <button onClick={startSeries}
                     className="text-sm text-emerald-700 hover:underline">+ {t('admin.msgAddPracticeSeries')}</button>
                 </>
+              )}
+              {(kind === undefined || kind === 'misc') && (
+                <button onClick={startNewMisc}
+                  className="text-sm text-emerald-700 hover:underline">+ {t('admin.msgAddMisc')}</button>
               )}
             </div>
           )}
@@ -357,7 +382,9 @@ export function TeamScheduleSection({
         {editingId !== null && editingId !== 'series' && (
           <form onSubmit={save} noValidate className="border border-slate-200 rounded p-3 grid sm:grid-cols-2 gap-2 mb-3">
             <div className="sm:col-span-2 text-xs uppercase tracking-wide text-slate-500">
-              {editingKind === 'game' ? t('admin.msgFormGame') : t('admin.msgFormPractice')}
+              {editingKind === 'game' ? t('admin.msgFormGame')
+                : editingKind === 'misc' ? t('admin.msgFormMisc')
+                : t('admin.msgFormPractice')}
             </div>
             <label className="block text-sm">
               <RequiredLabel>{t('admin.msgPracticeStart')}</RequiredLabel>
@@ -401,7 +428,7 @@ export function TeamScheduleSection({
             <label className="block text-sm sm:col-span-2">
               <span className="font-medium text-slate-700">{t('admin.msgPracticeLabel')}</span>
               <input type="text" value={summary} onChange={e => setSummary(e.target.value)}
-                placeholder={editingKind === 'game' ? 'Game' : 'Practice'}
+                placeholder={editingKind === 'game' ? 'Game' : editingKind === 'misc' ? 'Event' : 'Practice'}
                 className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
             </label>
             <div className="sm:col-span-2 flex items-center gap-3 pt-2">
@@ -409,6 +436,7 @@ export function TeamScheduleSection({
                 className="bg-emerald-700 text-white text-sm font-semibold px-4 py-2 rounded-md hover:bg-emerald-800">
                 {editingId === 'new-practice' ? t('admin.msgAddPractice') :
                  editingId === 'new-game' ? t('admin.msgAddGame') :
+                 editingId === 'new-misc' ? t('admin.msgAddMisc') :
                  t('admin.msgSave')}
               </button>
               <button type="button" onClick={() => setEditingId(null)}
@@ -498,11 +526,15 @@ export function TeamScheduleSection({
           <tbody>
             {events.map(ev => {
               const isGame = ev.kind === 0
+              const isMisc = ev.kind === 2
               const evSummary = isGame
                 ? (ev.opponentName ? `vs ${ev.opponentName}` : (ev.summary ?? 'Game'))
-                : (ev.summary ?? 'Practice')
+                : (ev.summary ?? (isMisc ? 'Event' : 'Practice'))
               const homeAway = isGame && ev.isHome === true ? ' (H)' : isGame && ev.isHome === false ? ' (A)' : ''
-              const kindBadgeClass = isGame ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'
+              const kindBadgeClass = isGame
+                ? 'bg-blue-100 text-blue-800'
+                : isMisc ? 'bg-slate-200 text-slate-700'
+                : 'bg-purple-100 text-purple-800'
               const s = attnSummary[ev.id]
               return (
                 <Fragment key={ev.id}>
@@ -510,7 +542,7 @@ export function TeamScheduleSection({
                   <td className="py-1 pr-4 whitespace-nowrap">{new Date(ev.startsAt).toLocaleString()}</td>
                   <td className="py-1 pr-4 no-underline">
                     <span className={`inline-block text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded ${kindBadgeClass}`}>
-                      {isGame ? t('admin.msgKindGame') : t('admin.msgKindPractice')}
+                      {isGame ? t('admin.msgKindGame') : isMisc ? t('admin.msgKindMisc') : t('admin.msgKindPractice')}
                     </span>
                   </td>
                   <td className="py-1 pr-4">
