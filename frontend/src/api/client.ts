@@ -38,6 +38,7 @@ import type {
   UpdateTournamentTeamRequest,
   TournamentAttendanceList,
   SendTournamentConfirmationsResult,
+  TournamentSendPreview,
   InboundMessage,
   PracticeSeriesCreated,
   SaveGameRequest,
@@ -548,6 +549,13 @@ export const Api = {
   async sendTournamentTeamConfirmations(tournamentId: number, teamId: number) {
     const r = await api.post<SendTournamentConfirmationsResult>(
       `/messaging/tournaments/${tournamentId}/teams/${teamId}/send-confirmations`, {})
+    return r.data
+  },
+  /** Pre-send bilingual preview of the tournament confirmation message, using the first
+   *  rostered player as the sample for the player-name variable. */
+  async getTournamentSendPreview(tournamentId: number, teamId: number) {
+    const r = await api.get<TournamentSendPreview>(
+      `/messaging/tournaments/${tournamentId}/teams/${teamId}/send-preview`)
     return r.data
   },
   /** Per-player tournament confirmation status; mirrors the event-attendance endpoint. */

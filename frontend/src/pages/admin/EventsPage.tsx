@@ -8,7 +8,7 @@ import { Api } from '../../api/client'
 import type {
   RosterTeamSummary, RosterTeamDetail, TournamentSummary, TournamentTeam,
   AttendanceStatus, TournamentAttendanceList, AvailablePlayer,
-  TeamDetail, ScheduledGame,
+  TeamDetail, ScheduledGame, TournamentSendPreview,
 } from '../../api/types'
 
 function errMsg(e: any): string {
@@ -420,14 +420,25 @@ function TournamentTeamPanel({
     finally { setBusy(false) }
   }
 
-  const sendConfirmations = async () => {
-    if (!confirm(t('admin.evtTournSendConfirm'))) return
+  const [preview, setPreview] = useState<TournamentSendPreview | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
+
+  const openSendPreview = async () => {
+    setPreviewLoading(true); onError(''); onNotice('')
+    try {
+      setPreview(await Api.getTournamentSendPreview(tour.id, tt.teamId))
+    } catch (e: any) { onError(errMsg(e)) }
+    finally { setPreviewLoading(false) }
+  }
+
+  const confirmSend = async () => {
     setSending(true); onError(''); onNotice('')
     try {
       const r = await Api.sendTournamentTeamConfirmations(tour.id, tt.teamId)
       onNotice(t('admin.evtTournSendDone', { sent: r.sent, total: r.total }))
       const att = await Api.getTournamentTeamAttendance(tour.id, tt.teamId)
       setAttendance(att)
+      setPreview(null)
     } catch (e: any) { onError(errMsg(e)) }
     finally { setSending(false) }
   }
@@ -633,13 +644,21 @@ function TournamentTeamPanel({
       <section>
         <div className="flex items-center justify-between mb-1">
           <h3 className="font-semibold text-emerald-800 text-sm">{t('admin.evtTournRosterHeader')}</h3>
-          <button onClick={sendConfirmations}
-            disabled={sending || tt.rosterCount === 0 || tour.costPerPlayer === null}
+          <button onClick={openSendPreview}
+            disabled={previewLoading || sending || tt.rosterCount === 0 || tour.costPerPlayer === null}
             className="text-sm bg-emerald-700 text-white px-3 py-1.5 rounded-md hover:bg-emerald-800 disabled:opacity-50">
-            {sending ? t('admin.sending') : t('admin.evtTournSend')}
+            {previewLoading ? t('admin.evtCancelLoading') : sending ? t('admin.sending') : t('admin.evtTournSend')}
           </button>
         </div>
         <p className="text-xs text-slate-500 mb-2">{t('admin.evtTournSendHelp')}</p>
+
+        {preview && (
+          <TournamentSendPreviewModal
+            preview={preview}
+            sending={sending}
+            onConfirm={confirmSend}
+            onCancel={() => setPreview(null)} />
+        )}
 
         {attendance && attendance.items.length > 0 && (
           <div className="bg-white border border-slate-200 rounded p-2 mb-3">
@@ -840,4 +859,58 @@ function formatDateLabel(start: string | null, end: string | null): string {
   if (s.getFullYear() === e.getFullYear())
     return `${s.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – ${e.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`
   return `${s.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })} – ${e.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`
+}
+
+/** Bilingual preview before fanning out tournament confirmations. The English and Spanish
+ *  panes show exactly what each guardian will receive (the send pipeline routes each parent
+ *  to their preferred language automatically); the sample uses the first rostered player for
+ *  the player-name variable, with a disclaimer noting the actual sends iterate the roster. */
+function TournamentSendPreviewModal({
+  preview, sending, onConfirm, onCancel,
+}: {
+  preview: TournamentSendPreview
+  sending: boolean
+  onConfirm: () => void
+  onCancel: () => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
+      <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full p-5 space-y-3 my-8">
+        <div className="flex items-start justify-between">
+          <h4 className="text-base font-semibold text-slate-800">{t('admin.evtTournSendPreviewTitle')}</h4>
+          <button onClick={onCancel} className="text-slate-400 hover:text-slate-700 text-xl leading-none">×</button>
+        </div>
+        <div className="text-xs text-slate-500">
+          <div>{t('admin.evtTournSendPreviewHelp', { count: preview.rosterCount })}</div>
+          <div className="mt-1 text-slate-700">
+            {t('admin.evtTournSendPreviewSample', { name: preview.samplePlayerName })} ·
+            {' '}{preview.datesValue} · {preview.costValue}
+          </div>
+        </div>
+        <div className="grid md:grid-cols-2 gap-3">
+          <div className="border border-slate-200 rounded p-3 bg-slate-50 text-sm whitespace-pre-wrap">
+            <div className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">
+              English · {preview.englishTemplateName}
+            </div>
+            {preview.englishRendered ?? '—'}
+          </div>
+          <div className="border border-slate-200 rounded p-3 bg-slate-50 text-sm whitespace-pre-wrap">
+            <div className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">
+              Español · {preview.spanishTemplateName}
+            </div>
+            {preview.spanishRendered ?? '—'}
+          </div>
+        </div>
+        <div className="flex items-center gap-3 pt-1">
+          <button onClick={onConfirm} disabled={sending}
+            className="bg-emerald-700 text-white text-sm font-semibold px-4 py-2 rounded-md hover:bg-emerald-800 disabled:opacity-60">
+            {sending ? t('admin.sending') : t('admin.evtTournSend')}
+          </button>
+          <button onClick={onCancel} disabled={sending}
+            className="text-sm text-slate-600 hover:underline">{t('admin.cancel')}</button>
+        </div>
+      </div>
+    </div>
+  )
 }

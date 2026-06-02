@@ -730,6 +730,19 @@ export interface SendTournamentConfirmationsResult {
   message: string | null
 }
 
+/** Pre-send EN/ES preview for tournament confirmations. The sample uses the first rostered
+ *  player's name for variable 2; dates and cost are formatted identically to the actual send. */
+export interface TournamentSendPreview {
+  samplePlayerName: string
+  datesValue: string
+  costValue: string
+  rosterCount: number
+  englishTemplateName: string
+  englishRendered: string | null
+  spanishTemplateName: string
+  spanishRendered: string | null
+}
+
 export interface EventRecipient {
   phone: string
   name: string | null

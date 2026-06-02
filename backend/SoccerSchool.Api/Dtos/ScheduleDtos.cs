@@ -300,3 +300,17 @@ public record SendTournamentConfirmationsResult(
     int Skipped,
     int Total,
     string? Message);
+
+/// <summary>Side-by-side EN/ES preview of the tournament confirmation message before the admin
+/// confirms the fan-out. Built from one sample roster player; the actual send fills the player
+/// name variable per recipient. Format strings (dates, cost) come from the same code path the
+/// send uses, so the preview is byte-identical to what parents will see.</summary>
+public record TournamentSendPreviewDto(
+    string SamplePlayerName,
+    string DatesValue,
+    string CostValue,
+    int RosterCount,
+    string EnglishTemplateName,
+    string? EnglishRendered,
+    string SpanishTemplateName,
+    string? SpanishRendered);

@@ -1015,6 +1015,67 @@ public class MessagingController : ControllerBase
     public Task<ActionResult<SendTournamentConfirmationsResult>> SendTournamentConfirmations(
         int tournamentId, CancellationToken ct) => SendTournamentTeamConfirmationsInternal(tournamentId, teamId: null, ct);
 
+    /// <summary>Builds the side-by-side EN/ES preview shown in the admin's "Send confirmations"
+    /// modal. Uses the first rostered player as a sample for variable 2 (player name); variables
+    /// 1 (dates) and 3 (cost) come from the same formatter the actual send uses, so the preview
+    /// matches what families receive byte-for-byte.</summary>
+    [HttpGet("tournaments/{tournamentId:int}/teams/{teamId:int}/send-preview")]
+    public async Task<ActionResult<TournamentSendPreviewDto>> GetTournamentSendPreview(
+        int tournamentId, int teamId, CancellationToken ct)
+    {
+        var tournament = await _db.Tournaments.FirstOrDefaultAsync(t => t.Id == tournamentId, ct);
+        if (tournament is null) return NotFound();
+        if (tournament.StartDate is null)
+            return BadRequest("Set the tournament's start date before previewing.");
+        if (tournament.CostPerPlayer is null)
+            return BadRequest("Set the cost per player before previewing.");
+
+        var team = await _db.Teams
+            .Include(t => t.Roster).ThenInclude(tp => tp.Player)
+            .FirstOrDefaultAsync(t => t.Id == teamId, ct);
+        if (team is null) return NotFound();
+        if (team.Roster.Count == 0)
+            return BadRequest("This team has no rostered players.");
+
+        var template = await FindTournamentTemplateAsync(Language.English, ct);
+        if (template is null)
+            return BadRequest($"No tournament template configured. Add `{TournamentTemplateBaseName}_english` and `{TournamentTemplateBaseName}_spanish` under Messaging → Templates first.");
+
+        var samplePlayer = team.Roster
+            .Where(tp => tp.Player != null)
+            .OrderBy(tp => tp.Player!.LastName).ThenBy(tp => tp.Player!.FirstName)
+            .First().Player!;
+        var sampleName = $"{samplePlayer.FirstName} {samplePlayer.LastName}".Trim();
+        var datesStr = FormatTournamentDates(tournament.StartDate.Value, tournament.EndDate);
+        var costStr = tournament.CostPerPlayer.Value.ToString("C", System.Globalization.CultureInfo.GetCultureInfo("en-US"));
+
+        // Reuse the existing TemplatePreview action so the EN/ES rendering pipeline (paired
+        // template lookup + phrase-dictionary translation for the variable values) is identical
+        // to the Compose tab's preview.
+        var previewResult = await TemplatePreview(new TemplatePreviewRequest
+        {
+            TemplateId = template.Id,
+            Values = new Dictionary<string, string>
+            {
+                ["1"] = datesStr,
+                ["2"] = sampleName,
+                ["3"] = costStr,
+            },
+        }, ct);
+        if (previewResult.Result is not OkObjectResult ok || ok.Value is not TemplatePreviewResponse p)
+            return BadRequest("Could not build the preview. Check the template configuration.");
+
+        return Ok(new TournamentSendPreviewDto(
+            SamplePlayerName: sampleName,
+            DatesValue: datesStr,
+            CostValue: costStr,
+            RosterCount: team.Roster.Count,
+            EnglishTemplateName: p.English.TemplateName,
+            EnglishRendered: p.English.Rendered,
+            SpanishTemplateName: p.Spanish.TemplateName,
+            SpanishRendered: p.Spanish.Rendered));
+    }
+
     /// <summary>Per-team confirmation send for multi-team tournaments. Each team in the
     /// tournament has its own "Send confirmations" button — this fans out to that team's
     /// rostered players, tagging the Broadcasts with the tournament id so inbound replies
