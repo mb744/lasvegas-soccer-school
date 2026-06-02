@@ -34,6 +34,8 @@ import type {
   TournamentSummary,
   SaveTournamentRequest,
   CreateTournamentTeamRequest,
+  AddTournamentTeamRequest,
+  UpdateTournamentTeamRequest,
   TournamentAttendanceList,
   SendTournamentConfirmationsResult,
   InboundMessage,
@@ -504,10 +506,43 @@ export const Api = {
     const r = await api.post<ScheduleSyncResult>(`/schedule/tournaments/${id}/sync`, {})
     return r.data
   },
-  /** Creates the tournament's dedicated team. Admin then builds the roster via the existing
-   *  team-roster endpoints (addRosterMembers, etc.) on the returned tournament. */
+  /** Legacy: creates the tournament's single dedicated team. New flow uses
+   *  addTournamentTeam against the multi-team join. */
   async createTournamentTeam(tournamentId: number, payload: CreateTournamentTeamRequest) {
     const r = await api.post<TournamentSummary>(`/schedule/tournaments/${tournamentId}/team`, payload)
+    return r.data
+  },
+  /** Multi-team workflow: add a team to a tournament (existing team or new) with optional
+   *  GotSport sync IDs for this participation. */
+  async addTournamentTeam(tournamentId: number, payload: AddTournamentTeamRequest) {
+    const r = await api.post<TournamentSummary>(`/schedule/tournaments/${tournamentId}/teams`, payload)
+    return r.data
+  },
+  /** Update GotSport IDs for one TournamentTeam participation. */
+  async updateTournamentTeam(tournamentId: number, ttId: number, payload: UpdateTournamentTeamRequest) {
+    const r = await api.put<TournamentSummary>(`/schedule/tournaments/${tournamentId}/teams/${ttId}`, payload)
+    return r.data
+  },
+  /** Detach a team from a tournament. The team itself stays. */
+  async removeTournamentTeam(tournamentId: number, ttId: number) {
+    const r = await api.delete<TournamentSummary>(`/schedule/tournaments/${tournamentId}/teams/${ttId}`)
+    return r.data
+  },
+  /** Sync games for one TournamentTeam participation via its GotSport IDs. */
+  async syncTournamentTeam(tournamentId: number, ttId: number) {
+    const r = await api.post<ScheduleSyncResult>(`/schedule/tournaments/${tournamentId}/teams/${ttId}/sync`, {})
+    return r.data
+  },
+  /** Per-team attendance scoped to a tournament + team combination. */
+  async getTournamentTeamAttendance(tournamentId: number, teamId: number) {
+    const r = await api.get<TournamentAttendanceList>(`/schedule/tournaments/${tournamentId}/teams/${teamId}/attendance`)
+    return r.data
+  },
+  /** Per-team confirmation send. Reuses the same WhatsApp tournamentparticipation_* template
+   *  but fans out only to this team's rostered players. */
+  async sendTournamentTeamConfirmations(tournamentId: number, teamId: number) {
+    const r = await api.post<SendTournamentConfirmationsResult>(
+      `/messaging/tournaments/${tournamentId}/teams/${teamId}/send-confirmations`, {})
     return r.data
   },
   /** Per-player tournament confirmation status; mirrors the event-attendance endpoint. */

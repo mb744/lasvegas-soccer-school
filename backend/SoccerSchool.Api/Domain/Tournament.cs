@@ -64,4 +64,10 @@ public class Tournament
     /// either by the admin clicking Confirm/Decline/Maybe, or by the webhook parsing inbound
     /// WhatsApp replies routed back to a broadcast that carries this tournament's id.</summary>
     public List<TournamentAttendance> Attendances { get; set; } = new();
+
+    /// <summary>Multi-team participation. New code path: a tournament has many teams and each
+    /// team carries its own GotSport sync state via <see cref="TournamentTeam"/>. Legacy single-
+    /// team tournaments (those that pre-date this collection) are auto-migrated into one row
+    /// here on deploy, so this is the canonical list going forward.</summary>
+    public List<TournamentTeam> Teams { get; set; } = new();
 }

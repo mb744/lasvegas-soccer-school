@@ -27,6 +27,7 @@ public interface IScheduleSyncService
 {
     Task<ScheduleSyncResult> SyncTeamAsync(int teamId, CancellationToken ct);
     Task<ScheduleSyncResult> SyncTournamentAsync(int tournamentId, CancellationToken ct);
+    Task<ScheduleSyncResult> SyncTournamentTeamAsync(int tournamentTeamId, CancellationToken ct);
 }
 
 public record ScheduleSyncResult(bool Success, int Added, int Updated, string Message);
@@ -73,6 +74,30 @@ public class ScheduleSyncService : IScheduleSyncService
             tournament.TeamId.Value, tournament.Id, tournament.Games.ToList(), ct);
         tournament.LastSyncedAt = DateTime.UtcNow;
         tournament.LastSyncMessage = r.Message;
+        await _db.SaveChangesAsync(ct);
+        return new ScheduleSyncResult(r.Ok, r.Added, r.Updated, r.Message);
+    }
+
+    /// <summary>Per-participation sync (new multi-team workflow). Uses the
+    /// <see cref="TournamentTeam"/>'s own GotSport IDs to scrape games for THIS team in THIS
+    /// tournament, upserts them onto the team's schedule with the tournament tag.</summary>
+    public async Task<ScheduleSyncResult> SyncTournamentTeamAsync(int tournamentTeamId, CancellationToken ct)
+    {
+        var tt = await _db.TournamentTeams
+            .Include(x => x.Tournament)
+            .FirstOrDefaultAsync(x => x.Id == tournamentTeamId, ct);
+        if (tt is null) return new ScheduleSyncResult(false, 0, 0, "Tournament team not found.");
+
+        // Only scope to games tagged with this tournament so a re-sync doesn't disturb the
+        // team's other (season / other-tournament) games during the upsert diff.
+        var existing = await _db.ScheduledGames
+            .Where(g => g.TeamId == tt.TeamId && g.TournamentId == tt.TournamentId)
+            .ToListAsync(ct);
+
+        var r = await ScrapeAsync(tt.GotSportEventId, tt.GotSportTeamId,
+            tt.TeamId, tt.TournamentId, existing, ct);
+        tt.LastSyncedAt = DateTime.UtcNow;
+        tt.LastSyncMessage = r.Message;
         await _db.SaveChangesAsync(ct);
         return new ScheduleSyncResult(r.Ok, r.Added, r.Updated, r.Message);
     }

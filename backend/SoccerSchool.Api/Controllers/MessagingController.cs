@@ -1000,24 +1000,43 @@ public class MessagingController : ControllerBase
     /// 2 = player name, 3 = cost per player. The Broadcast carries this tournament's id so
     /// inbound WhatsApp replies are routed to <see cref="TournamentAttendance"/> by the webhook.</summary>
     [HttpPost("tournaments/{tournamentId:int}/send-confirmations")]
-    public async Task<ActionResult<SendTournamentConfirmationsResult>> SendTournamentConfirmations(
-        int tournamentId, CancellationToken ct)
+    public Task<ActionResult<SendTournamentConfirmationsResult>> SendTournamentConfirmations(
+        int tournamentId, CancellationToken ct) => SendTournamentTeamConfirmationsInternal(tournamentId, teamId: null, ct);
+
+    /// <summary>Per-team confirmation send for multi-team tournaments. Each team in the
+    /// tournament has its own "Send confirmations" button — this fans out to that team's
+    /// rostered players, tagging the Broadcasts with the tournament id so inbound replies
+    /// flow to <see cref="TournamentAttendance"/>.</summary>
+    [HttpPost("tournaments/{tournamentId:int}/teams/{teamId:int}/send-confirmations")]
+    public Task<ActionResult<SendTournamentConfirmationsResult>> SendTournamentTeamConfirmations(
+        int tournamentId, int teamId, CancellationToken ct) =>
+        SendTournamentTeamConfirmationsInternal(tournamentId, teamId, ct);
+
+    private async Task<ActionResult<SendTournamentConfirmationsResult>> SendTournamentTeamConfirmationsInternal(
+        int tournamentId, int? teamId, CancellationToken ct)
     {
         if (!_sender.IsAvailable(MessageChannel.WhatsApp))
             return BadRequest("WhatsApp not configured on this server.");
 
-        var tournament = await _db.Tournaments
-            .Include(t => t.Team).ThenInclude(team => team!.Roster).ThenInclude(tp => tp.Player)
-            .FirstOrDefaultAsync(t => t.Id == tournamentId, ct);
+        var tournament = await _db.Tournaments.FirstOrDefaultAsync(t => t.Id == tournamentId, ct);
         if (tournament is null) return NotFound();
-        if (tournament.TeamId is null || tournament.Team is null)
-            return BadRequest("This tournament has no team yet. Create the team and add players first.");
         if (tournament.StartDate is null)
             return BadRequest("Set the tournament's start date before sending confirmations.");
         if (tournament.CostPerPlayer is null)
             return BadRequest("Set the cost per player before sending confirmations.");
-        if (tournament.Team.Roster.Count == 0)
-            return BadRequest("The tournament team has no rostered players.");
+
+        // Per-team route: explicit team id. Legacy route: fall back to Tournament.TeamId so
+        // pre-multi-team tournaments keep working when the new UI hasn't migrated them.
+        var effectiveTeamId = teamId ?? tournament.TeamId;
+        if (effectiveTeamId is null)
+            return BadRequest("This tournament has no team. Add a team to the tournament first.");
+
+        var team = await _db.Teams
+            .Include(tt => tt.Roster).ThenInclude(tp => tp.Player)
+            .FirstOrDefaultAsync(tt => tt.Id == effectiveTeamId, ct);
+        if (team is null) return NotFound();
+        if (team.Roster.Count == 0)
+            return BadRequest("This team has no rostered players.");
 
         var enTemplate = await FindTournamentTemplateAsync(Language.English, ct);
         var esTemplate = await FindTournamentTemplateAsync(Language.Spanish, ct);
@@ -1029,7 +1048,7 @@ public class MessagingController : ControllerBase
         var costStr = tournament.CostPerPlayer.Value.ToString("C", System.Globalization.CultureInfo.GetCultureInfo("en-US"));
 
         int sent = 0, skipped = 0;
-        foreach (var tp in tournament.Team.Roster)
+        foreach (var tp in team.Roster)
         {
             var player = tp.Player;
             if (player is null) { skipped++; continue; }
@@ -1052,14 +1071,11 @@ public class MessagingController : ControllerBase
                 },
             };
             var result = await CreateBroadcast(req, ct);
-            // CreateBroadcast returns BadRequest when a player has no reachable guardians (no
-            // phone, no email, etc.). Count those as skipped and keep going so one bad player
-            // doesn't abort the whole batch.
             if (result.Result is ObjectResult ok && ok.StatusCode == 200) sent++;
             else skipped++;
         }
 
-        return Ok(new SendTournamentConfirmationsResult(sent, skipped, tournament.Team.Roster.Count, null));
+        return Ok(new SendTournamentConfirmationsResult(sent, skipped, team.Roster.Count, null));
     }
 
     /// <summary>"May 31, 2026" for a single day, "May 31 – Jun 2, 2026" when the range stays in

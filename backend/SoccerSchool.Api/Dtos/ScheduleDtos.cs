@@ -196,7 +196,11 @@ public record TournamentSummary(
     int GameCount,
     int UpcomingGameCount,
     int RosterCount,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    /// <summary>All teams participating in this tournament via the TournamentTeams join. Each
+    /// carries its own GotSport sync state. Existing legacy tournaments show up here too via the
+    /// auto-backfill migration.</summary>
+    List<TournamentTeamDto> Teams);
 
 /// <summary>Create/update fields for a tournament. Only Name is required; dates + costs are
 /// nullable so admins can stub a tournament and fill in details later. GotSport fields stay
@@ -223,12 +227,54 @@ public record SaveTournamentRequest
     public string? ScheduleUrl { get; init; }
 }
 
-/// <summary>Admin inlines the tournament's dedicated team after creating the tournament. The
-/// roster is built afterward via the existing team-roster endpoints.</summary>
+/// <summary>Legacy: inlines the tournament's single dedicated team. New code path uses
+/// <see cref="AddTournamentTeamRequest"/> against the TournamentTeams join.</summary>
 public record CreateTournamentTeamRequest
 {
     [Required, MaxLength(128)]
     public string Name { get; init; } = string.Empty;
+}
+
+/// <summary>One team participating in a tournament. Carries the per-participation GotSport
+/// sync state — distinct from the team's own season-wide GotSport ID pair.</summary>
+public record TournamentTeamDto(
+    int Id,
+    int TournamentId,
+    int TeamId,
+    string TeamName,
+    int GotSportEventId,
+    int GotSportTeamId,
+    DateTime? LastSyncedAt,
+    string? LastSyncMessage,
+    int RosterCount,
+    int GameCount,
+    DateTime CreatedAt);
+
+/// <summary>Admin adds a team to a tournament. Either <see cref="ExistingTeamId"/> picks one of
+/// the regular Teams admin rows, or <see cref="NewTeamName"/> creates a brand-new team. GotSport
+/// IDs are optional and can be set later via <see cref="UpdateTournamentTeamRequest"/>.</summary>
+public record AddTournamentTeamRequest
+{
+    public int? ExistingTeamId { get; init; }
+
+    [MaxLength(128)]
+    public string? NewTeamName { get; init; }
+
+    public int? GotSportEventId { get; init; }
+    public int? GotSportTeamId { get; init; }
+
+    [MaxLength(1024)]
+    public string? ScheduleUrl { get; init; }
+}
+
+/// <summary>Update the per-participation GotSport state for one TournamentTeam row.</summary>
+public record UpdateTournamentTeamRequest
+{
+    public int? GotSportEventId { get; init; }
+    public int? GotSportTeamId { get; init; }
+
+    [MaxLength(1024)]
+    public string? ScheduleUrl { get; init; }
 }
 
 public record TournamentAttendanceDto(

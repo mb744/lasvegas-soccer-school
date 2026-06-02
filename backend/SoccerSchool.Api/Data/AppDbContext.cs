@@ -64,6 +64,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<Tournament> Tournaments => Set<Tournament>();
     public DbSet<EventAttendance> EventAttendances => Set<EventAttendance>();
     public DbSet<TournamentAttendance> TournamentAttendances => Set<TournamentAttendance>();
+    public DbSet<TournamentTeam> TournamentTeams => Set<TournamentTeam>();
     public DbSet<PhraseTranslation> PhraseTranslations => Set<PhraseTranslation>();
     public DbSet<InboundMessage> InboundMessages => Set<InboundMessage>();
     public DbSet<MessagingSettings> MessagingSettings => Set<MessagingSettings>();
@@ -318,6 +319,21 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
                 .HasForeignKey(a => a.PlayerId)
                 .OnDelete(DeleteBehavior.Restrict);
             b.HasIndex(a => new { a.TournamentId, a.PlayerId }).IsUnique();
+        });
+
+        modelBuilder.Entity<TournamentTeam>(b =>
+        {
+            b.HasOne(tt => tt.Tournament)
+                .WithMany(t => t.Teams)
+                .HasForeignKey(tt => tt.TournamentId)
+                .OnDelete(DeleteBehavior.Cascade);
+            // Restrict on Team-delete so a team that's referenced by a tournament can't be
+            // silently removed — admin has to detach it from the tournament first.
+            b.HasOne(tt => tt.Team)
+                .WithMany()
+                .HasForeignKey(tt => tt.TeamId)
+                .OnDelete(DeleteBehavior.Restrict);
+            b.HasIndex(tt => new { tt.TournamentId, tt.TeamId }).IsUnique();
         });
 
         modelBuilder.Entity<ScheduledGame>(b =>

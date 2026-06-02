@@ -636,7 +636,7 @@ export interface TournamentSummary {
   totalCost: number | null
   /** Cost per family — surfaces as template parameter 3 on the confirmation send. */
   costPerPlayer: number | null
-  /** Dedicated team for this tournament; null until the admin creates one. */
+  /** Legacy: dedicated team for single-team tournaments. New flow uses the `teams` list. */
   teamId: number | null
   teamName: string | null
   gotSportEventId: number
@@ -645,9 +645,42 @@ export interface TournamentSummary {
   lastSyncMessage: string | null
   gameCount: number
   upcomingGameCount: number
-  /** Roster size on the tournament team; 0 when there's no team or no players added yet. */
+  /** Legacy: roster size on the single dedicated team. */
   rosterCount: number
   createdAt: string
+  /** All teams in this tournament via the TournamentTeams join. Each carries its own
+   *  GotSport sync state. Legacy tournaments are auto-backfilled on deploy. */
+  teams: TournamentTeam[]
+}
+
+export interface TournamentTeam {
+  id: number
+  tournamentId: number
+  teamId: number
+  teamName: string
+  gotSportEventId: number
+  gotSportTeamId: number
+  lastSyncedAt: string | null
+  lastSyncMessage: string | null
+  rosterCount: number
+  gameCount: number
+  createdAt: string
+}
+
+export interface AddTournamentTeamRequest {
+  /** Pick from existing Teams. Mutually exclusive with newTeamName. */
+  existingTeamId?: number | null
+  /** Create a new Team inline with this name. */
+  newTeamName?: string | null
+  gotSportEventId?: number | null
+  gotSportTeamId?: number | null
+  scheduleUrl?: string | null
+}
+
+export interface UpdateTournamentTeamRequest {
+  gotSportEventId?: number | null
+  gotSportTeamId?: number | null
+  scheduleUrl?: string | null
 }
 
 export interface SaveTournamentRequest {
