@@ -40,6 +40,13 @@ public class ParentAccount
     /// the messaging layer route between SMS and WhatsApp without joining through registrations.</summary>
     public bool HasWhatsApp { get; set; }
 
+    /// <summary>Admin-set opt-out for the entire family — primary parent + every additional
+    /// guardian (<see cref="ParentContact"/>). When true, <see cref="Services.RecipientResolver"/>
+    /// skips this family in every bulk recipient list (templates, broadcasts, monthly-fee runs,
+    /// tournament confirmations, event reminders). Inbox-thread replies still go through since
+    /// those are explicit one-off sends from an admin in response to the family contacting us.</summary>
+    public bool NoCommunications { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public List<Player> Players { get; set; } = new();

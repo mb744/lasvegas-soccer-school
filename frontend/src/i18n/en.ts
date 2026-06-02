@@ -661,6 +661,8 @@ const en = {
     linkConfirm: 'Link login',
     linkUnlink: 'Unlink',
     linkUnlinkConfirm: 'Remove {{email}} as a collaborator on this family?',
+    noCommsLabel: 'No communications — this family is opted out of all messages',
+    noCommsHelp: 'When checked, every guardian on this family is excluded from broadcasts, event reminders, tournament confirmations, and monthly-fee runs. Admin replies in the Inbox still go through.',
   },
   account: {
     title: 'My account',

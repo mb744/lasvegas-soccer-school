@@ -134,8 +134,20 @@ public record RegistrationDetail(
     List<ParentContactDto> AdditionalParents,
     /// <summary>Owner + any admin-linked collaborator logins for the family this registration
     /// belongs to. Always non-empty (the owner row is included).</summary>
-    List<LinkedLoginDto> LinkedLogins
+    List<LinkedLoginDto> LinkedLogins,
+    /// <summary>Family-level no-communications opt-out. When true, every bulk-recipient path
+    /// (template sends, event reminders, monthly fee, tournament confirmations, etc.) skips
+    /// this family. Toggle lives on <see cref="Domain.ParentAccount.NoCommunications"/>.</summary>
+    bool NoCommunications
 );
+
+/// <summary>Admin toggles a family's no-communications opt-out from the registration detail panel.
+/// Flips <see cref="Domain.ParentAccount.NoCommunications"/> so the entire family — primary
+/// parent + every additional guardian — is excluded from bulk sends.</summary>
+public record SetRegistrationCommunicationsRequest
+{
+    public bool NoCommunications { get; init; }
+}
 
 public record RegistrationPlayerDetail(
     int Id,

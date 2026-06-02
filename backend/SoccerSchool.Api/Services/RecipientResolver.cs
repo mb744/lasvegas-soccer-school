@@ -32,6 +32,10 @@ public record RecipientList(string Label, IReadOnlyList<ResolvedRecipient> Recip
 
 public record DynamicGroupSummary(string Key, string Label, int Count);
 
+/// <summary>Tiny per-family flags projection used inside the curated-group resolver to filter
+/// out members linked to a family that's opted out of communications.</summary>
+internal record FamilyFlags(int Id, bool HasWhatsApp, bool NoCommunications);
+
 public record RecipientTarget(
     RecipientTargetKind Kind,
     string? Phone = null,
@@ -140,20 +144,27 @@ public class RecipientResolver : IRecipientResolver
                     .Select(m => m.ParentAccountId!.Value)
                     .Distinct()
                     .ToList();
-                var whatsAppLookup = memberParentIds.Count == 0
-                    ? new Dictionary<int, bool>()
+                // Pull HasWhatsApp + the family no-comms flag in one trip. Members linked to
+                // a flagged ParentAccount are filtered out below regardless of their group row.
+                var familyRows = memberParentIds.Count == 0
+                    ? new List<FamilyFlags>()
                     : await _db.ParentAccounts
                         .Where(p => memberParentIds.Contains(p.Id))
-                        .ToDictionaryAsync(p => p.Id, p => p.HasWhatsApp, ct);
+                        .Select(p => new FamilyFlags(p.Id, p.HasWhatsApp, p.NoCommunications))
+                        .ToListAsync(ct);
+                var familyLookup = familyRows.ToDictionary(f => f.Id, f => f);
                 // Language is per-member (a group can mix EN and ES parents). The group's
                 // own Language field is just the default we apply when adding new members.
                 // Email is also per-member; broadcasts on the email channel skip members without one.
                 var members = group.Members
                     .Where(m => !string.IsNullOrWhiteSpace(m.Phone) || !string.IsNullOrWhiteSpace(m.Email))
+                    .Where(m => !(m.ParentAccountId.HasValue
+                        && familyLookup.TryGetValue(m.ParentAccountId.Value, out var fam)
+                        && fam.NoCommunications))
                     .Select(m => new ResolvedRecipient(
                         m.Phone, m.Name, m.ParentAccountId, m.Language, m.Email,
-                        m.ParentAccountId.HasValue && whatsAppLookup.TryGetValue(m.ParentAccountId.Value, out var has)
-                            ? (bool?)has : null))
+                        m.ParentAccountId.HasValue && familyLookup.TryGetValue(m.ParentAccountId.Value, out var has)
+                            ? (bool?)has.HasWhatsApp : null))
                     .ToList();
                 return new RecipientList($"Group: {group.Name}", members);
 
@@ -226,7 +237,8 @@ public class RecipientResolver : IRecipientResolver
         // Email comes from ApplicationUser (the parent's identity record). Parents missing both
         // phone and email are excluded outright — there's no way to reach them.
         var rows = await _db.ParentAccounts
-            .Where(p => (p.CellPhone != null && p.CellPhone != "") || (p.User != null && p.User.Email != null && p.User.Email != ""))
+            .Where(p => !p.NoCommunications &&
+                ((p.CellPhone != null && p.CellPhone != "") || (p.User != null && p.User.Email != null && p.User.Email != "")))
             .Select(p => new { p.Id, p.CellPhone, p.FirstName, p.LastName, p.Language, p.HasWhatsApp, Email = p.User!.Email })
             .ToListAsync(ct);
         var parents = rows
@@ -241,7 +253,7 @@ public class RecipientResolver : IRecipientResolver
     {
         var season = _app.ActiveSeason;
         var rows = await _db.Registrations
-            .Where(r => r.Season == season && r.ParentAccount != null &&
+            .Where(r => r.Season == season && r.ParentAccount != null && !r.ParentAccount.NoCommunications &&
                         ((r.ParentAccount.CellPhone != null && r.ParentAccount.CellPhone != "") ||
                          (r.ParentAccount.User != null && r.ParentAccount.User.Email != null && r.ParentAccount.User.Email != "")))
             .Select(r => new
@@ -273,6 +285,7 @@ public class RecipientResolver : IRecipientResolver
             .Where(rp => rp.FreeTrialOver
                 && rp.Registration!.Season == season
                 && rp.Registration.ParentAccount != null
+                && !rp.Registration.ParentAccount.NoCommunications
                 && ((rp.Registration.ParentAccount.CellPhone != null && rp.Registration.ParentAccount.CellPhone != "")
                     || (rp.Registration.ParentAccount.User != null && rp.Registration.ParentAccount.User.Email != null && rp.Registration.ParentAccount.User.Email != "")))
             .Select(rp => new
@@ -314,6 +327,7 @@ public class RecipientResolver : IRecipientResolver
         var rows = await _db.TeamPlayers
             .Where(tp => tp.TeamId == teamId
                 && tp.Player!.ParentAccount != null
+                && !tp.Player.ParentAccount.NoCommunications
                 && ((tp.Player.ParentAccount.CellPhone != null && tp.Player.ParentAccount.CellPhone != "")
                     || (tp.Player.ParentAccount.User != null && tp.Player.ParentAccount.User.Email != null && tp.Player.ParentAccount.User.Email != "")))
             .Select(tp => new
@@ -367,6 +381,7 @@ public class RecipientResolver : IRecipientResolver
 
         var rows = await _db.ParentAccounts
             .Where(p => accountIds.Contains(p.Id)
+                && !p.NoCommunications
                 && ((p.CellPhone != null && p.CellPhone != "")
                     || (p.User != null && p.User.Email != null && p.User.Email != "")))
             .Select(p => new { p.Id, p.CellPhone, p.FirstName, p.LastName, p.Language, p.HasWhatsApp, Email = p.User!.Email })
@@ -391,6 +406,7 @@ public class RecipientResolver : IRecipientResolver
         var ids = new List<int> { accountId.Value };
         var rows = await _db.ParentAccounts
             .Where(p => p.Id == accountId
+                && !p.NoCommunications
                 && ((p.CellPhone != null && p.CellPhone != "")
                     || (p.User != null && p.User.Email != null && p.User.Email != "")))
             .Select(p => new { p.Id, p.CellPhone, p.FirstName, p.LastName, p.Language, p.HasWhatsApp, Email = p.User!.Email })
@@ -410,8 +426,11 @@ public class RecipientResolver : IRecipientResolver
     {
         if (parentAccountIds is { Count: 0 }) return new List<ResolvedRecipient>();
 
+        // Contacts inherit the family's no-communications opt-out — if the primary parent's
+        // ParentAccount is flagged, every additional guardian on that family is filtered out too.
         var q = _db.ParentContacts
-            .Where(c => (c.CellPhone != null && c.CellPhone != "") || (c.Email != null && c.Email != ""));
+            .Where(c => !c.ParentAccount!.NoCommunications
+                && ((c.CellPhone != null && c.CellPhone != "") || (c.Email != null && c.Email != "")));
         if (parentAccountIds is not null)
             q = q.Where(c => parentAccountIds.Contains(c.ParentAccountId));
 

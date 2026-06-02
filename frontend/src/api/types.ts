@@ -258,6 +258,10 @@ export interface RegistrationDetail {
   /** Owner + any admin-linked collaborator logins for this family. Always has at least the
    *  owner row. */
   linkedLogins: LinkedLogin[]
+  /** Family-wide opt-out: when true, every bulk recipient path (broadcasts, events,
+   *  tournament confirmations, monthly fee, etc.) skips this family. Toggle from the
+   *  registration detail panel. */
+  noCommunications: boolean
 }
 
 // --- Outreach (admin tracking) ---

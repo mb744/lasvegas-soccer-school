@@ -197,6 +197,7 @@ function RegistrationDetailPanel({
   const { t } = useTranslation()
   const [editing, setEditing] = useState(false)
   const [adding, setAdding] = useState(false)
+  const [savingComms, setSavingComms] = useState(false)
   const r = detail
   const fullAddress = [
     r.addressLine1,
@@ -204,8 +205,33 @@ function RegistrationDetailPanel({
     `${r.city}, ${r.state} ${r.postalCode}`,
   ].filter(Boolean).join(' • ')
 
+  const toggleNoComms = async (next: boolean) => {
+    setSavingComms(true)
+    try {
+      const updated = await Api.setRegistrationCommunications(r.id, next)
+      onSaved(updated)
+    } catch (e: any) {
+      onError(e?.response?.data?.title || e?.response?.data || e?.message || 'Error')
+    } finally {
+      setSavingComms(false)
+    }
+  }
+
   return (
     <div className="space-y-4">
+      <label className={`flex items-start gap-2 rounded-md p-3 border text-sm ${
+        r.noCommunications
+          ? 'bg-rose-50 border-rose-300 text-rose-900'
+          : 'bg-white border-slate-200 text-slate-700'}`}>
+        <input type="checkbox" checked={r.noCommunications} disabled={savingComms}
+          onChange={e => toggleNoComms(e.target.checked)}
+          className="mt-0.5 w-4 h-4" />
+        <span>
+          <span className="font-semibold">{t('admin.noCommsLabel')}</span>
+          <span className="block text-xs mt-0.5 opacity-90">{t('admin.noCommsHelp')}</span>
+        </span>
+      </label>
+
       <div className="bg-white rounded-md border border-slate-200 p-4">
         <div className="flex items-start justify-between mb-2">
           <h3 className="font-bold text-emerald-800">{t('admin.parentInfo')}</h3>

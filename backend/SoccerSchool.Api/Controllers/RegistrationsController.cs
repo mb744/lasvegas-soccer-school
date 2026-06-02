@@ -304,6 +304,24 @@ public class RegistrationsController : ControllerBase
         return NoContent();
     }
 
+    /// <summary>Admin toggles the registration's family no-communications flag from the detail
+    /// panel. The flag actually lives on <see cref="Domain.ParentAccount.NoCommunications"/>,
+    /// so flipping it here applies to every guardian on the family across all their
+    /// registrations — i.e. this is a family-wide opt-out, not just for this season.</summary>
+    [HttpPut("{id:int}/communications")]
+    [Authorize(Roles = Roles.Admin)]
+    public async Task<ActionResult<RegistrationDetail>> SetCommunications(
+        int id, [FromBody] SetRegistrationCommunicationsRequest request, CancellationToken ct)
+    {
+        var registration = await _db.Registrations
+            .Include(r => r.ParentAccount)
+            .FirstOrDefaultAsync(r => r.Id == id, ct);
+        if (registration is null || registration.ParentAccount is null) return NotFound();
+        registration.ParentAccount.NoCommunications = request.NoCommunications;
+        await _db.SaveChangesAsync(ct);
+        return Ok(await LoadDetailAsync(id, ct));
+    }
+
     [HttpGet("{id:int}/waivers.pdf")]
     public async Task<IActionResult> CombinedWaivers(int id, CancellationToken ct)
     {
@@ -755,7 +773,8 @@ public class RegistrationsController : ControllerBase
         (r.ParentAccount?.Contacts ?? new List<ParentContact>())
             .OrderBy(c => c.LastName).ThenBy(c => c.FirstName)
             .Select(ToContactDto).ToList(),
-        BuildLinkedLogins(r)
+        BuildLinkedLogins(r),
+        r.ParentAccount?.NoCommunications ?? false
     );
 
     /// <summary>Builds the linked-logins list (owner first, then collaborators ordered by link

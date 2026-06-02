@@ -663,6 +663,8 @@ const es: Translations = {
     linkConfirm: 'Enlazar cuenta',
     linkUnlink: 'Desenlazar',
     linkUnlinkConfirm: '¿Quitar a {{email}} como colaborador de esta familia?',
+    noCommsLabel: 'Sin comunicaciones — esta familia está excluida de todos los mensajes',
+    noCommsHelp: 'Cuando está marcado, todos los guardianes de esta familia quedan excluidos de las difusiones, recordatorios de eventos, confirmaciones de torneo y cobros mensuales. Las respuestas del administrador en la bandeja de entrada siguen funcionando.',
   },
   account: {
     title: 'Mi cuenta',

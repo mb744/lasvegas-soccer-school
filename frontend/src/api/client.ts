@@ -219,6 +219,11 @@ export const Api = {
     const r = await api.delete<RegistrationDetail>(`/registrations/${regId}/links/${encodeURIComponent(userId)}`)
     return r.data
   },
+  /** Toggle family-wide no-communications opt-out from the registration detail panel. */
+  async setRegistrationCommunications(regId: number, noCommunications: boolean) {
+    const r = await api.put<RegistrationDetail>(`/registrations/${regId}/communications`, { noCommunications })
+    return r.data
+  },
   async listAgeClassifications() {
     const r = await api.get<AgeClassification[]>('/age-classifications')
     return r.data
