@@ -403,6 +403,14 @@ function TournamentTeamPanel({
   const [gsTeamId, setGsTeamId] = useState(String(tt.gotSportTeamId || ''))
   const [gsUrl, setGsUrl] = useState('')
 
+  // TeamSnap sync state editor — separate inputs from GotSport so the admin can populate
+  // either source independently. SyncTournamentTeam dispatches to TeamSnap when both
+  // event + participant are set.
+  const [tsEventId, setTsEventId] = useState(String(tt.teamSnapEventId || ''))
+  const [tsDivisionId, setTsDivisionId] = useState(String(tt.teamSnapDivisionId || ''))
+  const [tsParticipantId, setTsParticipantId] = useState(String(tt.teamSnapParticipantId || ''))
+  const [tsUrl, setTsUrl] = useState('')
+
   // Manual add-game form
   const [showAdd, setShowAdd] = useState(false)
   const [gStart, setGStart] = useState('')
@@ -428,6 +436,11 @@ function TournamentTeamPanel({
     setGsEventId(String(tt.gotSportEventId || ''))
     setGsTeamId(String(tt.gotSportTeamId || ''))
   }, [tt.gotSportEventId, tt.gotSportTeamId])
+  useEffect(() => {
+    setTsEventId(String(tt.teamSnapEventId || ''))
+    setTsDivisionId(String(tt.teamSnapDivisionId || ''))
+    setTsParticipantId(String(tt.teamSnapParticipantId || ''))
+  }, [tt.teamSnapEventId, tt.teamSnapDivisionId, tt.teamSnapParticipantId])
 
   const addPicked = async () => {
     if (picked.size === 0) return
@@ -517,11 +530,32 @@ function TournamentTeamPanel({
       await Api.updateTournamentTeam(tour.id, tt.id, {
         gotSportEventId: gsEventId === '' ? null : Number(gsEventId),
         gotSportTeamId: gsTeamId === '' ? null : Number(gsTeamId),
+        teamSnapEventId: tt.teamSnapEventId || null,
+        teamSnapDivisionId: tt.teamSnapDivisionId || null,
+        teamSnapParticipantId: tt.teamSnapParticipantId || null,
         scheduleUrl: gsUrl.trim() || null,
       })
       setGsUrl('')
       await onChanged()
       onNotice(t('admin.evtTournGsSaved'))
+    } catch (e: any) { onError(errMsg(e)) }
+  }
+
+  const saveTeamSnap = async (e: React.FormEvent) => {
+    e.preventDefault()
+    onError(''); onNotice('')
+    try {
+      await Api.updateTournamentTeam(tour.id, tt.id, {
+        gotSportEventId: tt.gotSportEventId || null,
+        gotSportTeamId: tt.gotSportTeamId || null,
+        teamSnapEventId: tsEventId === '' ? null : Number(tsEventId),
+        teamSnapDivisionId: tsDivisionId === '' ? null : Number(tsDivisionId),
+        teamSnapParticipantId: tsParticipantId === '' ? null : Number(tsParticipantId),
+        scheduleUrl: tsUrl.trim() || null,
+      })
+      setTsUrl('')
+      await onChanged()
+      onNotice(t('admin.evtTournTsSaved'))
     } catch (e: any) { onError(errMsg(e)) }
   }
 
@@ -579,7 +613,9 @@ function TournamentTeamPanel({
           <h3 className="font-semibold text-emerald-800 text-sm">{t('admin.evtTournGsHeader')}</h3>
           <div className="text-sm whitespace-nowrap">
             <button onClick={sync}
-              disabled={syncing || tt.gotSportEventId === 0 || tt.gotSportTeamId === 0}
+              disabled={syncing
+                || ((tt.gotSportEventId === 0 || tt.gotSportTeamId === 0)
+                    && (tt.teamSnapEventId === 0 || tt.teamSnapParticipantId === 0))}
               className="text-emerald-700 hover:underline disabled:opacity-50">
               {syncing ? t('admin.evtSyncing') : t('admin.evtSync')}
             </button>
@@ -620,6 +656,47 @@ function TournamentTeamPanel({
                 {tt.lastSyncMessage && <> · {tt.lastSyncMessage}</>}
               </span>
             )}
+          </div>
+        </form>
+      </section>
+
+      {/* TeamSnap sync (alternative to GotSport — populate either pair, not both) */}
+      <section>
+        <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
+          <h3 className="font-semibold text-emerald-800 text-sm">{t('admin.evtTournTsHeader')}</h3>
+        </div>
+        <p className="text-[11px] text-slate-500 mb-1">{t('admin.evtTournTsHelp')}</p>
+        <form onSubmit={saveTeamSnap} className="grid sm:grid-cols-3 gap-2 items-end">
+          <label className="block text-xs">
+            <span className="text-slate-600">{t('admin.evtTournTsEventId')}</span>
+            <input type="number" value={tsEventId} onChange={e => setTsEventId(e.target.value)}
+              placeholder="50156"
+              className="mt-1 w-full border border-slate-300 rounded-md px-2 py-1 text-sm font-mono" />
+          </label>
+          <label className="block text-xs">
+            <span className="text-slate-600">{t('admin.evtTournTsDivisionId')}</span>
+            <input type="number" value={tsDivisionId} onChange={e => setTsDivisionId(e.target.value)}
+              placeholder="171921"
+              className="mt-1 w-full border border-slate-300 rounded-md px-2 py-1 text-sm font-mono" />
+          </label>
+          <label className="block text-xs">
+            <span className="text-slate-600">{t('admin.evtTournTsParticipantId')}</span>
+            <input type="number" value={tsParticipantId} onChange={e => setTsParticipantId(e.target.value)}
+              placeholder="910108"
+              className="mt-1 w-full border border-slate-300 rounded-md px-2 py-1 text-sm font-mono" />
+          </label>
+          <label className="block text-xs sm:col-span-3">
+            <span className="text-slate-600">{t('admin.evtTournTsUrl')}</span>
+            <input type="url" value={tsUrl} onChange={e => setTsUrl(e.target.value)}
+              placeholder="https://events.teamsnap.com/events/50156/results/division/171921/team/910108"
+              className="mt-1 w-full border border-slate-300 rounded-md px-2 py-1 text-sm font-mono" />
+            <span className="block text-[11px] text-slate-500 mt-0.5">{t('admin.evtTournTsUrlHelp')}</span>
+          </label>
+          <div className="sm:col-span-3">
+            <button type="submit"
+              className="text-sm bg-emerald-700 text-white px-3 py-1.5 rounded-md hover:bg-emerald-800">
+              {t('admin.evtTournTsSave')}
+            </button>
           </div>
         </form>
       </section>

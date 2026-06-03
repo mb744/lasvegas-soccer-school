@@ -248,6 +248,9 @@ public record TournamentTeamDto(
     string TeamName,
     int GotSportEventId,
     int GotSportTeamId,
+    int TeamSnapEventId,
+    int TeamSnapDivisionId,
+    int TeamSnapParticipantId,
     DateTime? LastSyncedAt,
     string? LastSyncMessage,
     int RosterCount,
@@ -256,7 +259,7 @@ public record TournamentTeamDto(
 
 /// <summary>Admin adds a team to a tournament. Either <see cref="ExistingTeamId"/> picks one of
 /// the regular Teams admin rows, or <see cref="NewTeamName"/> creates a brand-new team. GotSport
-/// IDs are optional and can be set later via <see cref="UpdateTournamentTeamRequest"/>.</summary>
+/// or TeamSnap IDs are optional and can be set later via <see cref="UpdateTournamentTeamRequest"/>.</summary>
 public record AddTournamentTeamRequest
 {
     public int? ExistingTeamId { get; init; }
@@ -266,16 +269,24 @@ public record AddTournamentTeamRequest
 
     public int? GotSportEventId { get; init; }
     public int? GotSportTeamId { get; init; }
+    public int? TeamSnapEventId { get; init; }
+    public int? TeamSnapDivisionId { get; init; }
+    public int? TeamSnapParticipantId { get; init; }
 
     [MaxLength(1024)]
     public string? ScheduleUrl { get; init; }
 }
 
-/// <summary>Update the per-participation GotSport state for one TournamentTeam row.</summary>
+/// <summary>Update the per-participation sync state for one TournamentTeam row. Set either the
+/// GotSport pair OR the TeamSnap triple (event + division + participant); whichever has both
+/// halves populated drives the sync.</summary>
 public record UpdateTournamentTeamRequest
 {
     public int? GotSportEventId { get; init; }
     public int? GotSportTeamId { get; init; }
+    public int? TeamSnapEventId { get; init; }
+    public int? TeamSnapDivisionId { get; init; }
+    public int? TeamSnapParticipantId { get; init; }
 
     [MaxLength(1024)]
     public string? ScheduleUrl { get; init; }

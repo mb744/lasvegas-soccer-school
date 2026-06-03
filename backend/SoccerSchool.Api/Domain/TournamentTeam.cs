@@ -25,6 +25,21 @@ public class TournamentTeam
     /// <summary>GotSport team ID — the <c>team=</c> query param on the schedule URL. 0 = none.</summary>
     public int GotSportTeamId { get; set; }
 
+    /// <summary>TeamSnap event ID — the <c>{eventId}</c> in <c>events.teamsnap.com/events/{eventId}/...</c>.
+    /// 0 = no TeamSnap sync wired up. When set together with <see cref="TeamSnapParticipantId"/>,
+    /// the sync flow pulls matches from the TeamSnap public API instead of GotSport.</summary>
+    public int TeamSnapEventId { get; set; }
+
+    /// <summary>TeamSnap division id (the "bracket" the team plays in — e.g. Foundry U9-U10 Gold).
+    /// Stored to make the picker URL parseable and for future filter use; the sync itself only
+    /// needs Event + Participant. 0 = unset.</summary>
+    public int TeamSnapDivisionId { get; set; }
+
+    /// <summary>TeamSnap participant id — the per-event participant row that identifies THIS
+    /// team's participation. Joins directly to match-participants rows; this is the key the
+    /// sync uses to figure out which matches involve this team. 0 = unset.</summary>
+    public int TeamSnapParticipantId { get; set; }
+
     public DateTime? LastSyncedAt { get; set; }
 
     [MaxLength(512)]

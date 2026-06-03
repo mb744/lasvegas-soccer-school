@@ -22,11 +22,13 @@ public class ScheduleController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly IScheduleSyncService _sync;
+    private readonly ITeamSnapSyncService _teamSnapSync;
 
-    public ScheduleController(AppDbContext db, IScheduleSyncService sync)
+    public ScheduleController(AppDbContext db, IScheduleSyncService sync, ITeamSnapSyncService teamSnapSync)
     {
         _db = db;
         _sync = sync;
+        _teamSnapSync = teamSnapSync;
     }
 
     [HttpGet("teams")]
@@ -178,6 +180,7 @@ public class ScheduleController : ControllerBase
                 t.Teams.OrderBy(tt => tt.CreatedAt).Select(tt => new TournamentTeamDto(
                     tt.Id, tt.TournamentId, tt.TeamId, tt.Team!.Name,
                     tt.GotSportEventId, tt.GotSportTeamId,
+                    tt.TeamSnapEventId, tt.TeamSnapDivisionId, tt.TeamSnapParticipantId,
                     tt.LastSyncedAt, tt.LastSyncMessage,
                     tt.Team.Roster.Count,
                     tt.Team.Games.Count(g => g.TournamentId == tt.TournamentId),
@@ -316,6 +319,7 @@ public class ScheduleController : ControllerBase
             return Conflict("That team is already in this tournament.");
 
         var (gsEventId, gsTeamId) = ResolveOptionalGotSportTeamIds(request);
+        var (tsEventId, tsDivisionId, tsParticipantId) = ResolveOptionalTeamSnapIds(request);
 
         _db.TournamentTeams.Add(new TournamentTeam
         {
@@ -323,6 +327,9 @@ public class ScheduleController : ControllerBase
             TeamId = teamId,
             GotSportEventId = gsEventId,
             GotSportTeamId = gsTeamId,
+            TeamSnapEventId = tsEventId,
+            TeamSnapDivisionId = tsDivisionId,
+            TeamSnapParticipantId = tsParticipantId,
         });
         await _db.SaveChangesAsync(ct);
         return Ok(await SummarizeTournamentAsync(id, ct));
@@ -335,8 +342,12 @@ public class ScheduleController : ControllerBase
         var tt = await _db.TournamentTeams.FirstOrDefaultAsync(x => x.Id == ttId && x.TournamentId == id, ct);
         if (tt is null) return NotFound();
         var (gsEventId, gsTeamId) = ResolveOptionalGotSportTeamIds(request);
+        var (tsEventId, tsDivisionId, tsParticipantId) = ResolveOptionalTeamSnapIds(request);
         tt.GotSportEventId = gsEventId;
         tt.GotSportTeamId = gsTeamId;
+        tt.TeamSnapEventId = tsEventId;
+        tt.TeamSnapDivisionId = tsDivisionId;
+        tt.TeamSnapParticipantId = tsParticipantId;
         await _db.SaveChangesAsync(ct);
         return Ok(await SummarizeTournamentAsync(id, ct));
     }
@@ -355,13 +366,20 @@ public class ScheduleController : ControllerBase
         return Ok(await SummarizeTournamentAsync(id, ct));
     }
 
-    /// <summary>Syncs games for a single TournamentTeam participation using its own GotSport
-    /// IDs. Games are upserted onto the underlying Team with TournamentId = this tournament.</summary>
+    /// <summary>Syncs games for a single TournamentTeam participation. Dispatches to TeamSnap
+    /// when (TeamSnapEventId + TeamSnapParticipantId) are both set on the row; otherwise falls
+    /// back to the GotSport scraper using (GotSportEventId + GotSportTeamId). Games are upserted
+    /// onto the underlying Team with TournamentId = this tournament.</summary>
     [HttpPost("tournaments/{id:int}/teams/{ttId:int}/sync")]
     public async Task<ActionResult<ScheduleSyncResultDto>> SyncTournamentTeam(
         int id, int ttId, CancellationToken ct)
     {
-        var result = await _sync.SyncTournamentTeamAsync(ttId, ct);
+        var tt = await _db.TournamentTeams.AsNoTracking().FirstOrDefaultAsync(x => x.Id == ttId && x.TournamentId == id, ct);
+        if (tt is null) return NotFound();
+        var useTeamSnap = tt.TeamSnapEventId > 0 && tt.TeamSnapParticipantId > 0;
+        var result = useTeamSnap
+            ? await _teamSnapSync.SyncTournamentTeamAsync(ttId, ct)
+            : await _sync.SyncTournamentTeamAsync(ttId, ct);
         if (!result.Success) return UnprocessableEntity(new ScheduleSyncResultDto(false, 0, 0, result.Message));
         return Ok(new ScheduleSyncResultDto(true, result.Added, result.Updated, result.Message));
     }
@@ -389,6 +407,36 @@ public class ScheduleController : ControllerBase
             if (tm.Success && int.TryParse(tm.Groups[1].Value, out var t)) teamId = t;
         }
         return (Math.Max(eventId, 0), Math.Max(teamId, 0));
+    }
+
+    /// <summary>Resolves the TeamSnap (Event, Division, Participant) triple for an Add/Update
+    /// request. Explicit fields take precedence; if blank, falls back to parsing the same
+    /// <c>ScheduleUrl</c> field the GotSport resolver uses — TeamSnap URLs look like
+    /// <c>events.teamsnap.com/events/{eventId}/results/division/{divisionId}/team/{participantId}</c>
+    /// (the exact path varies; we just sniff the three numeric segments by keyword).</summary>
+    private static (int EventId, int DivisionId, int ParticipantId) ResolveOptionalTeamSnapIds(AddTournamentTeamRequest request)
+        => ResolveTeamSnapFromExplicitOrUrl(request.TeamSnapEventId, request.TeamSnapDivisionId, request.TeamSnapParticipantId, request.ScheduleUrl);
+    private static (int EventId, int DivisionId, int ParticipantId) ResolveOptionalTeamSnapIds(UpdateTournamentTeamRequest request)
+        => ResolveTeamSnapFromExplicitOrUrl(request.TeamSnapEventId, request.TeamSnapDivisionId, request.TeamSnapParticipantId, request.ScheduleUrl);
+    private static (int EventId, int DivisionId, int ParticipantId) ResolveTeamSnapFromExplicitOrUrl(
+        int? evt, int? division, int? participant, string? scheduleUrl)
+    {
+        int eventId = evt ?? 0;
+        int divisionId = division ?? 0;
+        int participantId = participant ?? 0;
+        if ((eventId <= 0 || divisionId <= 0 || participantId <= 0)
+            && !string.IsNullOrWhiteSpace(scheduleUrl)
+            && scheduleUrl.Contains("teamsnap.com", StringComparison.OrdinalIgnoreCase))
+        {
+            var url = scheduleUrl.Trim();
+            var em = Regex.Match(url, @"/events/(\d+)", RegexOptions.IgnoreCase);
+            var dm = Regex.Match(url, @"/division/(\d+)", RegexOptions.IgnoreCase);
+            var pm = Regex.Match(url, @"/(?:team|participant)/(\d+)", RegexOptions.IgnoreCase);
+            if (em.Success && int.TryParse(em.Groups[1].Value, out var e)) eventId = e;
+            if (dm.Success && int.TryParse(dm.Groups[1].Value, out var d)) divisionId = d;
+            if (pm.Success && int.TryParse(pm.Groups[1].Value, out var p)) participantId = p;
+        }
+        return (Math.Max(eventId, 0), Math.Max(divisionId, 0), Math.Max(participantId, 0));
     }
 
     /// <summary>Picks GotSport IDs from the request — either explicit fields or parsed out of
@@ -425,6 +473,7 @@ public class ScheduleController : ControllerBase
                 t.Teams.OrderBy(tt => tt.CreatedAt).Select(tt => new TournamentTeamDto(
                     tt.Id, tt.TournamentId, tt.TeamId, tt.Team!.Name,
                     tt.GotSportEventId, tt.GotSportTeamId,
+                    tt.TeamSnapEventId, tt.TeamSnapDivisionId, tt.TeamSnapParticipantId,
                     tt.LastSyncedAt, tt.LastSyncMessage,
                     tt.Team.Roster.Count,
                     tt.Team.Games.Count(g => g.TournamentId == tt.TournamentId),

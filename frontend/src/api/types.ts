@@ -699,6 +699,12 @@ export interface TournamentTeam {
   teamName: string
   gotSportEventId: number
   gotSportTeamId: number
+  /** TeamSnap event id (path segment in events.teamsnap.com/events/{eventId}/...). 0 = unset. */
+  teamSnapEventId: number
+  /** TeamSnap division id (the "bracket" the team plays in). 0 = unset. */
+  teamSnapDivisionId: number
+  /** TeamSnap per-event participant id — the join key for the team in match-participants. 0 = unset. */
+  teamSnapParticipantId: number
   lastSyncedAt: string | null
   lastSyncMessage: string | null
   rosterCount: number
@@ -713,12 +719,18 @@ export interface AddTournamentTeamRequest {
   newTeamName?: string | null
   gotSportEventId?: number | null
   gotSportTeamId?: number | null
+  teamSnapEventId?: number | null
+  teamSnapDivisionId?: number | null
+  teamSnapParticipantId?: number | null
   scheduleUrl?: string | null
 }
 
 export interface UpdateTournamentTeamRequest {
   gotSportEventId?: number | null
   gotSportTeamId?: number | null
+  teamSnapEventId?: number | null
+  teamSnapDivisionId?: number | null
+  teamSnapParticipantId?: number | null
   scheduleUrl?: string | null
 }
 
