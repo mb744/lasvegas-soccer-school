@@ -415,6 +415,9 @@ function TournamentTeamPanel({
   // TeamSnap UI and we parse them here.
   const [tsPaste, setTsPaste] = useState('')
   const [tsPasting, setTsPasting] = useState(false)
+  // Defaults to the team's stored name but the admin can override to match how the team is
+  // spelled in the TeamSnap roster (e.g. our "LVSS B17 Red" vs "Las Vegas Soccer School B17 Red").
+  const [tsPasteName, setTsPasteName] = useState(tt.teamName)
 
   // Manual add-game form
   const [showAdd, setShowAdd] = useState(false)
@@ -446,6 +449,7 @@ function TournamentTeamPanel({
     setTsDivisionId(String(tt.teamSnapDivisionId || ''))
     setTsParticipantId(String(tt.teamSnapParticipantId || ''))
   }, [tt.teamSnapEventId, tt.teamSnapDivisionId, tt.teamSnapParticipantId])
+  useEffect(() => { setTsPasteName(tt.teamName) }, [tt.teamName])
 
   const addPicked = async () => {
     if (picked.size === 0) return
@@ -550,7 +554,9 @@ function TournamentTeamPanel({
     if (!tsPaste.trim()) return
     setTsPasting(true); onError(''); onNotice('')
     try {
-      const r = await Api.importTournamentTeamPastedSchedule(tour.id, tt.id, tsPaste)
+      const override = tsPasteName.trim() && tsPasteName.trim() !== tt.teamName
+        ? tsPasteName.trim() : null
+      const r = await Api.importTournamentTeamPastedSchedule(tour.id, tt.id, tsPaste, override)
       onNotice(r.message)
       setTsPaste('')
       await reloadAll()
@@ -721,11 +727,18 @@ function TournamentTeamPanel({
         <div className="mt-3 pt-3 border-t border-slate-200">
           <h4 className="font-semibold text-emerald-800 text-xs mb-1">{t('admin.evtTournTsPasteHeader')}</h4>
           <p className="text-[11px] text-slate-500 mb-1">{t('admin.evtTournTsPasteHelp')}</p>
+          <label className="block text-xs mb-2">
+            <span className="text-slate-600">{t('admin.evtTournTsPasteTeamName')}</span>
+            <input type="text" value={tsPasteName} onChange={e => setTsPasteName(e.target.value)}
+              placeholder={tt.teamName}
+              className="mt-1 w-full border border-slate-300 rounded-md px-2 py-1 text-xs" />
+            <span className="block text-[11px] text-slate-500 mt-0.5">{t('admin.evtTournTsPasteTeamNameHelp')}</span>
+          </label>
           <textarea rows={6} value={tsPaste} onChange={e => setTsPaste(e.target.value)}
             placeholder={t('admin.evtTournTsPastePlaceholder')}
             className="w-full border border-slate-300 rounded-md px-2 py-1 text-xs font-mono" />
           <div className="mt-1">
-            <button onClick={importPastedSchedule} disabled={tsPasting || !tsPaste.trim()}
+            <button onClick={importPastedSchedule} disabled={tsPasting || !tsPaste.trim() || !tsPasteName.trim()}
               className="text-xs bg-emerald-700 text-white px-3 py-1.5 rounded-md hover:bg-emerald-800 disabled:opacity-50">
               {tsPasting ? t('admin.sending') : t('admin.evtTournTsPasteImport')}
             </button>

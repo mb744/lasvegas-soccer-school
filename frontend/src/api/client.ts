@@ -568,9 +568,12 @@ export const Api = {
   /** Parse a block of text copied from the TeamSnap UI schedule table and upsert
    *  ScheduledGame rows for the games this team plays in. Workaround for TeamSnap's
    *  public API not exposing per-match startDate / startTime / venueId. */
-  async importTournamentTeamPastedSchedule(tournamentId: number, ttId: number, text: string) {
+  async importTournamentTeamPastedSchedule(
+    tournamentId: number, ttId: number, text: string, teamNameOverride?: string | null,
+  ) {
     const r = await api.post<ScheduleSyncResult>(
-      `/schedule/tournaments/${tournamentId}/teams/${ttId}/import-pasted-schedule`, { text })
+      `/schedule/tournaments/${tournamentId}/teams/${ttId}/import-pasted-schedule`,
+      { text, teamNameOverride: teamNameOverride ?? null })
     return r.data
   },
   /** Per-team attendance scoped to a tournament + team combination. */

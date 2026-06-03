@@ -344,6 +344,8 @@ const es: Translations = {
     evtTournTsPasteHelp: 'La API pública de TeamSnap no expone los horarios. Como solución, copie las filas del horario desde la interfaz de TeamSnap (Fecha / Hora / Sede / Equipo / Equipo) y péguelas aquí — se importarán los juegos que coincidan con este equipo.',
     evtTournTsPastePlaceholder: '06/07\t2:00 PM\tIndoor 5 Soccer - Futsal Court\nAlbion south u10\nLVSS B17 Red\n…',
     evtTournTsPasteImport: 'Importar horario pegado',
+    evtTournTsPasteTeamName: 'Nombre del equipo en TeamSnap',
+    evtTournTsPasteTeamNameHelp: 'Por defecto, el nombre de este equipo. Sobrescriba cuando TeamSnap lo escriba diferente (p. ej. "Las Vegas Soccer School B17 Red" vs "LVSS B17 Red"). La coincidencia es exacta (sin distinguir mayúsculas).',
     evtTournGames: '{{count}} partidos en este torneo',
     evtTournNoGames: 'Aún sin partidos. Sincroniza desde GotSport o agrega uno manualmente.',
     evtTournSendPreviewTitle: 'Enviar confirmaciones del torneo — vista previa',

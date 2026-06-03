@@ -393,7 +393,7 @@ public class ScheduleController : ControllerBase
     {
         if (string.IsNullOrWhiteSpace(request.Text))
             return BadRequest(new ScheduleSyncResultDto(false, 0, 0, "Paste the schedule rows first."));
-        var result = await _teamSnapSync.ImportPastedScheduleAsync(ttId, request.Text, ct);
+        var result = await _teamSnapSync.ImportPastedScheduleAsync(ttId, request.Text, request.TeamNameOverride, ct);
         if (!result.Success) return UnprocessableEntity(new ScheduleSyncResultDto(false, 0, 0, result.Message));
         return Ok(new ScheduleSyncResultDto(true, result.Added, result.Updated, result.Message));
     }

@@ -342,6 +342,8 @@ const en = {
     evtTournTsPasteHelp: 'TeamSnap\'s public API doesn\'t expose game times. As a workaround, copy the schedule rows from the TeamSnap UI (Date / Time / Venue / Team / Team) and paste them here — games matching this team\'s name will be imported.',
     evtTournTsPastePlaceholder: '06/07\t2:00 PM\tIndoor 5 Soccer - Futsal Court\nAlbion south u10\nLVSS B17 Red\n…',
     evtTournTsPasteImport: 'Import pasted schedule',
+    evtTournTsPasteTeamName: 'Team name in TeamSnap',
+    evtTournTsPasteTeamNameHelp: 'Defaults to this team\'s name. Override when TeamSnap spells it differently (e.g. "Las Vegas Soccer School B17 Red" vs "LVSS B17 Red"). Matching is exact (case-insensitive).',
     evtTournGames: '{{count}} games in this tournament',
     evtTournNoGames: 'No games yet. Sync from GotSport or add one manually.',
     evtTournSendPreviewTitle: 'Send tournament confirmations — preview',

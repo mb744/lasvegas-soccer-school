@@ -30,7 +30,7 @@ public interface ITeamSnapSyncService
     /// <summary>Parses a block of text copied directly out of the TeamSnap UI's
     /// "Date / Time / Venue / Game / Team / Score / Score / Team" schedule table
     /// and upserts ScheduledGame rows for the games this team plays in.</summary>
-    Task<ScheduleSyncResult> ImportPastedScheduleAsync(int tournamentTeamId, string pastedText, CancellationToken ct);
+    Task<ScheduleSyncResult> ImportPastedScheduleAsync(int tournamentTeamId, string pastedText, string? teamNameOverride, CancellationToken ct);
 }
 
 public class TeamSnapSyncService : ITeamSnapSyncService
@@ -188,7 +188,7 @@ public class TeamSnapSyncService : ITeamSnapSyncService
         return new ScheduleSyncResult(true, added, updated, message);
     }
 
-    public async Task<ScheduleSyncResult> ImportPastedScheduleAsync(int tournamentTeamId, string pastedText, CancellationToken ct)
+    public async Task<ScheduleSyncResult> ImportPastedScheduleAsync(int tournamentTeamId, string pastedText, string? teamNameOverride, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(pastedText))
             return new ScheduleSyncResult(false, 0, 0, "Pasted text is empty.");
@@ -202,7 +202,11 @@ public class TeamSnapSyncService : ITeamSnapSyncService
 
         // Year defaults to the tournament's StartDate year; if missing, the current year.
         var yearHint = tt.Tournament?.StartDate?.Year ?? DateTime.UtcNow.Year;
-        var ourName = tt.Team.Name.Trim();
+        // The admin can override the label we search for — TeamSnap rosters often spell the
+        // team differently than our internal name ("Las Vegas Soccer School" vs "LVSS").
+        var ourName = string.IsNullOrWhiteSpace(teamNameOverride)
+            ? tt.Team.Name.Trim()
+            : teamNameOverride.Trim();
 
         var existing = await _db.ScheduledGames
             .Where(g => g.TeamId == tt.TeamId && g.TournamentId == tt.TournamentId)

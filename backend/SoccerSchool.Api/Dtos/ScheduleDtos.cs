@@ -279,9 +279,11 @@ public record AddTournamentTeamRequest
 
 /// <summary>Body for the manual TeamSnap paste import. The admin copies the schedule rows
 /// out of the TeamSnap UI ("Date / Time / Venue / Game / Team / Score / Score / Team")
-/// and posts the raw text; the parser extracts each game and upserts the rows where this
-/// team appears as home or away.</summary>
-public record ImportPastedScheduleRequest(string Text);
+/// and posts the raw text; the parser extracts each game and upserts the rows where the
+/// chosen team name appears as home or away. <see cref="TeamNameOverride"/> lets the admin
+/// search for a different label than the team's DB name (TeamSnap rosters often use a
+/// longer variant — "Las Vegas Soccer School B17 Red" vs our "LVSS B17 Red").</summary>
+public record ImportPastedScheduleRequest(string Text, string? TeamNameOverride = null);
 
 /// <summary>Update the per-participation sync state for one TournamentTeam row. Set either the
 /// GotSport pair OR the TeamSnap triple (event + division + participant); whichever has both
