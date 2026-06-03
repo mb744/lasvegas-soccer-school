@@ -410,6 +410,11 @@ function TournamentTeamPanel({
   const [tsDivisionId, setTsDivisionId] = useState(String(tt.teamSnapDivisionId || ''))
   const [tsParticipantId, setTsParticipantId] = useState(String(tt.teamSnapParticipantId || ''))
   const [tsUrl, setTsUrl] = useState('')
+  // Paste-import workaround: TeamSnap's public API doesn't expose per-match startDate /
+  // startTime / venueId, so the admin can copy the visible schedule rows out of the
+  // TeamSnap UI and we parse them here.
+  const [tsPaste, setTsPaste] = useState('')
+  const [tsPasting, setTsPasting] = useState(false)
 
   // Manual add-game form
   const [showAdd, setShowAdd] = useState(false)
@@ -539,6 +544,19 @@ function TournamentTeamPanel({
       await onChanged()
       onNotice(t('admin.evtTournGsSaved'))
     } catch (e: any) { onError(errMsg(e)) }
+  }
+
+  const importPastedSchedule = async () => {
+    if (!tsPaste.trim()) return
+    setTsPasting(true); onError(''); onNotice('')
+    try {
+      const r = await Api.importTournamentTeamPastedSchedule(tour.id, tt.id, tsPaste)
+      onNotice(r.message)
+      setTsPaste('')
+      await reloadAll()
+      await onChanged()
+    } catch (e: any) { onError(errMsg(e)) }
+    finally { setTsPasting(false) }
   }
 
   const saveTeamSnap = async (e: React.FormEvent) => {
@@ -699,6 +717,20 @@ function TournamentTeamPanel({
             </button>
           </div>
         </form>
+
+        <div className="mt-3 pt-3 border-t border-slate-200">
+          <h4 className="font-semibold text-emerald-800 text-xs mb-1">{t('admin.evtTournTsPasteHeader')}</h4>
+          <p className="text-[11px] text-slate-500 mb-1">{t('admin.evtTournTsPasteHelp')}</p>
+          <textarea rows={6} value={tsPaste} onChange={e => setTsPaste(e.target.value)}
+            placeholder={t('admin.evtTournTsPastePlaceholder')}
+            className="w-full border border-slate-300 rounded-md px-2 py-1 text-xs font-mono" />
+          <div className="mt-1">
+            <button onClick={importPastedSchedule} disabled={tsPasting || !tsPaste.trim()}
+              className="text-xs bg-emerald-700 text-white px-3 py-1.5 rounded-md hover:bg-emerald-800 disabled:opacity-50">
+              {tsPasting ? t('admin.sending') : t('admin.evtTournTsPasteImport')}
+            </button>
+          </div>
+        </div>
       </section>
 
       {/* Manual add-game + games list */}

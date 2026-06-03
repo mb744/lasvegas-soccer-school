@@ -277,6 +277,12 @@ public record AddTournamentTeamRequest
     public string? ScheduleUrl { get; init; }
 }
 
+/// <summary>Body for the manual TeamSnap paste import. The admin copies the schedule rows
+/// out of the TeamSnap UI ("Date / Time / Venue / Game / Team / Score / Score / Team")
+/// and posts the raw text; the parser extracts each game and upserts the rows where this
+/// team appears as home or away.</summary>
+public record ImportPastedScheduleRequest(string Text);
+
 /// <summary>Update the per-participation sync state for one TournamentTeam row. Set either the
 /// GotSport pair OR the TeamSnap triple (event + division + participant); whichever has both
 /// halves populated drives the sync.</summary>

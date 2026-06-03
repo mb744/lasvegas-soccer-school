@@ -27,6 +27,10 @@ namespace SoccerSchool.Api.Services;
 public interface ITeamSnapSyncService
 {
     Task<ScheduleSyncResult> SyncTournamentTeamAsync(int tournamentTeamId, CancellationToken ct);
+    /// <summary>Parses a block of text copied directly out of the TeamSnap UI's
+    /// "Date / Time / Venue / Game / Team / Score / Score / Team" schedule table
+    /// and upserts ScheduledGame rows for the games this team plays in.</summary>
+    Task<ScheduleSyncResult> ImportPastedScheduleAsync(int tournamentTeamId, string pastedText, CancellationToken ct);
 }
 
 public class TeamSnapSyncService : ITeamSnapSyncService
@@ -183,6 +187,172 @@ public class TeamSnapSyncService : ITeamSnapSyncService
         }
         return new ScheduleSyncResult(true, added, updated, message);
     }
+
+    public async Task<ScheduleSyncResult> ImportPastedScheduleAsync(int tournamentTeamId, string pastedText, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(pastedText))
+            return new ScheduleSyncResult(false, 0, 0, "Pasted text is empty.");
+
+        var tt = await _db.TournamentTeams
+            .Include(x => x.Tournament)
+            .Include(x => x.Team)
+            .FirstOrDefaultAsync(x => x.Id == tournamentTeamId, ct);
+        if (tt is null) return new ScheduleSyncResult(false, 0, 0, "Tournament team not found.");
+        if (tt.Team is null) return new ScheduleSyncResult(false, 0, 0, "Team row missing.");
+
+        // Year defaults to the tournament's StartDate year; if missing, the current year.
+        var yearHint = tt.Tournament?.StartDate?.Year ?? DateTime.UtcNow.Year;
+        var ourName = tt.Team.Name.Trim();
+
+        var existing = await _db.ScheduledGames
+            .Where(g => g.TeamId == tt.TeamId && g.TournamentId == tt.TournamentId)
+            .ToListAsync(ct);
+        var byUid = existing.ToDictionary(g => g.ExternalUid, g => g, StringComparer.Ordinal);
+
+        var games = ParsePastedSchedule(pastedText, yearHint);
+        int added = 0, updated = 0, ours = 0;
+        var now = DateTime.UtcNow;
+        foreach (var g in games)
+        {
+            var isHomeUs = NamesMatch(g.HomeName, ourName);
+            var isAwayUs = NamesMatch(g.AwayName, ourName);
+            if (!isHomeUs && !isAwayUs) continue;
+            ours++;
+            var opponent = isHomeUs ? g.AwayName : g.HomeName;
+            var startsAt = PastedRowToUtc(g.LocalDate, g.LocalTime, g.YearHint);
+            if (startsAt is null) continue;
+            // Stable per-team uid that survives re-paste: date + time + opponent.
+            var uid = $"ts-paste:{tt.Id}:{startsAt.Value:yyyyMMddHHmm}:{Slug(opponent)}";
+            var summary = $"{g.HomeName} vs {g.AwayName}";
+            if (byUid.TryGetValue(uid, out var row))
+            {
+                row.StartsAt = startsAt.Value;
+                row.Summary = Trim(summary, 512);
+                row.Location = Trim(g.Venue, 512);
+                row.OpponentName = Trim(opponent, 256);
+                row.IsHome = isHomeUs;
+                row.LastSeenAt = now;
+                updated++;
+            }
+            else
+            {
+                _db.ScheduledGames.Add(new ScheduledGame
+                {
+                    TeamId = tt.TeamId,
+                    TournamentId = tt.TournamentId,
+                    ExternalUid = uid,
+                    StartsAt = startsAt.Value,
+                    Summary = Trim(summary, 512),
+                    Location = Trim(g.Venue, 512),
+                    OpponentName = Trim(opponent, 256),
+                    IsHome = isHomeUs,
+                    LastSeenAt = now,
+                    CreatedAt = now,
+                });
+                added++;
+            }
+        }
+        tt.LastSyncedAt = now;
+        tt.LastSyncMessage = ours == 0
+            ? $"Parsed {games.Count} game(s) but none matched team name \"{ourName}\"."
+            : $"{added} added, {updated} updated from {ours} matching game(s) in the paste.";
+        await _db.SaveChangesAsync(ct);
+        return new ScheduleSyncResult(true, added, updated, tt.LastSyncMessage);
+    }
+
+    private static bool NamesMatch(string? a, string? b)
+    {
+        if (string.IsNullOrWhiteSpace(a) || string.IsNullOrWhiteSpace(b)) return false;
+        return string.Equals(a.Trim(), b.Trim(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string Slug(string? s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return string.Empty;
+        var arr = s.ToLowerInvariant().Where(c => char.IsLetterOrDigit(c)).ToArray();
+        return new string(arr);
+    }
+
+    /// <summary>Parses the TeamSnap-table format the admin pastes — typically three lines per
+    /// game (header row with MM/DD, time, venue; then two team-name rows). Tolerates extra
+    /// blank/score rows between entries.</summary>
+    internal static List<PastedScheduleGame> ParsePastedSchedule(string text, int yearHint)
+    {
+        var lines = text.Split('\n').Select(l => l.TrimEnd('\r').TrimEnd()).ToList();
+        var games = new List<PastedScheduleGame>();
+        // Header row pattern: "MM/DD\tHH:MM (AM|PM)\tVenue..." (the score columns can be empty).
+        var headerRe = new System.Text.RegularExpressions.Regex(
+            @"^(\d{1,2}/\d{1,2})\s+(\d{1,2}:\d{2}\s*[AP]M)\s+([^\t]+?)(?:\t|\s{2,}|$)",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        // Also accept tab-delimited variant.
+        var headerReTab = new System.Text.RegularExpressions.Regex(
+            @"^(\d{1,2}/\d{1,2})\t([^\t]+?)\t([^\t]+?)(?:\t|$)",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        for (int i = 0; i < lines.Count; i++)
+        {
+            var line = lines[i];
+            if (string.IsNullOrWhiteSpace(line)) continue;
+            string? dateStr = null, timeStr = null, venue = null;
+            var m = headerRe.Match(line);
+            if (m.Success)
+            {
+                dateStr = m.Groups[1].Value;
+                timeStr = m.Groups[2].Value.Replace(" ", "").ToUpperInvariant();
+                venue = m.Groups[3].Value.Trim();
+            }
+            else
+            {
+                var mt = headerReTab.Match(line);
+                if (!mt.Success) continue;
+                dateStr = mt.Groups[1].Value;
+                timeStr = mt.Groups[2].Value.Trim();
+                venue = mt.Groups[3].Value.Trim();
+            }
+            // The next two non-blank, non-header lines are home and away.
+            string? home = null, away = null;
+            int j = i + 1;
+            while (j < lines.Count && string.IsNullOrWhiteSpace(lines[j])) j++;
+            if (j < lines.Count && !headerRe.IsMatch(lines[j]) && !headerReTab.IsMatch(lines[j]))
+            {
+                home = lines[j].Trim(); j++;
+            }
+            while (j < lines.Count && string.IsNullOrWhiteSpace(lines[j])) j++;
+            if (j < lines.Count && !headerRe.IsMatch(lines[j]) && !headerReTab.IsMatch(lines[j]))
+            {
+                away = lines[j].Trim(); j++;
+            }
+            if (home is null || away is null) continue;
+            games.Add(new PastedScheduleGame(dateStr!, timeStr!, venue, home, away, yearHint));
+            i = j - 1; // skip past the team rows on the next iteration
+        }
+        return games;
+    }
+
+    /// <summary>Converts a "MM/DD" + "h:mmAM/PM" pasted pair into UTC using the tournament's
+    /// year hint and the Pacific timezone (Las Vegas).</summary>
+    private static DateTime? PastedRowToUtc(string monthDay, string time, int yearHint)
+    {
+        if (!System.Text.RegularExpressions.Regex.IsMatch(monthDay, @"^\d{1,2}/\d{1,2}$")) return null;
+        var withYear = $"{monthDay}/{yearHint} {time}";
+        if (!DateTime.TryParseExact(withYear, "M/d/yyyy h:mmtt",
+                CultureInfo.InvariantCulture, DateTimeStyles.None, out var local))
+        {
+            return null;
+        }
+        TimeZoneInfo? pacific;
+        try { pacific = TimeZoneInfo.FindSystemTimeZoneById("America/Los_Angeles"); }
+        catch
+        {
+            try { pacific = TimeZoneInfo.FindSystemTimeZoneById("Pacific Standard Time"); }
+            catch { return null; }
+        }
+        return TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(local, DateTimeKind.Unspecified), pacific);
+    }
+
+    internal record PastedScheduleGame(
+        string LocalDate, string LocalTime, string? Venue,
+        string HomeName, string AwayName, int YearHint);
 
     private static DateTime? ParseStartsAtUtc(string? startDate, string? startTime)
     {

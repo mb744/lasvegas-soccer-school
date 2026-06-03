@@ -384,6 +384,20 @@ public class ScheduleController : ControllerBase
         return Ok(new ScheduleSyncResultDto(true, result.Added, result.Updated, result.Message));
     }
 
+    /// <summary>Imports a schedule pasted out of the TeamSnap UI. Workaround for the public
+    /// TeamSnap API not exposing per-match startDate/startTime/venueId — the admin pastes the
+    /// visible schedule rows and we parse + upsert ScheduledGame rows for this team.</summary>
+    [HttpPost("tournaments/{id:int}/teams/{ttId:int}/import-pasted-schedule")]
+    public async Task<ActionResult<ScheduleSyncResultDto>> ImportPastedSchedule(
+        int id, int ttId, [FromBody] ImportPastedScheduleRequest request, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.Text))
+            return BadRequest(new ScheduleSyncResultDto(false, 0, 0, "Paste the schedule rows first."));
+        var result = await _teamSnapSync.ImportPastedScheduleAsync(ttId, request.Text, ct);
+        if (!result.Success) return UnprocessableEntity(new ScheduleSyncResultDto(false, 0, 0, result.Message));
+        return Ok(new ScheduleSyncResultDto(true, result.Added, result.Updated, result.Message));
+    }
+
     /// <summary>Same parsing rules as the legacy tournament-level GotSport resolver but for the
     /// per-participation request shape (Add/Update).</summary>
     private static (int EventId, int TeamId) ResolveOptionalGotSportTeamIds(AddTournamentTeamRequest request)
