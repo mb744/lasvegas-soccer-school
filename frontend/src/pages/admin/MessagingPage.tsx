@@ -30,6 +30,7 @@ import type {
   EmailTemplate,
   ThreadSummary,
   ThreadDetail,
+  InboxParent,
   MonthlyFeePreview,
 } from '../../api/types'
 
@@ -1306,6 +1307,13 @@ function InboxTab({
   const [replyChannel, setReplyChannel] = useState<MessageChannel>(0)
   const [replyBody, setReplyBody] = useState('')
   const [sending, setSending] = useState(false)
+  // "Message a parent" picker — search registered parents and open a thread, including
+  // parents who haven't replied yet (so they don't appear in `threads`).
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [pickerQuery, setPickerQuery] = useState('')
+  const [pickerUnrepliedOnly, setPickerUnrepliedOnly] = useState(true)
+  const [pickerResults, setPickerResults] = useState<InboxParent[]>([])
+  const [pickerLoading, setPickerLoading] = useState(false)
 
   const refresh = async () => {
     try { setThreads(await Api.listThreads()) }
@@ -1313,6 +1321,26 @@ function InboxTab({
   }
 
   useEffect(() => { refresh() }, [])
+
+  // Debounced parent search: refetch on query / unrepliedOnly change while picker is open.
+  useEffect(() => {
+    if (!pickerOpen) return
+    let stale = false
+    setPickerLoading(true)
+    const t = setTimeout(async () => {
+      try {
+        const rows = await Api.searchInboxParents(pickerQuery.trim(), {
+          unrepliedOnly: pickerUnrepliedOnly, limit: 50,
+        })
+        if (!stale) setPickerResults(rows)
+      } catch (e: any) {
+        if (!stale) onError(extractError(e))
+      } finally {
+        if (!stale) setPickerLoading(false)
+      }
+    }, 200)
+    return () => { stale = true; clearTimeout(t) }
+  }, [pickerOpen, pickerQuery, pickerUnrepliedOnly])
 
   const openThread = async (phone: string) => {
     setSelectedPhone(phone)
@@ -1359,8 +1387,55 @@ function InboxTab({
       <section className="bg-white border border-slate-200 rounded-lg p-4 lg:col-span-1">
         <div className="flex items-center justify-between mb-2">
           <h2 className="font-bold text-emerald-800">{t('admin.msgInboxHeader')}</h2>
-          <button onClick={refresh} className="text-sm text-emerald-700 hover:underline">↻</button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setPickerOpen(o => !o)}
+              className="text-sm text-emerald-700 hover:underline">
+              {pickerOpen ? t('admin.cancel') : '+ ' + t('admin.msgInboxNewConversation')}
+            </button>
+            <button onClick={refresh} className="text-sm text-emerald-700 hover:underline">↻</button>
+          </div>
         </div>
+
+        {pickerOpen && (
+          <div className="bg-emerald-50 border border-emerald-200 rounded p-2 mb-2 space-y-2">
+            <p className="text-[11px] text-slate-600">{t('admin.msgInboxNewConversationHelp')}</p>
+            <input type="text" value={pickerQuery}
+              onChange={e => setPickerQuery(e.target.value)}
+              placeholder={t('admin.msgInboxParentSearchPlaceholder')}
+              className="w-full border border-slate-300 rounded-md px-2 py-1 text-sm" />
+            <label className="flex items-center gap-2 text-[11px] text-slate-700">
+              <input type="checkbox" checked={pickerUnrepliedOnly}
+                onChange={e => setPickerUnrepliedOnly(e.target.checked)} />
+              <span>{t('admin.msgInboxParentUnrepliedOnly')}</span>
+            </label>
+            <ul className="max-h-56 overflow-y-auto bg-white border border-slate-200 rounded divide-y divide-slate-100">
+              {pickerLoading && <li className="text-xs text-slate-400 p-2 text-center">{t('common.loading')}</li>}
+              {!pickerLoading && pickerResults.length === 0 && (
+                <li className="text-xs text-slate-400 p-2 text-center">{t('admin.msgInboxParentNone')}</li>
+              )}
+              {!pickerLoading && pickerResults.map(p => (
+                <li key={p.parentAccountId}>
+                  <button onClick={() => {
+                    openThread(p.phone)
+                    setPickerOpen(false)
+                    setPickerQuery('')
+                  }}
+                    className="w-full text-left px-2 py-1.5 text-xs hover:bg-emerald-50">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium">{p.name}</span>
+                      {!p.hasReplied && (
+                        <span className="text-[9px] uppercase tracking-wide bg-amber-100 text-amber-800 px-1 rounded">
+                          {t('admin.msgInboxParentNoReply')}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[10px] text-slate-500 font-mono">{p.phone}</div>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         <ul className="space-y-1 max-h-[60vh] overflow-y-auto">
           {threads.map(thr => (
             <li key={thr.phone}>

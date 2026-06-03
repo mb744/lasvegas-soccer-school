@@ -1072,6 +1072,16 @@ export interface ThreadSummary {
   outboundCount: number
 }
 
+/** One registered parent in the Inbox "Message a parent" picker — for starting a thread
+ *  with someone who hasn't replied yet (so they don't appear in the threads list). */
+export interface InboxParent {
+  parentAccountId: number
+  name: string
+  phone: string
+  language: Language
+  hasReplied: boolean
+}
+
 export interface ThreadDetail {
   phone: string
   name: string | null

@@ -711,6 +711,74 @@ public class MessagingController : ControllerBase
     }
 
 
+    /// <summary>Search registered parents for the Inbox "Message a parent" picker. Lets the
+    /// admin start a conversation with a parent who hasn't replied yet (so they don't show up
+    /// in <see cref="ListThreads"/>). <paramref name="q"/> matches first/last/full name and
+    /// trailing-digit phone substring; <paramref name="unrepliedOnly"/>=true filters to parents
+    /// with no inbound on record in the last 6 months.</summary>
+    [HttpGet("parents-search")]
+    public async Task<ActionResult<IEnumerable<InboxParentDto>>> SearchInboxParents(
+        [FromQuery] string? q, [FromQuery] bool unrepliedOnly = false, [FromQuery] int limit = 50,
+        CancellationToken ct = default)
+    {
+        var cap = Math.Clamp(limit, 1, 200);
+        // Only parents we can actually reach by SMS/WhatsApp — phone-required.
+        var query = _db.ParentAccounts
+            .Where(p => !p.NoCommunications && p.CellPhone != null && p.CellPhone != "");
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var needle = q.Trim();
+            var digits = new string(needle.Where(char.IsDigit).ToArray());
+            query = query.Where(p =>
+                EF.Functions.Like(p.FirstName ?? "", $"%{needle}%")
+                || EF.Functions.Like(p.LastName ?? "", $"%{needle}%")
+                || EF.Functions.Like((p.FirstName ?? "") + " " + (p.LastName ?? ""), $"%{needle}%")
+                || (digits.Length > 0 && EF.Functions.Like(p.CellPhone!, $"%{digits}%")));
+        }
+        var parents = await query
+            .OrderBy(p => p.LastName).ThenBy(p => p.FirstName)
+            .Take(cap * 2) // overshoot so the unreplied filter still has enough to return.
+            .Select(p => new { p.Id, p.FirstName, p.LastName, p.CellPhone, p.Language })
+            .ToListAsync(ct);
+        if (parents.Count == 0) return Ok(Array.Empty<InboxParentDto>());
+
+        // Resolve "has replied" by checking InboundMessages over the last 6 months against every
+        // phone-form variant — mirrors the threads list semantics.
+        var since = DateTime.UtcNow.AddMonths(-6);
+        var allCandidates = parents
+            .Where(p => !string.IsNullOrWhiteSpace(p.CellPhone))
+            .SelectMany(p => PhoneNormalizer.Variants(p.CellPhone!))
+            .Distinct()
+            .ToList();
+        var repliedPhones = await _db.InboundMessages
+            .Where(m => m.ReceivedAt >= since && m.FromPhone != null && allCandidates.Contains(m.FromPhone))
+            .Select(m => m.FromPhone!)
+            .Distinct()
+            .ToListAsync(ct);
+        var repliedSet = new HashSet<string>(repliedPhones, StringComparer.Ordinal);
+
+        bool HasReplied(string? phone)
+        {
+            if (string.IsNullOrWhiteSpace(phone)) return false;
+            foreach (var v in PhoneNormalizer.Variants(phone))
+                if (repliedSet.Contains(v)) return true;
+            return false;
+        }
+
+        var rows = parents
+            .Select(p => new InboxParentDto(
+                p.Id,
+                $"{p.FirstName} {p.LastName}".Trim(),
+                p.CellPhone!,
+                p.Language,
+                HasReplied(p.CellPhone)))
+            .Where(d => !unrepliedOnly || !d.HasReplied)
+            .Take(cap)
+            .ToList();
+        return Ok(rows);
+    }
+
+
     /// <summary>Full chronological thread for one phone — inbounds + outbounds interleaved.</summary>
     [HttpGet("threads/{phone}")]
     public async Task<ActionResult<ThreadDetailDto>> GetThread(string phone, CancellationToken ct)

@@ -455,6 +455,16 @@ public record SendThreadReplyRequest
     public string Body { get; init; } = string.Empty;
 }
 
+/// <summary>One registered parent in the Inbox "Message a parent" picker. Carries enough to
+/// open a new thread (phone + display name + preferred language) plus a flag for whether they
+/// have any inbound on record so the UI can surface "hasn't replied yet" parents.</summary>
+public record InboxParentDto(
+    int ParentAccountId,
+    string Name,
+    string Phone,
+    Language Language,
+    bool HasReplied);
+
 // --- Monthly fee notification (admin one-click broadcast) ---
 
 /// <summary>Summary of who the monthly-fee broadcast would hit, returned by the preview endpoint

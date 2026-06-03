@@ -55,6 +55,7 @@ import type {
   MessagingSettings,
   SaveMessagingSettingsRequest,
   ThreadSummary,
+  InboxParent,
   ThreadDetail,
   ThreadMessage,
   SendThreadReplyRequest,
@@ -418,6 +419,17 @@ export const Api = {
   },
   async listThreads() {
     const r = await api.get<ThreadSummary[]>('/messaging/threads')
+    return r.data
+  },
+  /** Search registered parents for the Inbox "Message a parent" picker. Returns up to `limit`
+   *  matches by name or trailing phone digits. `unrepliedOnly` filters out parents who already
+   *  have a thread in the inbox (any inbound on record in the last 6 months). */
+  async searchInboxParents(query: string, opts?: { unrepliedOnly?: boolean; limit?: number }) {
+    const params = new URLSearchParams()
+    if (query) params.set('q', query)
+    if (opts?.unrepliedOnly) params.set('unrepliedOnly', 'true')
+    if (opts?.limit) params.set('limit', String(opts.limit))
+    const r = await api.get<InboxParent[]>(`/messaging/parents-search?${params.toString()}`)
     return r.data
   },
   async getThread(phone: string) {
