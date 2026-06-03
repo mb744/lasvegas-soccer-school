@@ -63,10 +63,17 @@ public class MessagingController : ControllerBase
     [HttpGet("groups")]
     public async Task<ActionResult<object>> ListGroups(CancellationToken ct)
     {
+        // MemberCount mirrors what ResolveAsync(CustomGroup) will actually fan out to: reachable
+        // (phone or email present) AND not opted out at the family level. Without this filter the
+        // dropdown shows inflated counts vs. who actually receives the broadcast.
         var curated = await _db.MessageGroups
             .OrderBy(g => g.Name)
             .Select(g => new MessageGroupSummary(
-                g.Id, g.Name, g.Description, g.Language, g.Members.Count, g.CreatedAt))
+                g.Id, g.Name, g.Description, g.Language,
+                g.Members.Count(m =>
+                    ((m.Phone != null && m.Phone != "") || (m.Email != null && m.Email != ""))
+                    && (m.ParentAccount == null || !m.ParentAccount.NoCommunications)),
+                g.CreatedAt))
             .ToListAsync(ct);
         var dynamicGroups = (await _resolver.ListDynamicGroupsAsync(ct))
             .Select(d => new DynamicGroupDto(d.Key, d.Label, d.Count))
@@ -119,7 +126,13 @@ public class MessagingController : ControllerBase
         g.Description = request.Description?.Trim();
         g.Language = request.Language;
         await _db.SaveChangesAsync(ct);
-        return Ok(new MessageGroupSummary(g.Id, g.Name, g.Description, g.Language, g.Members.Count, g.CreatedAt));
+        // Hydrate ParentAccount on members so the reachable+not-opted-out count matches ListGroups.
+        await _db.Entry(g).Collection(x => x.Members).Query()
+            .Include(m => m.ParentAccount).LoadAsync(ct);
+        var memberCount = g.Members.Count(m =>
+            ((!string.IsNullOrWhiteSpace(m.Phone)) || (!string.IsNullOrWhiteSpace(m.Email)))
+            && (m.ParentAccount == null || !m.ParentAccount.NoCommunications));
+        return Ok(new MessageGroupSummary(g.Id, g.Name, g.Description, g.Language, memberCount, g.CreatedAt));
     }
 
     [HttpDelete("groups/{id:int}")]
