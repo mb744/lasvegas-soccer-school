@@ -991,6 +991,20 @@ public class MessagingController : ControllerBase
     private async Task<WhatsAppTemplate?> FindTournamentTemplateAsync(Language language, CancellationToken ct)
         => await FindLatestVersionedTemplateAsync(TournamentTemplateBaseName, language, ct);
 
+    private const string TournamentFeeTemplateBaseName = "tournamentfee";
+    private const string LeagueFeeTemplateBaseName = "leaguefee";
+
+    /// <summary>Resolves the fee-reminder template base for a tournament — Kind=Tournament uses
+    /// <c>tournamentfee_*</c>, Kind=League uses <c>leaguefee_*</c>. Same versioning rules as
+    /// the tournamentparticipation lookup.</summary>
+    private async Task<WhatsAppTemplate?> FindFeeTemplateAsync(Tournament tournament, Language language, CancellationToken ct)
+    {
+        var baseName = tournament.Kind == TournamentKind.League
+            ? LeagueFeeTemplateBaseName
+            : TournamentFeeTemplateBaseName;
+        return await FindLatestVersionedTemplateAsync(baseName, language, ct);
+    }
+
     /// <summary>Picks the highest-versioned WhatsApp template matching the convention
     /// <c>{baseName}_{english|spanish|en|es}</c> (treated as v1) or
     /// <c>{baseName}v{N}_{english|spanish|en|es}</c> for vN. An optional underscore is allowed
@@ -1294,6 +1308,86 @@ public class MessagingController : ControllerBase
 
         var total = includePlayerIds is null ? team.Roster.Count : targeted;
         return Ok(new SendTournamentConfirmationsResult(sent, skipped, total, null));
+    }
+
+    /// <summary>Per-team fee-reminder send. Mirrors the confirmations fan-out but uses the
+    /// <c>tournamentfee_*</c> (Kind=Tournament) or <c>leaguefee_*</c> (Kind=League) template
+    /// and skips any rostered player whose <see cref="Domain.TournamentAttendance.Paid"/> is
+    /// true. Per-player Broadcast + BatchId tagging matches the confirmations send so the
+    /// History view collapses the rows.</summary>
+    [HttpPost("tournaments/{tournamentId:int}/teams/{teamId:int}/send-fee-reminders")]
+    public async Task<ActionResult<SendTournamentConfirmationsResult>> SendTournamentTeamFeeReminders(
+        int tournamentId, int teamId, CancellationToken ct)
+    {
+        if (!_sender.IsAvailable(MessageChannel.WhatsApp))
+            return BadRequest("WhatsApp not configured on this server.");
+
+        var tournament = await _db.Tournaments.FirstOrDefaultAsync(t => t.Id == tournamentId, ct);
+        if (tournament is null) return NotFound();
+        if (tournament.StartDate is null)
+            return BadRequest("Set the tournament's start date before sending fee reminders.");
+        if (tournament.CostPerPlayer is null)
+            return BadRequest("Set the cost per player before sending fee reminders.");
+
+        var team = await _db.Teams
+            .Include(tt => tt.Roster).ThenInclude(tp => tp.Player)
+            .FirstOrDefaultAsync(tt => tt.Id == teamId, ct);
+        if (team is null) return NotFound();
+        if (team.Roster.Count == 0) return BadRequest("This team has no rostered players.");
+
+        var paidPlayerIds = await _db.TournamentAttendances
+            .Where(a => a.TournamentId == tournamentId && a.Paid)
+            .Select(a => a.PlayerId)
+            .ToHashSetAsync(ct);
+        var unpaidRoster = team.Roster
+            .Where(tp => tp.Player is not null && !paidPlayerIds.Contains(tp.PlayerId))
+            .ToList();
+        if (unpaidRoster.Count == 0)
+            return Ok(new SendTournamentConfirmationsResult(0, 0, 0, "Every rostered player is already marked Paid."));
+
+        var enTemplate = await FindFeeTemplateAsync(tournament, Language.English, ct);
+        var esTemplate = await FindFeeTemplateAsync(tournament, Language.Spanish, ct);
+        if (enTemplate is null && esTemplate is null)
+        {
+            var baseName = tournament.Kind == TournamentKind.League ? LeagueFeeTemplateBaseName : TournamentFeeTemplateBaseName;
+            return BadRequest($"No fee templates configured. Add `{baseName}_english` and `{baseName}_spanish` under Messaging → Templates first.");
+        }
+        var primary = enTemplate ?? esTemplate!;
+
+        var datesStr = FormatTournamentDates(tournament.StartDate.Value, tournament.EndDate);
+        var costStr = tournament.CostPerPlayer.Value.ToString("C", System.Globalization.CultureInfo.GetCultureInfo("en-US"));
+        var batchId = Guid.NewGuid();
+        int sent = 0, skipped = 0;
+        foreach (var tp in unpaidRoster)
+        {
+            var player = tp.Player!;
+            var props = BuildTournamentProperties(tournament, team, player);
+            var legacy = new Dictionary<int, string>
+            {
+                [1] = datesStr,
+                [2] = $"{player.FirstName} {player.LastName}".Trim(),
+                [3] = costStr,
+            };
+            var values = BuildVariableValuesFromMapping(primary, props, legacy);
+            var req = new CreateBroadcastRequest
+            {
+                Channel = MessageChannel.WhatsApp,
+                WhatsAppTemplateId = primary.Id,
+                TemplateVariables = values,
+                TournamentId = tournamentId,
+                PlayerId = player.Id,
+                BatchId = batchId,
+                Target = new BroadcastTargetDto
+                {
+                    Kind = RecipientTargetKindDto.DynamicGroup,
+                    DynamicGroupKey = $"{RecipientResolver.DynamicPlayerPrefix}{player.Id}",
+                },
+            };
+            var result = await CreateBroadcast(req, ct);
+            if (result.Result is ObjectResult ok && ok.StatusCode == 200) sent++;
+            else skipped++;
+        }
+        return Ok(new SendTournamentConfirmationsResult(sent, skipped, unpaidRoster.Count, null));
     }
 
     /// <summary>Per-property resolved values for a tournament confirmation send. Keys here match

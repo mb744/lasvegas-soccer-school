@@ -20,5 +20,10 @@ public class TournamentAttendance
 
     public AttendanceSource Source { get; set; } = AttendanceSource.ParentReply;
 
+    /// <summary>Whether this player has paid the per-player tournament/league fee. Drives the
+    /// `tournamentfee_*`/`leaguefee_*` reminder fan-out — only players with Paid=false are
+    /// targeted. Toggled from the per-team attendance table by an admin.</summary>
+    public bool Paid { get; set; }
+
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

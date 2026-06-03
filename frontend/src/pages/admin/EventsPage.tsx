@@ -493,6 +493,25 @@ function TournamentTeamPanel({
     finally { setSending(false) }
   }
 
+  const togglePaid = async (playerId: number, paid: boolean) => {
+    try {
+      const att = await Api.setTournamentPaid(tour.id, playerId, paid)
+      setAttendance(att)
+    } catch (e: any) { onError(errMsg(e)) }
+  }
+
+  const sendFeeReminders = async () => {
+    if (!confirm(t('admin.evtTournFeeConfirm'))) return
+    setSending(true); onError(''); onNotice('')
+    try {
+      const r = await Api.sendTournamentTeamFeeReminders(tour.id, tt.teamId)
+      onNotice(r.message ?? t('admin.evtTournFeeDone', { sent: r.sent, total: r.total }))
+      const att = await Api.getTournamentTeamAttendance(tour.id, tt.teamId)
+      setAttendance(att)
+    } catch (e: any) { onError(errMsg(e)) }
+    finally { setSending(false) }
+  }
+
   const runResend = async () => {
     if (!resendFilter.includeFailed && !resendFilter.includeUndelivered && !resendFilter.includeNoResponse) {
       onError(t('admin.evtTournResendPickFilter'))
@@ -825,7 +844,13 @@ function TournamentTeamPanel({
       <section>
         <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
           <h3 className="font-semibold text-emerald-800 text-sm">{t('admin.evtTournRosterHeader')}</h3>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <button onClick={sendFeeReminders}
+              disabled={sending || tt.rosterCount === 0 || tour.costPerPlayer === null}
+              title={tour.kind === 1 ? t('admin.evtTournFeeTitleLeague') : t('admin.evtTournFeeTitleTournament')}
+              className="text-sm border border-amber-700 text-amber-700 px-3 py-1.5 rounded-md hover:bg-amber-50 disabled:opacity-50">
+              {t('admin.evtTournFeeSend')}
+            </button>
             <button onClick={() => setShowResend(s => !s)}
               disabled={sending || tt.rosterCount === 0 || tour.costPerPlayer === null}
               className="text-sm border border-emerald-700 text-emerald-700 px-3 py-1.5 rounded-md hover:bg-emerald-50 disabled:opacity-50">
@@ -886,6 +911,8 @@ function TournamentTeamPanel({
           <div className="bg-white border border-slate-200 rounded p-2 mb-3">
             <div className="text-xs text-emerald-800 font-medium mb-1">
               {t('admin.attnConfirmed')}: {attendance.confirmed} · {t('admin.attnMaybe')}: {attendance.maybe} · {t('admin.attnDeclined')}: {attendance.declined} · {t('admin.attnPending')}: {attendance.pending}
+              {' · '}
+              <span className="text-amber-700">{t('admin.attnPaid')}: {attendance.paid}/{attendance.items.length}</span>
             </div>
             <table className="w-full text-xs">
               <tbody>
@@ -894,6 +921,13 @@ function TournamentTeamPanel({
                     <td className="py-1 pr-3">
                       <div className="font-medium text-slate-800">{it.firstName} {it.lastName}</div>
                       <div className="text-[10px] text-slate-400">{it.parentName ?? ''}{it.parentPhone ? ` · ${it.parentPhone}` : ''}</div>
+                    </td>
+                    <td className="py-1 pr-2 whitespace-nowrap">
+                      <label className="inline-flex items-center gap-1 text-[11px] text-slate-700 cursor-pointer">
+                        <input type="checkbox" checked={it.paid}
+                          onChange={e => togglePaid(it.playerId, e.target.checked)} />
+                        <span className={it.paid ? 'text-amber-700 font-medium' : 'text-slate-500'}>{t('admin.attnPaid')}</span>
+                      </label>
                     </td>
                     <td className="py-1 text-right whitespace-nowrap">
                       <div className="inline-flex items-center gap-1">

@@ -760,6 +760,10 @@ export interface TournamentAttendance {
   status: AttendanceStatus
   source: AttendanceSource
   updatedAt: string | null
+  /** Per-player paid flag for the tournament/league fee. Drives the
+   *  `tournamentfee_*`/`leaguefee_*` reminder fan-out — only Paid=false players get the
+   *  reminder. Toggled from the per-team attendance table. */
+  paid: boolean
 }
 
 export interface TournamentAttendanceList {
@@ -768,6 +772,8 @@ export interface TournamentAttendanceList {
   declined: number
   maybe: number
   pending: number
+  paid: number
+  unpaid: number
   items: TournamentAttendance[]
 }
 

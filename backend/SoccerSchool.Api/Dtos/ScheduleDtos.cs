@@ -308,7 +308,8 @@ public record TournamentAttendanceDto(
     string? ParentPhone,
     AttendanceStatus Status,
     AttendanceSource Source,
-    DateTime? UpdatedAt);
+    DateTime? UpdatedAt,
+    bool Paid);
 
 public record TournamentAttendanceListDto(
     int TournamentId,
@@ -316,7 +317,13 @@ public record TournamentAttendanceListDto(
     int Declined,
     int Maybe,
     int Pending,
+    int Paid,
+    int Unpaid,
     List<TournamentAttendanceDto> Items);
+
+/// <summary>Body for the per-player paid-flag toggle. Source is recorded so we know the
+/// admin set it manually (the parent-reply path doesn't touch this flag).</summary>
+public record SetTournamentPaidRequest(bool Paid);
 
 public record SendTournamentConfirmationsResult(
     int Sent,

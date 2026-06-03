@@ -614,6 +614,19 @@ export const Api = {
       `/schedule/tournaments/${tournamentId}/attendance/${playerId}`, { status })
     return r.data
   },
+  /** Toggle the per-player Paid flag for a tournament. Drives the fee-reminder fan-out. */
+  async setTournamentPaid(tournamentId: number, playerId: number, paid: boolean) {
+    const r = await api.put<TournamentAttendanceList>(
+      `/schedule/tournaments/${tournamentId}/attendance/${playerId}/paid`, { paid })
+    return r.data
+  },
+  /** Per-team fee-reminder send. Uses `tournamentfee_*` (Tournament Kind) or `leaguefee_*`
+   *  (League Kind) and skips players already marked Paid. */
+  async sendTournamentTeamFeeReminders(tournamentId: number, teamId: number) {
+    const r = await api.post<SendTournamentConfirmationsResult>(
+      `/messaging/tournaments/${tournamentId}/teams/${teamId}/send-fee-reminders`, {})
+    return r.data
+  },
   /** Fan-out: sends a WhatsApp tournament_* template once per rostered player. Each broadcast
    *  is tagged with the tournament so inbound replies update TournamentAttendance. */
   async sendTournamentConfirmations(tournamentId: number) {

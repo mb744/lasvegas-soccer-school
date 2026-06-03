@@ -964,7 +964,7 @@ public class ScheduleController : ControllerBase
             .FirstOrDefaultAsync(t => t.Id == tournamentId, ct);
         if (tournament is null) return NotFound();
         if (tournament.Team is null)
-            return Ok(new TournamentAttendanceListDto(tournamentId, 0, 0, 0, 0, new List<TournamentAttendanceDto>()));
+            return Ok(new TournamentAttendanceListDto(tournamentId, 0, 0, 0, 0, 0, 0, new List<TournamentAttendanceDto>()));
 
         var attendance = await _db.TournamentAttendances
             .Where(a => a.TournamentId == tournamentId)
@@ -983,7 +983,8 @@ public class ScheduleController : ControllerBase
                     parent?.CellPhone,
                     a?.Status ?? AttendanceStatus.Pending,
                     a?.Source ?? AttendanceSource.ParentReply,
-                    a?.UpdatedAt);
+                    a?.UpdatedAt,
+                    a?.Paid ?? false);
             })
             .OrderBy(i => i.LastName).ThenBy(i => i.FirstName)
             .ToList();
@@ -994,6 +995,8 @@ public class ScheduleController : ControllerBase
             items.Count(i => i.Status == AttendanceStatus.Declined),
             items.Count(i => i.Status == AttendanceStatus.Maybe),
             items.Count(i => i.Status == AttendanceStatus.Pending),
+            items.Count(i => i.Paid),
+            items.Count(i => !i.Paid),
             items));
     }
 
@@ -1029,6 +1032,34 @@ public class ScheduleController : ControllerBase
         return await GetTournamentAttendance(tournamentId, ct);
     }
 
+    /// <summary>Toggle the per-player Paid flag for a tournament. Drives the
+    /// `tournamentfee_*`/`leaguefee_*` reminder fan-out — only players with Paid=false get
+    /// the reminder. The row is auto-created when the admin first marks anyone paid.</summary>
+    [HttpPut("tournaments/{tournamentId:int}/attendance/{playerId:int}/paid")]
+    public async Task<ActionResult<TournamentAttendanceListDto>> SetTournamentPaid(
+        int tournamentId, int playerId, [FromBody] SetTournamentPaidRequest request, CancellationToken ct)
+    {
+        if (!await _db.Tournaments.AnyAsync(t => t.Id == tournamentId, ct)) return NotFound();
+        var teamIds = await _db.TournamentTeams
+            .Where(tt => tt.TournamentId == tournamentId)
+            .Select(tt => tt.TeamId)
+            .ToListAsync(ct);
+        var onRoster = await _db.TeamPlayers.AnyAsync(tp => teamIds.Contains(tp.TeamId) && tp.PlayerId == playerId, ct);
+        if (!onRoster) return BadRequest("Player is not on any roster in this tournament.");
+
+        var row = await _db.TournamentAttendances
+            .FirstOrDefaultAsync(a => a.TournamentId == tournamentId && a.PlayerId == playerId, ct);
+        if (row is null)
+        {
+            row = new TournamentAttendance { TournamentId = tournamentId, PlayerId = playerId };
+            _db.TournamentAttendances.Add(row);
+        }
+        row.Paid = request.Paid;
+        row.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        return await GetTournamentAttendance(tournamentId, ct);
+    }
+
     /// <summary>Attendance for one team's roster within a tournament. The attendance rows are
     /// per (tournament, player), but the listing is scoped to the picked team so each tournament-
     /// team tab can render its own panel without showing players from other teams.</summary>
@@ -1060,7 +1091,8 @@ public class ScheduleController : ControllerBase
                     parent?.CellPhone,
                     a?.Status ?? AttendanceStatus.Pending,
                     a?.Source ?? AttendanceSource.ParentReply,
-                    a?.UpdatedAt);
+                    a?.UpdatedAt,
+                    a?.Paid ?? false);
             })
             .OrderBy(i => i.LastName).ThenBy(i => i.FirstName)
             .ToList();
@@ -1071,6 +1103,8 @@ public class ScheduleController : ControllerBase
             items.Count(i => i.Status == AttendanceStatus.Declined),
             items.Count(i => i.Status == AttendanceStatus.Maybe),
             items.Count(i => i.Status == AttendanceStatus.Pending),
+            items.Count(i => i.Paid),
+            items.Count(i => !i.Paid),
             items));
     }
 
