@@ -283,10 +283,14 @@ public class TwilioWebhookController : ControllerBase
         // numbers, etc.) so they don't think the line is dead. Look up by all common phone-form
         // variants so a parent stored as 8317568859 still matches the +18317568859 Twilio sent.
         var variants = PhoneNormalizer.Variants(from);
-        var parent = await _db.ParentAccounts
-            .Where(p => p.CellPhone != null && variants.Contains(p.CellPhone))
-            .FirstOrDefaultAsync(ct);
-        if (parent is not null) return;
+        var isKnownPrimary = await _db.ParentAccounts
+            .AnyAsync(p => p.CellPhone != null && variants.Contains(p.CellPhone), ct);
+        // Additional guardians (ParentContact rows) count as "known" too — they're registered
+        // family members, not unknown senders. Without this fallback, an inbound from a parent
+        // listed as an additional guardian gets the canned "unknown sender" auto-reply.
+        var isKnownContact = !isKnownPrimary && await _db.ParentContacts
+            .AnyAsync(c => c.CellPhone != null && variants.Contains(c.CellPhone), ct);
+        if (isKnownPrimary || isKnownContact) return;
 
         // We don't know the language of an unknown sender, so stack both. Trim to avoid empty
         // strings when one side is somehow blank.
