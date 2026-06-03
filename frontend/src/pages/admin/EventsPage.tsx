@@ -495,7 +495,12 @@ function TournamentTeamPanel({
 
   const togglePaid = async (playerId: number, paid: boolean) => {
     try {
-      const att = await Api.setTournamentPaid(tour.id, playerId, paid)
+      await Api.setTournamentPaid(tour.id, playerId, paid)
+      // setTournamentPaid returns the tournament-wide attendance list (built from
+      // Tournament.Team.Roster), which is empty for multi-team tournaments where
+      // Tournament.TeamId is null — that would blank out the team's roster panel. Mirror
+      // setStatus by refetching the team-scoped attendance after the toggle.
+      const att = await Api.getTournamentTeamAttendance(tour.id, tt.teamId)
       setAttendance(att)
     } catch (e: any) { onError(errMsg(e)) }
   }
