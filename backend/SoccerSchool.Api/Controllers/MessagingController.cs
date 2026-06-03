@@ -1121,16 +1121,30 @@ public class MessagingController : ControllerBase
         var lastBroadcastByPlayer = await _db.Broadcasts
             .Where(b => b.TournamentId == tournamentId && b.PlayerId != null && rosterIds.Contains(b.PlayerId!.Value))
             .GroupBy(b => b.PlayerId!.Value)
-            .Select(g => new { PlayerId = g.Key, LastBroadcastId = g.OrderByDescending(b => b.CreatedAt).First().Id })
+            .Select(g => new { PlayerId = g.Key, Last = g.OrderByDescending(b => b.CreatedAt).Select(b => new { b.Id, b.CreatedAt }).First() })
             .ToListAsync(ct);
-        var lastBroadcastIds = lastBroadcastByPlayer.Select(x => x.LastBroadcastId).ToList();
-        var statusesByBroadcast = await _db.BroadcastRecipients
+        var lastBroadcastIds = lastBroadcastByPlayer.Select(x => x.Last.Id).ToList();
+        var recipientsByBroadcast = await _db.BroadcastRecipients
             .Where(r => lastBroadcastIds.Contains(r.BroadcastId))
             .GroupBy(r => r.BroadcastId)
-            .Select(g => new { BroadcastId = g.Key, Statuses = g.Select(r => r.Status).ToList() })
-            .ToDictionaryAsync(x => x.BroadcastId, x => x.Statuses, ct);
+            .Select(g => new { BroadcastId = g.Key, Rows = g.Select(r => new { r.Status, r.ErrorCode }).ToList() })
+            .ToDictionaryAsync(x => x.BroadcastId, x => x.Rows, ct);
         var lastStatusesByPlayer = lastBroadcastByPlayer
-            .ToDictionary(x => x.PlayerId, x => statusesByBroadcast.TryGetValue(x.LastBroadcastId, out var s) ? s : new List<MessageDeliveryStatus>());
+            .ToDictionary(
+                x => x.PlayerId,
+                x => recipientsByBroadcast.TryGetValue(x.Last.Id, out var rs)
+                    ? rs.Select(r => r.Status).ToList()
+                    : new List<MessageDeliveryStatus>());
+        // Rate-limit (WhatsApp 131049) cool-down: any player whose last broadcast was within
+        // the backoff window AND had a 131049 on any recipient. We exclude these from the
+        // Failed bucket to honor Meta's "do not retry immediately" guidance.
+        var rateLimitCutoff = DateTime.UtcNow - WhatsAppRateLimitBackoff;
+        var rateLimitedPlayers = lastBroadcastByPlayer
+            .Where(x => x.Last.CreatedAt > rateLimitCutoff
+                && recipientsByBroadcast.TryGetValue(x.Last.Id, out var rs)
+                && rs.Any(r => r.ErrorCode == WhatsAppRateLimitErrorCode))
+            .Select(x => x.PlayerId)
+            .ToHashSet();
 
         var pendingAttendance = await _db.TournamentAttendances
             .Where(a => a.TournamentId == tournamentId
@@ -1146,7 +1160,10 @@ public class MessagingController : ControllerBase
 
         // Buckets are disjoint: each Pending player falls into exactly one based on last
         // delivery. Players who already responded (Confirmed/Declined/Maybe) are skipped.
+        // Rate-limited players (131049 within backoff window) are carved out of Failed and
+        // counted separately so the admin sees how many were intentionally not retried.
         var include = new HashSet<int>();
+        int rateLimitedSkipped = 0;
         foreach (var pid in rosterIds)
         {
             var isPending = pendingAttendance.Contains(pid) || !hasAttendanceRow.Contains(pid);
@@ -1166,13 +1183,25 @@ public class MessagingController : ControllerBase
             }
             else
             {
+                if (rateLimitedPlayers.Contains(pid))
+                {
+                    // 131049 hit within the backoff window — do NOT retry immediately, but
+                    // surface the count so the admin sees the skip was intentional.
+                    if (request.IncludeFailed) rateLimitedSkipped++;
+                    continue;
+                }
                 // Every family recipient failed/undelivered (or only intermediate statuses with
                 // no success) — treat as Failed.
                 if (request.IncludeFailed) include.Add(pid);
             }
         }
 
-        return await SendTournamentTeamConfirmationsInternal(tournamentId, teamId, include, ct);
+        var result = await SendTournamentTeamConfirmationsInternal(tournamentId, teamId, include, ct);
+        if (result.Result is ObjectResult ok && ok.Value is SendTournamentConfirmationsResult inner)
+        {
+            return Ok(inner with { RateLimitedSkipped = rateLimitedSkipped });
+        }
+        return result;
     }
 
     private async Task<ActionResult<SendTournamentConfirmationsResult>> SendTournamentTeamConfirmationsInternal(
@@ -1350,6 +1379,7 @@ public class MessagingController : ControllerBase
                 Queued = b.Recipients.Count(r => r.Status == MessageDeliveryStatus.Queued || r.Status == MessageDeliveryStatus.Sent || r.Status == MessageDeliveryStatus.Pending),
                 Delivered = b.Recipients.Count(r => r.Status == MessageDeliveryStatus.Delivered),
                 Failed = b.Recipients.Count(r => r.Status == MessageDeliveryStatus.Failed || r.Status == MessageDeliveryStatus.Undelivered),
+                RateLimited = b.Recipients.Count(r => r.ErrorCode == WhatsAppRateLimitErrorCode),
             })
             .ToListAsync(ct);
 
@@ -1372,13 +1402,24 @@ public class MessagingController : ControllerBase
                     g.Sum(x => x.Delivered),
                     g.Sum(x => x.Failed),
                     head.BatchId,
-                    g.Count());
+                    g.Count(),
+                    g.Sum(x => x.RateLimited));
             })
             .OrderByDescending(x => x.CreatedAt)
             .Take(200)
             .ToList();
         return Ok(items);
     }
+
+    /// <summary>WhatsApp per-user marketing template rate limit code. Meta's recommended
+    /// remediation is to retry in increasing intervals — never immediately. The resend flow
+    /// uses this to carve a rate-limited bucket out of the generic Failed bucket.</summary>
+    private const string WhatsAppRateLimitErrorCode = "131049";
+
+    /// <summary>How long after a 131049 failure to keep treating that recipient as
+    /// "rate-limited, do not retry yet". Meta doesn't publish the actual cap, so this is a
+    /// conservative starting heuristic — the admin can still manually re-send earlier.</summary>
+    private static readonly TimeSpan WhatsAppRateLimitBackoff = TimeSpan.FromHours(24);
 
     /// <summary>Returns all per-player child broadcasts for a fan-out batch, with their
     /// recipients flattened into one list. Used by the History view's batch row expand.</summary>
@@ -1394,7 +1435,7 @@ public class MessagingController : ControllerBase
         var head = rows[0];
         var recipients = rows
             .SelectMany(b => b.Recipients.Select(r => new BroadcastRecipientDto(
-                r.Id, r.Name, r.Phone, r.Email, r.Language, r.Status, r.StatusMessage, r.TwilioSid, r.TemplateUsed)))
+                r.Id, r.Name, r.Phone, r.Email, r.Language, r.Status, r.StatusMessage, r.TwilioSid, r.TemplateUsed, r.ErrorCode)))
             .ToList();
         return Ok(new BroadcastDetail(
             head.Id,
@@ -1953,7 +1994,7 @@ public class MessagingController : ControllerBase
     private static BroadcastDetail ToDetail(Broadcast b) => new(
         b.Id, b.Channel, b.BodyEn, b.BodyEs, b.SubjectEn, b.SubjectEs, b.TargetLabel, b.CreatedAt,
         b.Recipients.Select(r => new BroadcastRecipientDto(
-            r.Id, r.Name, r.Phone, r.Email, r.Language, r.Status, r.StatusMessage, r.TwilioSid, r.TemplateUsed)).ToList());
+            r.Id, r.Name, r.Phone, r.Email, r.Language, r.Status, r.StatusMessage, r.TwilioSid, r.TemplateUsed, r.ErrorCode)).ToList());
 
     private static GroupConversationDetail ToDetail(GroupConversation c) => new(
         c.Id, c.Title, c.Channel, c.TwilioConversationSid, c.CreatedAt,

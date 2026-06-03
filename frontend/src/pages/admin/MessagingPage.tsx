@@ -1804,6 +1804,11 @@ function HistoryTab({
                   <span className="text-emerald-700">✓{b.delivered}</span>{' '}
                   <span className="text-slate-500">…{b.queued}</span>{' '}
                   <span className="text-rose-700">✕{b.failed}</span>{' '}
+                  {b.rateLimited > 0 && (
+                    <>
+                      <span className="text-amber-700" title={t('admin.msgRateLimitedTip')}>⏳{b.rateLimited}</span>{' '}
+                    </>
+                  )}
                   <span className="text-slate-400">/{b.total}</span>
                 </td>
                 <td className="py-2 pr-4 max-w-md">
@@ -1827,6 +1832,7 @@ function HistoryTab({
                           <th className="py-1 pr-4">{t('admin.language')}</th>
                           <th className="py-1 pr-4">{t('admin.msgColTemplate')}</th>
                           <th className="py-1 pr-4">{t('admin.status')}</th>
+                          <th className="py-1 pr-4">{t('admin.msgErrorCode')}</th>
                           <th className="py-1 pr-4">{t('admin.msgStatusMessage')}</th>
                         </tr>
                       </thead>
@@ -1838,6 +1844,13 @@ function HistoryTab({
                             <td className="py-1 pr-4">{r.language === 1 ? 'ES' : 'EN'}</td>
                             <td className="py-1 pr-4">{r.templateUsed ?? '—'}</td>
                             <td className="py-1 pr-4">{MESSAGE_DELIVERY_LABELS[r.status]}</td>
+                            <td className="py-1 pr-4 font-mono">
+                              {r.errorCode ? (
+                                r.errorCode === '131049'
+                                  ? <span className="text-amber-700" title={t('admin.msgRateLimitedTip')}>{r.errorCode}</span>
+                                  : <span className="text-rose-700">{r.errorCode}</span>
+                              ) : '—'}
+                            </td>
                             <td className="py-1 pr-4 text-slate-500">{r.statusMessage ?? ''}</td>
                           </tr>
                         ))}

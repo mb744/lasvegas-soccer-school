@@ -479,7 +479,11 @@ function TournamentTeamPanel({
     setSending(true); onError(''); onNotice('')
     try {
       const r = await Api.resendTournamentTeamConfirmations(tour.id, tt.teamId, resendFilter)
-      onNotice(t('admin.evtTournResendDone', { sent: r.sent, total: r.total }))
+      const base = t('admin.evtTournResendDone', { sent: r.sent, total: r.total })
+      const suffix = r.rateLimitedSkipped > 0
+        ? ' ' + t('admin.evtTournResendRateLimited', { count: r.rateLimitedSkipped })
+        : ''
+      onNotice(base + suffix)
       const att = await Api.getTournamentTeamAttendance(tour.id, tt.teamId)
       setAttendance(att)
       setShowResend(false)
@@ -723,6 +727,9 @@ function TournamentTeamPanel({
                 onChange={e => setResendFilter(f => ({ ...f, includeFailed: e.target.checked }))} />
               <span>{t('admin.evtTournResendFailed')}</span>
             </label>
+            {resendFilter.includeFailed && (
+              <p className="text-[11px] text-amber-700 pl-6">{t('admin.evtTournResendRateLimitedHint')}</p>
+            )}
             <label className="flex items-center gap-2 text-xs text-slate-700">
               <input type="checkbox" checked={resendFilter.includeUndelivered}
                 onChange={e => setResendFilter(f => ({ ...f, includeUndelivered: e.target.checked }))} />

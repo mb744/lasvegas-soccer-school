@@ -78,6 +78,7 @@ public class TwilioWebhookController : ControllerBase
         recipient.StatusMessage = string.IsNullOrWhiteSpace(errorCode)
             ? $"status: {status}"
             : $"status: {status} (error {errorCode}: {errorMessage})";
+        recipient.ErrorCode = string.IsNullOrWhiteSpace(errorCode) ? null : errorCode;
         await _db.SaveChangesAsync(ct);
         return Ok();
     }

@@ -169,7 +169,11 @@ public record BroadcastSummary(
     int Delivered,
     int Failed,
     Guid? BatchId,
-    int BatchSize);
+    int BatchSize,
+    /// <summary>Subset of Failed where Twilio reported WhatsApp error 131049
+    /// (per-user marketing template rate limit). Shown distinctly so the admin knows not
+    /// to retry immediately — Meta's guidance is increasing backoff intervals.</summary>
+    int RateLimited);
 
 public record BroadcastRecipientDto(
     int Id,
@@ -180,7 +184,8 @@ public record BroadcastRecipientDto(
     MessageDeliveryStatus Status,
     string? StatusMessage,
     string? TwilioSid,
-    string? TemplateUsed);
+    string? TemplateUsed,
+    string? ErrorCode);
 
 public record BroadcastDetail(
     int Id,

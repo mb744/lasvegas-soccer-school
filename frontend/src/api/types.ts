@@ -432,6 +432,10 @@ export interface BroadcastSummary {
    *  Counts are aggregated across batchSize per-player broadcasts. */
   batchId: string | null
   batchSize: number
+  /** Subset of `failed` where the carrier reported WhatsApp error 131049
+   *  (per-user marketing template rate limit). The resend flow excludes these from the
+   *  Failed bucket within a 24h backoff window. */
+  rateLimited: number
 }
 
 export interface BroadcastRecipientRow {
@@ -445,6 +449,9 @@ export interface BroadcastRecipientRow {
   twilioSid: string | null
   /** Name of the template variant actually sent to this recipient; null for free-form sends. */
   templateUsed: string | null
+  /** Numeric carrier/WhatsApp error code (e.g. "131049" = rate limit). Null for non-failed
+   *  rows. Captured into its own field so the resend flow can skip rate-limited recipients. */
+  errorCode: string | null
 }
 
 export interface BroadcastDetail {
@@ -757,6 +764,9 @@ export interface SendTournamentConfirmationsResult {
   skipped: number
   total: number
   message: string | null
+  /** How many otherwise-matched players were excluded from this resend because their last
+   *  failure was WhatsApp 131049 within the 24h backoff window. */
+  rateLimitedSkipped: number
 }
 
 /** Filter buckets for the per-team "Re-send confirmations" flow. At least one must be true. */

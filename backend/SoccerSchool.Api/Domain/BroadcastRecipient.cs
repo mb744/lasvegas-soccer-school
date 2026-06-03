@@ -39,4 +39,11 @@ public class BroadcastRecipient
 
     [MaxLength(512)]
     public string? StatusMessage { get; set; }
+
+    /// <summary>Numeric error code reported by the carrier/WhatsApp on a failed delivery (e.g.
+    /// "131049" = WhatsApp per-user marketing template rate limit). Captured into its own column
+    /// so the resend flow can carve rate-limited recipients out of the generic Failed bucket
+    /// instead of blindly retrying — Meta's guidance for 131049 is to wait increasing intervals.</summary>
+    [MaxLength(16)]
+    public string? ErrorCode { get; set; }
 }
