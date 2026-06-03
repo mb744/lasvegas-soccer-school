@@ -1110,7 +1110,8 @@ public class MessagingController : ControllerBase
     /// inbound WhatsApp replies are routed to <see cref="TournamentAttendance"/> by the webhook.</summary>
     [HttpPost("tournaments/{tournamentId:int}/send-confirmations")]
     public Task<ActionResult<SendTournamentConfirmationsResult>> SendTournamentConfirmations(
-        int tournamentId, CancellationToken ct) => SendTournamentTeamConfirmationsInternal(tournamentId, teamId: null, includePlayerIds: null, ct);
+        int tournamentId, [FromBody] SendTournamentConfirmationsRequest? request, CancellationToken ct) =>
+            SendTournamentTeamConfirmationsInternal(tournamentId, teamId: null, includePlayerIds: null, request?.Overrides, ct);
 
     /// <summary>Builds the side-by-side EN/ES preview shown in the admin's "Send confirmations"
     /// modal. Uses the first rostered player as a sample for variable 2 (player name); variables
@@ -1188,8 +1189,8 @@ public class MessagingController : ControllerBase
     /// flow to <see cref="TournamentAttendance"/>.</summary>
     [HttpPost("tournaments/{tournamentId:int}/teams/{teamId:int}/send-confirmations")]
     public Task<ActionResult<SendTournamentConfirmationsResult>> SendTournamentTeamConfirmations(
-        int tournamentId, int teamId, CancellationToken ct) =>
-        SendTournamentTeamConfirmationsInternal(tournamentId, teamId, includePlayerIds: null, ct);
+        int tournamentId, int teamId, [FromBody] SendTournamentConfirmationsRequest? request, CancellationToken ct) =>
+        SendTournamentTeamConfirmationsInternal(tournamentId, teamId, includePlayerIds: null, request?.Overrides, ct);
 
     /// <summary>Per-team resend: same fan-out as send-confirmations but scoped to a subset of
     /// the roster computed from the filter checkboxes (failed delivery / never delivered / no
@@ -1291,7 +1292,7 @@ public class MessagingController : ControllerBase
             }
         }
 
-        var result = await SendTournamentTeamConfirmationsInternal(tournamentId, teamId, include, ct);
+        var result = await SendTournamentTeamConfirmationsInternal(tournamentId, teamId, include, overrides: null, ct);
         if (result.Result is ObjectResult ok && ok.Value is SendTournamentConfirmationsResult inner)
         {
             return Ok(inner with { RateLimitedSkipped = rateLimitedSkipped });
@@ -1300,7 +1301,8 @@ public class MessagingController : ControllerBase
     }
 
     private async Task<ActionResult<SendTournamentConfirmationsResult>> SendTournamentTeamConfirmationsInternal(
-        int tournamentId, int? teamId, IReadOnlySet<int>? includePlayerIds, CancellationToken ct)
+        int tournamentId, int? teamId, IReadOnlySet<int>? includePlayerIds,
+        IReadOnlyDictionary<int, string>? overrides, CancellationToken ct)
     {
         if (!_sender.IsAvailable(MessageChannel.WhatsApp))
             return BadRequest("WhatsApp not configured on this server.");
@@ -1355,6 +1357,19 @@ public class MessagingController : ControllerBase
                 [3] = costStr,
             };
             var values = BuildVariableValuesFromMapping(primary, props, legacy);
+            // Apply admin overrides from the preview modal. Variables mapped to a per-player
+            // property (PropertyKey starts with "player.") are left as the computed value so
+            // each recipient still gets their own name; everything else (dates, cost, team
+            // name, etc.) takes the admin's edited string verbatim.
+            if (overrides is not null && overrides.Count > 0)
+            {
+                foreach (var v in primary.Variables)
+                {
+                    if (!overrides.TryGetValue(v.Position, out var edited)) continue;
+                    if (v.PropertyKey is not null && v.PropertyKey.StartsWith("player.", StringComparison.Ordinal)) continue;
+                    values[v.Position.ToString(System.Globalization.CultureInfo.InvariantCulture)] = edited;
+                }
+            }
             var req = new CreateBroadcastRequest
             {
                 Channel = MessageChannel.WhatsApp,

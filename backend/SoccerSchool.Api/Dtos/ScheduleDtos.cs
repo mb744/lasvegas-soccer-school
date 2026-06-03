@@ -325,6 +325,13 @@ public record TournamentAttendanceListDto(
 /// admin set it manually (the parent-reply path doesn't touch this flag).</summary>
 public record SetTournamentPaidRequest(bool Paid);
 
+/// <summary>Optional body for the tournament-confirmations send. <see cref="Overrides"/> carries
+/// per-variable values edited inline in the preview modal — keyed by template variable position.
+/// At fan-out time these overlay the computed values for every player, except for variables
+/// mapped to a per-player property (PropertyKey starting with "player.") so the player name
+/// still varies per recipient.</summary>
+public record SendTournamentConfirmationsRequest(Dictionary<int, string>? Overrides);
+
 public record SendTournamentConfirmationsResult(
     int Sent,
     int Skipped,

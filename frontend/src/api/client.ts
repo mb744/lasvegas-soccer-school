@@ -595,9 +595,12 @@ export const Api = {
   },
   /** Per-team confirmation send. Reuses the same WhatsApp tournamentparticipation_* template
    *  but fans out only to this team's rostered players. */
-  async sendTournamentTeamConfirmations(tournamentId: number, teamId: number) {
+  async sendTournamentTeamConfirmations(
+    tournamentId: number, teamId: number, overrides?: Record<number, string> | null,
+  ) {
     const r = await api.post<SendTournamentConfirmationsResult>(
-      `/messaging/tournaments/${tournamentId}/teams/${teamId}/send-confirmations`, {})
+      `/messaging/tournaments/${tournamentId}/teams/${teamId}/send-confirmations`,
+      { overrides: overrides ?? null })
     return r.data
   },
   /** Per-team re-send scoped to a subset of the roster: failed delivery, never delivered

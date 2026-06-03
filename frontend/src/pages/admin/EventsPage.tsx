@@ -481,10 +481,11 @@ function TournamentTeamPanel({
     finally { setPreviewLoading(false) }
   }
 
-  const confirmSend = async () => {
+  const confirmSend = async (overrides: Record<number, string>) => {
     setSending(true); onError(''); onNotice('')
     try {
-      const r = await Api.sendTournamentTeamConfirmations(tour.id, tt.teamId)
+      const r = await Api.sendTournamentTeamConfirmations(
+        tour.id, tt.teamId, Object.keys(overrides).length > 0 ? overrides : null)
       onNotice(t('admin.evtTournSendDone', { sent: r.sent, total: r.total }))
       const att = await Api.getTournamentTeamAttendance(tour.id, tt.teamId)
       setAttendance(att)
@@ -1128,15 +1129,16 @@ function formatDateLabel(start: string | null, end: string | null): string {
 }
 
 /** Bilingual preview with editable per-variable inputs. Each input change debounces a
- *  template-preview API call so the EN/ES panes re-render live. The send button only fans out
- *  AFTER the admin confirms with the final wording shown. Note: edits override the values for
- *  THIS preview only; the actual send still varies the player-name variable per recipient. */
+ *  template-preview API call so the EN/ES panes re-render live. The send fan-out receives
+ *  only the variables the admin actually edited (so unchanged values stay auto-computed),
+ *  and the backend skips overrides on player.* variables so the player name still varies
+ *  per recipient. */
 function TournamentSendPreviewModal({
   preview, sending, onConfirm, onCancel,
 }: {
   preview: TournamentSendPreview
   sending: boolean
-  onConfirm: () => void
+  onConfirm: (overrides: Record<number, string>) => void
   onCancel: () => void
 }) {
   const { t } = useTranslation()
@@ -1206,7 +1208,17 @@ function TournamentSendPreviewModal({
           </div>
         </div>
         <div className="flex items-center gap-3 pt-1">
-          <button onClick={onConfirm} disabled={sending}
+          <button onClick={() => {
+            // Build the override map from only the variables the admin actually changed —
+            // sending unchanged values would override the backend's auto-computed strings
+            // for no reason, and would also cancel the per-player swap on player.* variables.
+            const overrides: Record<number, string> = {}
+            for (const v of preview.variables) {
+              const edited = values[String(v.position)] ?? ''
+              if (edited !== v.value) overrides[v.position] = edited
+            }
+            onConfirm(overrides)
+          }} disabled={sending}
             className="bg-emerald-700 text-white text-sm font-semibold px-4 py-2 rounded-md hover:bg-emerald-800 disabled:opacity-60">
             {sending ? t('admin.sending') : t('admin.evtTournSend')}
           </button>
