@@ -54,6 +54,7 @@ public class ScheduleController : ControllerBase
         var team = await _db.Teams
             .Include(t => t.MessageGroup)
             .Include(t => t.Games).ThenInclude(g => g.Tournament)
+            .Include(t => t.Coaches)
             .FirstOrDefaultAsync(t => t.Id == id, ct);
         if (team is null) return NotFound();
 
@@ -67,11 +68,15 @@ public class ScheduleController : ControllerBase
                 g.OpponentName, g.IsHome, g.SeriesId, g.IsCancelled, g.CancelledAt,
                 g.TournamentId, g.Tournament?.Name))
             .ToList();
+        var coaches = team.Coaches
+            .OrderBy(c => c.CreatedAt)
+            .Select(c => new TeamCoachDto(c.Id, c.TeamId, c.Name, c.Email, c.Phone, c.Language, c.HasWhatsApp, c.CreatedAt))
+            .ToList();
 
         return Ok(new TeamDetail(
             team.Id, team.Name, team.GotSportEventId, team.GotSportTeamId, team.MessageGroupId,
             team.MessageGroup?.Name, team.LastSyncedAt, team.LastSyncMessage,
-            team.CreatedAt, games));
+            team.CreatedAt, games, coaches));
     }
 
     [HttpPost("teams")]

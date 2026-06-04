@@ -348,7 +348,21 @@ public class RecipientResolver : IRecipientResolver
                 r.CellPhone ?? string.Empty, $"{r.FirstName} {r.LastName}".Trim(), r.Id, r.Language, r.Email, r.HasWhatsApp))
             .ToList();
         var contacts = await LoadContactsAsync(rows.Select(r => r.Id).Distinct().ToList(), ct);
-        return new RecipientList($"Team: {team.Name}", DedupeByReachability(parents.Concat(contacts)));
+
+        // Coaches: included with every team-{id} send. ParentAccountId is null (they aren't
+        // tied to a parent account); dedup falls back to phone/email so a coach who shares a
+        // number with a parent won't get a double-send.
+        var coaches = await _db.TeamCoaches
+            .Where(c => c.TeamId == teamId
+                && ((c.Phone != null && c.Phone != "") || (c.Email != null && c.Email != "")))
+            .Select(c => new { c.Name, c.Phone, c.Email, c.Language, c.HasWhatsApp })
+            .ToListAsync(ct);
+        var coachRecipients = coaches
+            .Select(c => new ResolvedRecipient(
+                c.Phone ?? string.Empty, c.Name, null, c.Language, c.Email, c.HasWhatsApp))
+            .ToList();
+
+        return new RecipientList($"Team: {team.Name}", DedupeByReachability(parents.Concat(contacts).Concat(coachRecipients)));
     }
 
     /// <summary>Guardians of an event's rostered players who haven't confirmed (no attendance row

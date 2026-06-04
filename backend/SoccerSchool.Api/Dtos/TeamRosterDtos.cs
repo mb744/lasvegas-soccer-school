@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using SoccerSchool.Api.Domain;
 
 namespace SoccerSchool.Api.Dtos;
 
@@ -31,7 +32,38 @@ public record RosterTeamDetail(
     string? CoachPhone,
     DateTime CreatedAt,
     IReadOnlyList<RosterMemberDto> Roster,
-    IReadOnlyList<ScheduledGameDto> UpcomingGames);
+    IReadOnlyList<ScheduledGameDto> UpcomingGames,
+    IReadOnlyList<TeamCoachDto> Coaches);
+
+/// <summary>One coach on a team. Carries enough to route messaging per-coach (language +
+/// HasWhatsApp) and to render an admin edit row (name + email + phone).</summary>
+public record TeamCoachDto(
+    int Id,
+    int TeamId,
+    string Name,
+    string? Email,
+    string? Phone,
+    Language Language,
+    bool HasWhatsApp,
+    DateTime CreatedAt);
+
+public record AddTeamCoachRequest
+{
+    [Required, MaxLength(160)] public string Name { get; init; } = string.Empty;
+    [MaxLength(256)] public string? Email { get; init; }
+    [MaxLength(32)] public string? Phone { get; init; }
+    public Language Language { get; init; } = Language.English;
+    public bool HasWhatsApp { get; init; }
+}
+
+public record UpdateTeamCoachRequest
+{
+    [Required, MaxLength(160)] public string Name { get; init; } = string.Empty;
+    [MaxLength(256)] public string? Email { get; init; }
+    [MaxLength(32)] public string? Phone { get; init; }
+    public Language Language { get; init; } = Language.English;
+    public bool HasWhatsApp { get; init; }
+}
 
 /// <summary>One roster player. Age bracket / parent contact are pulled from the player's
 /// most-recent registration for display; null when the player has no registration on file.</summary>

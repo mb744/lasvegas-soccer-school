@@ -45,7 +45,8 @@ public record TeamDetail(
     DateTime? LastSyncedAt,
     string? LastSyncMessage,
     DateTime CreatedAt,
-    IReadOnlyList<ScheduledGameDto> UpcomingGames);
+    IReadOnlyList<ScheduledGameDto> UpcomingGames,
+    IReadOnlyList<TeamCoachDto> Coaches);
 
 public record ScheduledGameDto(
     int Id,

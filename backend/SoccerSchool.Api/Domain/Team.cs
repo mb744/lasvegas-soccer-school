@@ -53,4 +53,9 @@ public class Team
     /// <summary>Players assigned to this team's roster. Drives team-building and the roster-based
     /// messaging audience.</summary>
     public List<TeamPlayer> Roster { get; set; } = new();
+
+    /// <summary>Coaches on this team — head coach, assistants, team manager, etc. Included as
+    /// recipients on the <c>team-{id}</c> dynamic group alongside the rostered players' parents.
+    /// Replaces the inline CoachName/Email/Phone fields above, which are kept for backfill compat.</summary>
+    public List<TeamCoach> Coaches { get; set; } = new();
 }

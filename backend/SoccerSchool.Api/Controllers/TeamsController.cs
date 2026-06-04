@@ -99,6 +99,7 @@ public class TeamsController : ControllerBase
             .Include(t => t.MessageGroup)
             .Include(t => t.Roster).ThenInclude(tp => tp.Player!).ThenInclude(p => p.ParentAccount!).ThenInclude(pa => pa.User)
             .Include(t => t.Games).ThenInclude(g => g.Tournament)
+            .Include(t => t.Coaches)
             .FirstOrDefaultAsync(t => t.Id == id, ct);
         if (team is null) return NotFound();
 
@@ -134,14 +135,22 @@ public class TeamsController : ControllerBase
                 g.TournamentId, g.Tournament?.Name))
             .ToList();
 
+        var coaches = team.Coaches
+            .OrderBy(c => c.CreatedAt)
+            .Select(c => new TeamCoachDto(c.Id, c.TeamId, c.Name, c.Email, c.Phone, c.Language, c.HasWhatsApp, c.CreatedAt))
+            .ToList();
+
         return Ok(new RosterTeamDetail(
             team.Id, team.Name, team.MessageGroupId, team.MessageGroup?.Name,
             team.GotSportEventId > 0 && team.GotSportTeamId > 0,
             team.GotSportEventId, team.GotSportTeamId, team.LastSyncedAt, team.LastSyncMessage,
             team.CoachName, team.CoachEmail, team.CoachPhone,
-            team.CreatedAt, roster, games));
+            team.CreatedAt, roster, games, coaches));
     }
 
+    /// <summary>Legacy single-coach endpoint — kept so existing clients don't 404 while the
+    /// multi-coach UI rolls out. Writes to the inline columns; admins use AddCoach/UpdateCoach/
+    /// RemoveCoach for the multi-coach list.</summary>
     [HttpPut("{id:int}/coach")]
     public async Task<ActionResult<RosterTeamDetail>> SaveCoach(
         int id, [FromBody] SaveCoachRequest request, CancellationToken ct)
@@ -152,6 +161,54 @@ public class TeamsController : ControllerBase
         team.CoachName = string.IsNullOrWhiteSpace(request.CoachName) ? null : request.CoachName.Trim();
         team.CoachEmail = string.IsNullOrWhiteSpace(request.CoachEmail) ? null : request.CoachEmail.Trim();
         team.CoachPhone = string.IsNullOrWhiteSpace(request.CoachPhone) ? null : PhoneNormalizer.Normalize(request.CoachPhone);
+        await _db.SaveChangesAsync(ct);
+        return await Get(id, ct);
+    }
+
+    /// <summary>Add a coach to a team's coach list. Phone is E.164-normalized on save.</summary>
+    [HttpPost("{id:int}/coaches")]
+    public async Task<ActionResult<RosterTeamDetail>> AddCoach(
+        int id, [FromBody] AddTeamCoachRequest request, CancellationToken ct)
+    {
+        if (!await _db.Teams.AnyAsync(t => t.Id == id, ct)) return NotFound();
+        if (string.IsNullOrWhiteSpace(request.Name)) return BadRequest("Coach name is required.");
+
+        _db.TeamCoaches.Add(new TeamCoach
+        {
+            TeamId = id,
+            Name = request.Name.Trim(),
+            Email = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim(),
+            Phone = string.IsNullOrWhiteSpace(request.Phone) ? null : PhoneNormalizer.Normalize(request.Phone),
+            Language = request.Language,
+            HasWhatsApp = request.HasWhatsApp,
+        });
+        await _db.SaveChangesAsync(ct);
+        return await Get(id, ct);
+    }
+
+    /// <summary>Update one of a team's coaches.</summary>
+    [HttpPut("{id:int}/coaches/{coachId:int}")]
+    public async Task<ActionResult<RosterTeamDetail>> UpdateCoach(
+        int id, int coachId, [FromBody] UpdateTeamCoachRequest request, CancellationToken ct)
+    {
+        var coach = await _db.TeamCoaches.FirstOrDefaultAsync(c => c.Id == coachId && c.TeamId == id, ct);
+        if (coach is null) return NotFound();
+        if (string.IsNullOrWhiteSpace(request.Name)) return BadRequest("Coach name is required.");
+        coach.Name = request.Name.Trim();
+        coach.Email = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim();
+        coach.Phone = string.IsNullOrWhiteSpace(request.Phone) ? null : PhoneNormalizer.Normalize(request.Phone);
+        coach.Language = request.Language;
+        coach.HasWhatsApp = request.HasWhatsApp;
+        await _db.SaveChangesAsync(ct);
+        return await Get(id, ct);
+    }
+
+    [HttpDelete("{id:int}/coaches/{coachId:int}")]
+    public async Task<ActionResult<RosterTeamDetail>> RemoveCoach(int id, int coachId, CancellationToken ct)
+    {
+        var coach = await _db.TeamCoaches.FirstOrDefaultAsync(c => c.Id == coachId && c.TeamId == id, ct);
+        if (coach is null) return NotFound();
+        _db.TeamCoaches.Remove(coach);
         await _db.SaveChangesAsync(ct);
         return await Get(id, ct);
     }

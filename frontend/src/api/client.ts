@@ -77,6 +77,7 @@ import type {
   RenameTeamRequest,
   AddRosterMembersRequest,
   SaveCoachRequest,
+  SaveTeamCoachRequest,
   TemplatePreviewRequest,
   TemplatePreviewResponse,
   TemplateProperty,
@@ -705,6 +706,20 @@ export const Api = {
   },
   async updateTeamCoach(id: number, payload: SaveCoachRequest) {
     const r = await api.put<RosterTeamDetail>(`/teams/${id}/coach`, payload)
+    return r.data
+  },
+  /** Multi-coach management. Each call returns the refreshed RosterTeamDetail (which carries
+   *  the full coaches list) so callers can update local state without a separate GET. */
+  async addTeamCoachEntry(id: number, payload: SaveTeamCoachRequest) {
+    const r = await api.post<RosterTeamDetail>(`/teams/${id}/coaches`, payload)
+    return r.data
+  },
+  async updateTeamCoachEntry(id: number, coachId: number, payload: SaveTeamCoachRequest) {
+    const r = await api.put<RosterTeamDetail>(`/teams/${id}/coaches/${coachId}`, payload)
+    return r.data
+  },
+  async removeTeamCoachEntry(id: number, coachId: number) {
+    const r = await api.delete<RosterTeamDetail>(`/teams/${id}/coaches/${coachId}`)
     return r.data
   },
 

@@ -869,6 +869,7 @@ export interface TeamDetail {
   lastSyncMessage: string | null
   createdAt: string
   upcomingGames: ScheduledGame[]
+  coaches: TeamCoach[]
 }
 
 export interface ScheduleSyncResult {
@@ -947,18 +948,39 @@ export interface RosterTeamDetail {
   gotSportTeamId: number
   lastSyncedAt: string | null
   lastSyncMessage: string | null
+  /** Legacy single-coach fields, kept for backwards-compatibility. New UI uses `coaches`. */
   coachName: string | null
   coachEmail: string | null
   coachPhone: string | null
   createdAt: string
   roster: RosterMember[]
   upcomingGames: ScheduledGame[]
+  coaches: TeamCoach[]
 }
 
 export interface SaveCoachRequest {
   coachName?: string | null
   coachEmail?: string | null
   coachPhone?: string | null
+}
+
+export interface TeamCoach {
+  id: number
+  teamId: number
+  name: string
+  email: string | null
+  phone: string | null
+  language: Language
+  hasWhatsApp: boolean
+  createdAt: string
+}
+
+export interface SaveTeamCoachRequest {
+  name: string
+  email?: string | null
+  phone?: string | null
+  language: Language
+  hasWhatsApp: boolean
 }
 
 export interface AvailablePlayer {
