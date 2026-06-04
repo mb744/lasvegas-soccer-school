@@ -11,7 +11,10 @@ namespace SoccerSchool.Api.Services;
 /// </summary>
 public static class AttendanceReplyParser
 {
-    private static readonly string[] YesEmoji = { "✅", "✔", "👍", "🙌" };
+    // Soccer emoji (⚽ and the older U+26BD variant + the volleyball-ball-with-skin variants
+    // some keyboards substitute) is treated as yes — parents commonly send a ball to mean
+    // "we're in" on event confirmation replies for soccer-school sends.
+    private static readonly string[] YesEmoji = { "✅", "✔", "👍", "🙌", "⚽", "⚽️" };
     private static readonly string[] NoEmoji = { "❌", "✖", "✗", "👎", "🚫" };
     private static readonly string[] MaybeEmoji = { "🤔", "❓" };
 

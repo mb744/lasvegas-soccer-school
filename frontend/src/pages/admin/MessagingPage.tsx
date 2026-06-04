@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Layout } from '../../components/Layout'
@@ -1314,6 +1314,12 @@ function InboxTab({
   const [pickerUnrepliedOnly, setPickerUnrepliedOnly] = useState(true)
   const [pickerResults, setPickerResults] = useState<InboxParent[]>([])
   const [pickerLoading, setPickerLoading] = useState(false)
+  // Auto-scroll the message pane to the bottom whenever a fresh thread loads or a reply is
+  // appended, so refreshing always lands the admin on the newest message instead of the top.
+  const messagesEndRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ block: 'end' })
+  }, [thread?.messages.length, thread?.phone])
 
   const refresh = async () => {
     try { setThreads(await Api.listThreads()) }
@@ -1506,6 +1512,7 @@ function InboxTab({
                   </div>
                 </div>
               ))}
+              <div ref={messagesEndRef} />
               {!loadingThread && thread?.messages.length === 0 && (
                 <div className="text-sm text-slate-400 text-center py-8">{t('admin.msgInboxNoMessages')}</div>
               )}

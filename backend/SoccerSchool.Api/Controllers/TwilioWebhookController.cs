@@ -290,7 +290,11 @@ public class TwilioWebhookController : ControllerBase
         // listed as an additional guardian gets the canned "unknown sender" auto-reply.
         var isKnownContact = !isKnownPrimary && await _db.ParentContacts
             .AnyAsync(c => c.CellPhone != null && variants.Contains(c.CellPhone), ct);
-        if (isKnownPrimary || isKnownContact) return;
+        // Team coaches are admin-managed contacts on the team and routinely receive team sends,
+        // so they get a personal admin reply — not the canned auto-response.
+        var isKnownCoach = !isKnownPrimary && !isKnownContact && await _db.TeamCoaches
+            .AnyAsync(c => c.Phone != null && variants.Contains(c.Phone), ct);
+        if (isKnownPrimary || isKnownContact || isKnownCoach) return;
 
         // We don't know the language of an unknown sender, so stack both. Trim to avoid empty
         // strings when one side is somehow blank.
