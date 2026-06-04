@@ -321,22 +321,41 @@ public class MessagingController : ControllerBase
         if (isEmailTemplate)
             pairedEmailTemplate = await FindEmailPairAsync(emailTemplate!, ct);
 
-        // For WhatsApp-template sends, persist a rendered preview in BodyEn so the history view
-        // shows what went out (Twilio does the real substitution server-side). For Email templates,
-        // the subject + body live on the broadcast itself so we copy those in instead.
-        var renderedWhatsAppTemplate = isWhatsAppTemplate
-            ? RenderTemplatePreview(template!.PreviewText, template.Name, templateVars)
-            : null;
+        // For WhatsApp-template sends, persist a rendered preview of BOTH the primary template
+        // AND its paired-language sibling so the thread/history view can show each recipient the
+        // body that actually went out (Twilio renders the real substitution server-side, per
+        // recipient language). Without this, Spanish recipients saw the English rendering in the
+        // inbox because BodyEs was null. For Email templates, the subject + body live on the
+        // broadcast itself so we copy those in directly.
+        string? whatsAppRenderedEn = null;
+        string? whatsAppRenderedEs = null;
+        if (isWhatsAppTemplate)
+        {
+            var renderedPrimary = RenderTemplatePreview(template!.PreviewText, template.Name, templateVars);
+            var renderedPair = pairedTemplate is not null
+                ? RenderTemplatePreview(pairedTemplate.PreviewText, pairedTemplate.Name, templateVars)
+                : null;
+            if (template.Language == Language.English)
+            {
+                whatsAppRenderedEn = renderedPrimary;
+                whatsAppRenderedEs = renderedPair;
+            }
+            else
+            {
+                whatsAppRenderedEs = renderedPrimary;
+                whatsAppRenderedEn = renderedPair;
+            }
+        }
 
         var broadcast = new Broadcast
         {
             Channel = request.Channel,
             BodyEn = isEmailTemplate
                 ? RenderTemplateString(emailTemplate!.Body, emailTemplate.Variables, templateVars)
-                : (bodyEn ?? renderedWhatsAppTemplate),
+                : (bodyEn ?? whatsAppRenderedEn),
             BodyEs = isEmailTemplate && pairedEmailTemplate is not null
                 ? RenderTemplateString(pairedEmailTemplate.Body, pairedEmailTemplate.Variables, templateVars)
-                : bodyEs,
+                : (bodyEs ?? whatsAppRenderedEs),
             SubjectEn = isEmailTemplate
                 ? RenderTemplateString(emailTemplate!.Subject, emailTemplate.Variables, templateVars)
                 : subjectEn,
