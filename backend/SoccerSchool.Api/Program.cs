@@ -121,6 +121,9 @@ builder.Services.AddScoped<ITeamSnapSyncService, TeamSnapSyncService>();
 builder.Services.AddScoped<IPhraseTranslator, PhraseTranslator>();
 builder.Services.AddHttpClient();
 builder.Services.AddSingleton<IWaiverPdfGenerator, WaiverPdfGenerator>();
+// Background reconciler that backfills missed Twilio status callbacks (server downtime,
+// post-200 webhook crashes, etc.) — see TwilioStatusReconciler for cadence + scope.
+builder.Services.AddHostedService<TwilioStatusReconciler>();
 
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
