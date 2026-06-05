@@ -11,7 +11,6 @@ export function AdminPage() {
     { to: '/admin/teams',               title: t('admin.hubTeams'),            blurb: t('admin.hubTeamsBlurb'),            icon: '⚽' },
     { to: '/admin/events',              title: t('admin.hubEvents'),           blurb: t('admin.hubEventsBlurb'),           icon: '📅' },
     { to: '/admin/registrations',       title: t('admin.hubRegistrations'),    blurb: t('admin.hubRegistrationsBlurb'),    icon: '📋' },
-    { to: '/admin/age-classifications', title: t('admin.hubAgeClassifications'), blurb: t('admin.hubAgeClassificationsBlurb'), icon: '🏷️' },
     { to: '/admin/users',               title: t('admin.hubUsers'),            blurb: t('admin.hubUsersBlurb'),            icon: '👥' },
     { to: '/admin/settings',            title: t('admin.hubSettings'),         blurb: t('admin.hubSettingsBlurb'),         icon: '⚙️' },
   ] as const

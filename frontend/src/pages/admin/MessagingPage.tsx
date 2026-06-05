@@ -52,7 +52,7 @@ import {
   MESSAGE_DELIVERY_LABELS,
 } from '../../api/types'
 
-type Tab = 'compose' | 'inbox' | 'groups' | 'conversations' | 'history' | 'settings' | 'monthly-fee'
+type Tab = 'compose' | 'inbox' | 'groups' | 'conversations' | 'history' | 'monthly-fee'
 type RecipientMode = 'individual' | 'curated' | 'dynamic' | 'list'
 type SendMode = 'broadcast' | 'group-chat'
 type ComposeBodyMode = 'free-form' | 'template'
@@ -148,7 +148,6 @@ export function AdminMessagingPage() {
           {tabBtn('conversations', t('admin.msgTabConversations'))}
           {tabBtn('history', t('admin.msgTabHistory'))}
           {tabBtn('monthly-fee', t('admin.msgTabMonthlyFee'))}
-          {tabBtn('settings', t('admin.msgTabSettings'))}
         </div>
 
         {error && (
@@ -200,13 +199,6 @@ export function AdminMessagingPage() {
           <HistoryTab
             broadcasts={broadcasts}
             onRefresh={refreshHistory}
-          />
-        )}
-
-        {tab === 'settings' && (
-          <SettingsTab
-            onError={(e) => setError(e)}
-            onNotice={(n) => setNotice(n)}
           />
         )}
 
@@ -1678,7 +1670,10 @@ function MonthlyFeeTab({
 
 // --- Settings tab ----------------------------------------------------------
 
-function SettingsTab({
+/** Re-exported so the new Settings admin page can render the auto-response editor as one
+ *  of its tabs. The "Settings" name in the Messaging page tab list now reads "Auto response
+ *  settings" — this remains the single source of truth for the component itself. */
+export function SettingsTab({
   onError, onNotice,
 }: {
   onError: (e: string) => void

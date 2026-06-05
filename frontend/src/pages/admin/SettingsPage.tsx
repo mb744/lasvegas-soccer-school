@@ -3,19 +3,22 @@ import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Layout } from '../../components/Layout'
 import { Api } from '../../api/client'
-import { TemplatesTab, DictionaryTab } from './MessagingPage'
+import { TemplatesTab, DictionaryTab, SettingsTab as AutoResponseSettingsTab } from './MessagingPage'
+import { AgeClassificationsSection } from './AgeClassificationsPage'
 import type { WhatsAppTemplate, EmailTemplate } from '../../api/types'
 
 function errMsg(e: any): string {
   return e?.response?.data?.title || e?.response?.data || e?.message || 'Error'
 }
 
-type Tab = 'templates' | 'dictionary' | 'backfill'
+type Tab = 'templates' | 'dictionary' | 'autoResponse' | 'ageClassifications' | 'backfill'
 
 /** Top-level admin settings hub. Tabs mirror the Messaging page so the layout is consistent
  *  across admin cards. Currently houses:
  *    - WhatsApp + Email templates (moved from Messaging → Templates).
  *    - Phrase translation dictionary (moved from Messaging → Dictionary).
+ *    - Auto-response settings (moved from Messaging → Settings).
+ *    - Age classifications (moved from top-level admin card).
  *    - Twilio message backfill (1-30 day window) — companion to the hourly background
  *      reconciler for recovering older gaps. */
 export function AdminSettingsPage() {
@@ -71,9 +74,11 @@ export function AdminSettingsPage() {
           <p className="text-sm text-slate-600 mt-1">{t('admin.settingsSubtitle')}</p>
         </div>
 
-        <div className="flex gap-1 border-b border-slate-200">
+        <div className="flex flex-wrap gap-1 border-b border-slate-200">
           {tabBtn('templates', t('admin.settingsTabTemplates'))}
           {tabBtn('dictionary', t('admin.settingsTabDictionary'))}
+          {tabBtn('autoResponse', t('admin.settingsTabAutoResponse'))}
+          {tabBtn('ageClassifications', t('admin.settingsTabAgeClassifications'))}
           {tabBtn('backfill', t('admin.settingsTabBackfill'))}
         </div>
 
@@ -103,6 +108,26 @@ export function AdminSettingsPage() {
             <DictionaryTab
               onError={(e) => { setError(e); setNotice(null) }}
               onNotice={(n) => { setNotice(n); setError(null) }}
+            />
+          </section>
+        )}
+
+        {tab === 'autoResponse' && (
+          <section className="bg-white border border-slate-200 rounded-lg p-4">
+            <p className="text-xs text-slate-500 mb-3">{t('admin.settingsAutoResponseBlurb')}</p>
+            <AutoResponseSettingsTab
+              onError={(e) => { setError(e); setNotice(null) }}
+              onNotice={(n) => { setNotice(n); setError(null) }}
+            />
+          </section>
+        )}
+
+        {tab === 'ageClassifications' && (
+          <section className="bg-white border border-slate-200 rounded-lg p-4">
+            <p className="text-xs text-slate-500 mb-3">{t('admin.settingsAgeClassificationsBlurb')}</p>
+            <AgeClassificationsSection
+              onError={(e) => { setError(e); if (e) setNotice(null) }}
+              onNotice={(n) => { setNotice(n); if (n) setError(null) }}
             />
           </section>
         )}
