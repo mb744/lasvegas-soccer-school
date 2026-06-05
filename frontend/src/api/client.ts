@@ -645,10 +645,22 @@ export const Api = {
     return r.data
   },
   /** Per-team fee-reminder send. Uses `tournamentfee_*` (Tournament Kind) or `leaguefee_*`
-   *  (League Kind) and skips players already marked Paid. */
-  async sendTournamentTeamFeeReminders(tournamentId: number, teamId: number) {
+   *  (League Kind) and skips players already marked Paid. Accepts edited variable values
+   *  from the preview modal; backend skips overrides on player.* variables so each
+   *  recipient still gets their own name. */
+  async sendTournamentTeamFeeReminders(
+    tournamentId: number, teamId: number, overrides?: Record<number, string> | null,
+  ) {
     const r = await api.post<SendTournamentConfirmationsResult>(
-      `/messaging/tournaments/${tournamentId}/teams/${teamId}/send-fee-reminders`, {})
+      `/messaging/tournaments/${tournamentId}/teams/${teamId}/send-fee-reminders`,
+      { overrides: overrides ?? null })
+    return r.data
+  },
+  /** Pre-send bilingual preview of the fee-reminder message, sampled from the first unpaid
+   *  rostered player. Parallel to getTournamentSendPreview but uses the fee template. */
+  async getTournamentFeeSendPreview(tournamentId: number, teamId: number) {
+    const r = await api.get<TournamentSendPreview>(
+      `/messaging/tournaments/${tournamentId}/teams/${teamId}/fee-send-preview`)
     return r.data
   },
   /** Fan-out: sends a WhatsApp tournament_* template once per rostered player. Each broadcast

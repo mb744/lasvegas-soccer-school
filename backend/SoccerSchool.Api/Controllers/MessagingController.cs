@@ -1515,14 +1515,93 @@ public class MessagingController : ControllerBase
         return Ok(new SendTournamentConfirmationsResult(sent, skipped, total, null));
     }
 
+    /// <summary>Bilingual EN/ES preview for the fee-reminder send. Mirrors GetTournamentSendPreview
+    /// but uses the fee template lookup (tournamentfee_*/leaguefee_*) and samples the first
+    /// unpaid rostered player so the preview matches the first send byte-for-byte.</summary>
+    [HttpGet("tournaments/{tournamentId:int}/teams/{teamId:int}/fee-send-preview")]
+    public async Task<ActionResult<TournamentSendPreviewDto>> GetTournamentFeeSendPreview(
+        int tournamentId, int teamId, CancellationToken ct)
+    {
+        var tournament = await _db.Tournaments.FirstOrDefaultAsync(t => t.Id == tournamentId, ct);
+        if (tournament is null) return NotFound();
+        if (tournament.StartDate is null)
+            return BadRequest("Set the tournament's start date before previewing.");
+        if (tournament.CostPerPlayer is null)
+            return BadRequest("Set the cost per player before previewing.");
+
+        var team = await _db.Teams
+            .Include(t => t.Roster).ThenInclude(tp => tp.Player)
+            .FirstOrDefaultAsync(t => t.Id == teamId, ct);
+        if (team is null) return NotFound();
+        if (team.Roster.Count == 0)
+            return BadRequest("This team has no rostered players.");
+
+        var paidPlayerIds = await _db.TournamentAttendances
+            .Where(a => a.TournamentId == tournamentId && a.Paid)
+            .Select(a => a.PlayerId)
+            .ToHashSetAsync(ct);
+        var unpaidRoster = team.Roster
+            .Where(tp => tp.Player is not null && !paidPlayerIds.Contains(tp.PlayerId))
+            .ToList();
+        if (unpaidRoster.Count == 0)
+            return BadRequest("Every rostered player is already marked Paid — nothing to preview.");
+
+        var template = await FindFeeTemplateAsync(tournament, Language.English, ct);
+        if (template is null)
+        {
+            var baseName = tournament.Kind == TournamentKind.League ? LeagueFeeTemplateBaseName : TournamentFeeTemplateBaseName;
+            return BadRequest($"No fee templates configured. Add `{baseName}_english` and `{baseName}_spanish` under Messaging → Templates first.");
+        }
+
+        var samplePlayer = unpaidRoster
+            .OrderBy(tp => tp.Player!.LastName).ThenBy(tp => tp.Player!.FirstName)
+            .First().Player!;
+        var sampleName = $"{samplePlayer.FirstName} {samplePlayer.LastName}".Trim();
+        var datesStr = FormatTournamentDates(tournament.StartDate.Value, tournament.EndDate);
+        var costStr = tournament.CostPerPlayer.Value.ToString("C", System.Globalization.CultureInfo.GetCultureInfo("en-US"));
+
+        var props = BuildTournamentProperties(tournament, team, samplePlayer);
+        var legacy = new Dictionary<int, string> { [1] = datesStr, [2] = sampleName, [3] = costStr };
+        var sampleValues = BuildVariableValuesFromMapping(template, props, legacy);
+        var previewResult = await TemplatePreview(new TemplatePreviewRequest
+        {
+            TemplateId = template.Id,
+            Values = sampleValues,
+        }, ct);
+        if (previewResult.Result is not OkObjectResult ok || ok.Value is not TemplatePreviewResponse p)
+            return BadRequest("Could not build the preview. Check the template configuration.");
+
+        var variableDtos = template.Variables
+            .OrderBy(v => v.Position)
+            .Select(v => new TournamentSendPreviewVariableDto(
+                v.Position,
+                v.Label,
+                v.PropertyKey,
+                sampleValues.TryGetValue(v.Position.ToString(System.Globalization.CultureInfo.InvariantCulture), out var val) ? val : ""))
+            .ToList();
+
+        return Ok(new TournamentSendPreviewDto(
+            SamplePlayerName: sampleName,
+            DatesValue: datesStr,
+            CostValue: costStr,
+            RosterCount: unpaidRoster.Count,
+            TemplateId: template.Id,
+            Variables: variableDtos,
+            EnglishTemplateName: p.English.TemplateName,
+            EnglishRendered: p.English.Rendered,
+            SpanishTemplateName: p.Spanish.TemplateName,
+            SpanishRendered: p.Spanish.Rendered));
+    }
+
     /// <summary>Per-team fee-reminder send. Mirrors the confirmations fan-out but uses the
     /// <c>tournamentfee_*</c> (Kind=Tournament) or <c>leaguefee_*</c> (Kind=League) template
     /// and skips any rostered player whose <see cref="Domain.TournamentAttendance.Paid"/> is
     /// true. Per-player Broadcast + BatchId tagging matches the confirmations send so the
-    /// History view collapses the rows.</summary>
+    /// History view collapses the rows. Accepts inline overrides from the preview modal —
+    /// same skip-on-player.* rule as confirmations so each recipient still gets their own name.</summary>
     [HttpPost("tournaments/{tournamentId:int}/teams/{teamId:int}/send-fee-reminders")]
     public async Task<ActionResult<SendTournamentConfirmationsResult>> SendTournamentTeamFeeReminders(
-        int tournamentId, int teamId, CancellationToken ct)
+        int tournamentId, int teamId, [FromBody] SendTournamentConfirmationsRequest? request, CancellationToken ct)
     {
         if (!_sender.IsAvailable(MessageChannel.WhatsApp))
             return BadRequest("WhatsApp not configured on this server.");
@@ -1574,6 +1653,18 @@ public class MessagingController : ControllerBase
                 [3] = costStr,
             };
             var values = BuildVariableValuesFromMapping(primary, props, legacy);
+            // Apply admin overrides from the preview modal (same rule as confirmations send):
+            // skip variables mapped to a per-player property so each recipient still gets
+            // their own name; everything else takes the admin's edited value verbatim.
+            if (request?.Overrides is { Count: > 0 })
+            {
+                foreach (var v in primary.Variables)
+                {
+                    if (!request.Overrides.TryGetValue(v.Position, out var edited)) continue;
+                    if (v.PropertyKey is not null && v.PropertyKey.StartsWith("player.", StringComparison.Ordinal)) continue;
+                    values[v.Position.ToString(System.Globalization.CultureInfo.InvariantCulture)] = edited;
+                }
+            }
             var req = new CreateBroadcastRequest
             {
                 Channel = MessageChannel.WhatsApp,

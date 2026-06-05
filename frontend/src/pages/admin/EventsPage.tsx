@@ -476,6 +476,7 @@ function TournamentTeamPanel({
   const openSendPreview = async () => {
     setPreviewLoading(true); onError(''); onNotice('')
     try {
+      setPreviewMode('confirmations')
       setPreview(await Api.getTournamentSendPreview(tour.id, tt.teamId))
     } catch (e: any) { onError(errMsg(e)) }
     finally { setPreviewLoading(false) }
@@ -506,14 +507,29 @@ function TournamentTeamPanel({
     } catch (e: any) { onError(errMsg(e)) }
   }
 
-  const sendFeeReminders = async () => {
-    if (!confirm(t('admin.evtTournFeeConfirm'))) return
+  /** Distinguishes the preview-modal context. confirmSend's body fires whichever endpoint
+   *  the current preview was opened against, so we know whether to call the confirmations
+   *  fan-out or the fee-reminder fan-out when the admin clicks the modal's Send button. */
+  const [previewMode, setPreviewMode] = useState<'confirmations' | 'fee'>('confirmations')
+
+  const openFeePreview = async () => {
+    setPreviewLoading(true); onError(''); onNotice('')
+    try {
+      setPreviewMode('fee')
+      setPreview(await Api.getTournamentFeeSendPreview(tour.id, tt.teamId))
+    } catch (e: any) { onError(errMsg(e)) }
+    finally { setPreviewLoading(false) }
+  }
+
+  const confirmFeeSend = async (overrides: Record<number, string>) => {
     setSending(true); onError(''); onNotice('')
     try {
-      const r = await Api.sendTournamentTeamFeeReminders(tour.id, tt.teamId)
+      const r = await Api.sendTournamentTeamFeeReminders(
+        tour.id, tt.teamId, Object.keys(overrides).length > 0 ? overrides : null)
       onNotice(r.message ?? t('admin.evtTournFeeDone', { sent: r.sent, total: r.total }))
       const att = await Api.getTournamentTeamAttendance(tour.id, tt.teamId)
       setAttendance(att)
+      setPreview(null)
     } catch (e: any) { onError(errMsg(e)) }
     finally { setSending(false) }
   }
@@ -863,11 +879,11 @@ function TournamentTeamPanel({
         <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
           <h3 className="font-semibold text-emerald-800 text-sm">{t('admin.evtTournRosterHeader')}</h3>
           <div className="flex items-center gap-2 flex-wrap">
-            <button onClick={sendFeeReminders}
-              disabled={sending || tt.rosterCount === 0 || tour.costPerPlayer === null}
+            <button onClick={openFeePreview}
+              disabled={previewLoading || sending || tt.rosterCount === 0 || tour.costPerPlayer === null}
               title={tour.kind === 1 ? t('admin.evtTournFeeTitleLeague') : t('admin.evtTournFeeTitleTournament')}
               className="text-sm border border-amber-700 text-amber-700 px-3 py-1.5 rounded-md hover:bg-amber-50 disabled:opacity-50">
-              {t('admin.evtTournFeeSend')}
+              {previewLoading && previewMode === 'fee' ? t('admin.evtCancelLoading') : t('admin.evtTournFeeSend')}
             </button>
             <button onClick={() => setShowResend(s => !s)}
               disabled={sending || tt.rosterCount === 0 || tour.costPerPlayer === null}
@@ -921,7 +937,7 @@ function TournamentTeamPanel({
           <TournamentSendPreviewModal
             preview={preview}
             sending={sending}
-            onConfirm={confirmSend}
+            onConfirm={previewMode === 'fee' ? confirmFeeSend : confirmSend}
             onCancel={() => setPreview(null)} />
         )}
 
