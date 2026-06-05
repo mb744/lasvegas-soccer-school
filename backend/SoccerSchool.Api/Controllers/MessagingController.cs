@@ -28,6 +28,7 @@ public class MessagingController : ControllerBase
     private readonly IRecipientResolver _resolver;
     private readonly IConversationService _conversations;
     private readonly IPhraseTranslator _translator;
+    private readonly ITwilioMessageReconciler _reconciler;
     private readonly TwilioOptions _twilio;
 
     public MessagingController(
@@ -37,6 +38,7 @@ public class MessagingController : ControllerBase
         IRecipientResolver resolver,
         IConversationService conversations,
         IPhraseTranslator translator,
+        ITwilioMessageReconciler reconciler,
         IOptions<TwilioOptions> twilio)
     {
         _db = db;
@@ -45,7 +47,21 @@ public class MessagingController : ControllerBase
         _resolver = resolver;
         _conversations = conversations;
         _translator = translator;
+        _reconciler = reconciler;
         _twilio = twilio.Value;
+    }
+
+    /// <summary>Admin-triggered backfill of Twilio messages our DB is missing. The hourly
+    /// background reconciler covers a 6h window; this lets the admin scan a wider lookback
+    /// (default 7d, max 30d) when recovering from a past gap. Same idempotent logic — rows
+    /// whose TwilioSid we already have are skipped.</summary>
+    [HttpPost("twilio/reconcile")]
+    public async Task<ActionResult<ReconcileMessagesResult>> ReconcileTwilio(
+        [FromQuery] int days = 7, CancellationToken ct = default)
+    {
+        var clamped = Math.Clamp(days, 1, 30);
+        var result = await _reconciler.ReconcileAsync(TimeSpan.FromDays(clamped), ct);
+        return Ok(result);
     }
 
     // --- Capabilities probe ---

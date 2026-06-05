@@ -126,8 +126,12 @@ builder.Services.AddSingleton<IWaiverPdfGenerator, WaiverPdfGenerator>();
 builder.Services.AddHostedService<TwilioStatusReconciler>();
 // Companion reconciler that backfills missed messages themselves (auto-replies and other
 // paths that skipped the broadcast pipeline, or inbound webhooks Twilio retried out) — see
-// TwilioMessageReconciler for cadence + scope.
-builder.Services.AddHostedService<TwilioMessageReconciler>();
+// TwilioMessageReconciler for cadence + scope. The interface is also injected into
+// MessagingController so admins can trigger a wider lookback on demand from the Settings UI.
+// Singleton: ReconcileAsync creates its own DbContext scope per call from IServiceProvider,
+// so there's no captive-scope issue when the BackgroundService wrapper consumes it.
+builder.Services.AddSingleton<ITwilioMessageReconciler, TwilioMessageReconciler>();
+builder.Services.AddHostedService<TwilioMessageReconcilerBackground>();
 
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();

@@ -52,7 +52,7 @@ import {
   MESSAGE_DELIVERY_LABELS,
 } from '../../api/types'
 
-type Tab = 'compose' | 'inbox' | 'groups' | 'conversations' | 'dictionary' | 'history' | 'settings' | 'monthly-fee'
+type Tab = 'compose' | 'inbox' | 'groups' | 'conversations' | 'history' | 'settings' | 'monthly-fee'
 type RecipientMode = 'individual' | 'curated' | 'dynamic' | 'list'
 type SendMode = 'broadcast' | 'group-chat'
 type ComposeBodyMode = 'free-form' | 'template'
@@ -146,7 +146,6 @@ export function AdminMessagingPage() {
           {tabBtn('inbox', t('admin.msgTabInbox'))}
           {tabBtn('groups', t('admin.msgTabGroups'))}
           {tabBtn('conversations', t('admin.msgTabConversations'))}
-          {tabBtn('dictionary', t('admin.msgTabDictionary'))}
           {tabBtn('history', t('admin.msgTabHistory'))}
           {tabBtn('monthly-fee', t('admin.msgTabMonthlyFee'))}
           {tabBtn('settings', t('admin.msgTabSettings'))}
@@ -192,13 +191,6 @@ export function AdminMessagingPage() {
             dynamicGroups={dynamicGroups}
             config={config}
             onChanged={refreshHistory}
-            onError={(e) => setError(e)}
-            onNotice={(n) => setNotice(n)}
-          />
-        )}
-
-        {tab === 'dictionary' && (
-          <DictionaryTab
             onError={(e) => setError(e)}
             onNotice={(n) => setNotice(n)}
           />
@@ -2888,7 +2880,9 @@ function TemplatePreviewModal({
 
 // --- Dictionary tab ------------------------------------------------------
 
-function DictionaryTab({
+/** Re-exported so the new Settings admin page can render the phrase-translation editor
+ *  alongside the templates editor. Inputs/outputs unchanged. */
+export function DictionaryTab({
   onError, onNotice,
 }: {
   onError: (e: string) => void

@@ -422,6 +422,14 @@ export const Api = {
     const r = await api.get<ThreadSummary[]>('/messaging/threads')
     return r.data
   },
+  /** Admin-triggered Twilio backfill — pulls messages from the last `days` (1-30) and inserts
+   *  any our DB is missing. Hourly background reconciler covers the recent window; this is
+   *  for recovering older gaps. Idempotent on TwilioSid. */
+  async reconcileTwilioMessages(days: number) {
+    const r = await api.post<{ outboundInserted: number; inboundInserted: number; message: string }>(
+      `/messaging/twilio/reconcile?days=${encodeURIComponent(String(days))}`, {})
+    return r.data
+  },
   /** Search registered parents for the Inbox "Message a parent" picker. Returns up to `limit`
    *  matches by name or trailing phone digits. `unrepliedOnly` filters out parents who already
    *  have a thread in the inbox (any inbound on record in the last 6 months). */
