@@ -5,18 +5,45 @@ namespace SoccerSchool.Api.Services;
 
 /// <summary>
 /// Best-effort interpretation of a parent's free-text reply as an attendance answer. Handles
-/// English + Spanish keywords and the emoji parents commonly send (✅/👍 = yes, ❌/👎 = no, 🤔 = maybe).
-/// Deliberately conservative: returns <c>null</c> when there's no clear signal or the reply contains
-/// both yes and no cues, so the admin's manual call is never overridden by a guess.
+/// English + Spanish keywords and a wide net of positive emoji parents commonly send to a
+/// confirmation request (checkmarks, thumbs up, soccer ball, peace/two-finger, OK hand, flex,
+/// crossed fingers, fire, party, hearts, sparkles, claps, etc.). Same conservative tie-break:
+/// returns <c>null</c> when there's no clear signal or the reply contains both yes and no cues,
+/// so the admin's manual call is never overridden by a guess.
 /// </summary>
 public static class AttendanceReplyParser
 {
-    // Soccer emoji (⚽ and the older U+26BD variant + the volleyball-ball-with-skin variants
-    // some keyboards substitute) is treated as yes — parents commonly send a ball to mean
-    // "we're in" on event confirmation replies for soccer-school sends.
-    private static readonly string[] YesEmoji = { "✅", "✔", "👍", "🙌", "⚽", "⚽️" };
-    private static readonly string[] NoEmoji = { "❌", "✖", "✗", "👎", "🚫" };
-    private static readonly string[] MaybeEmoji = { "🤔", "❓" };
+    // A positive emoji of any kind reads as "we'll be there" on a game/practice/tournament
+    // confirmation reply. Parents often skip text entirely and send just a single emoji —
+    // most often the soccer ball, but also thumbs up, peace, OK hand, fire, hearts, etc.
+    // The U+FE0F variation-selector forms are listed alongside the bare codepoints because
+    // many keyboards substitute one for the other.
+    private static readonly string[] YesEmoji =
+    {
+        // Checkmarks / confirms
+        "✅", "✔", "✔️", "☑", "☑️",
+        // Hands & gestures
+        "👍", "👍🏻", "👍🏼", "👍🏽", "👍🏾", "👍🏿",
+        "🙌", "🙌🏻", "🙌🏼", "🙌🏽", "🙌🏾", "🙌🏿",
+        "👏", "👏🏻", "👏🏼", "👏🏽", "👏🏾", "👏🏿",
+        "✌", "✌️",                       // peace / two-finger
+        "👌", "👌🏻", "👌🏼", "👌🏽", "👌🏾", "👌🏿", // OK hand
+        "💪", "💪🏻", "💪🏼", "💪🏽", "💪🏾", "💪🏿", // flex
+        "🤙", "🤙🏻", "🤙🏼", "🤙🏽", "🤙🏾", "🤙🏿", // shaka
+        "🤞", "🤞🏻", "🤞🏼", "🤞🏽", "🤞🏾", "🤞🏿", // crossed fingers
+        "🙏", "🙏🏻", "🙏🏼", "🙏🏽", "🙏🏾", "🙏🏿", // folded hands
+        // Sports / energy
+        "⚽", "⚽️", "🏆", "🥅", "🥇",
+        "🔥", "⚡", "⚡️", "💯", "🎉", "🎊", "🚀", "💥",
+        // Affection / approval
+        "❤", "❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎",
+        "💖", "💝", "💗", "💓", "💞", "💕", "😍", "🥰", "😘", "🤗",
+        "😀", "😁", "😃", "😄", "😊", "🙂",
+        // Sparkles / stars
+        "⭐", "⭐️", "🌟", "✨",
+    };
+    private static readonly string[] NoEmoji = { "❌", "✖", "✖️", "✗", "👎", "👎🏻", "👎🏼", "👎🏽", "👎🏾", "👎🏿", "🚫", "⛔", "🛑", "😢", "😭", "😞", "😔" };
+    private static readonly string[] MaybeEmoji = { "🤔", "❓", "❔", "🤷", "🤷‍♀️", "🤷‍♂️" };
 
     // Whole-word tokens (matched between spaces after stripping punctuation/emoji).
     private static readonly string[] YesWords = { "yes", "yep", "yeah", "yup", "si", "sí", "ok", "okay", "claro", "voy", "vamos", "asisto", "asistimos" };
