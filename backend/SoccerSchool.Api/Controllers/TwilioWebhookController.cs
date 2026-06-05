@@ -308,7 +308,32 @@ public class TwilioWebhookController : ControllerBase
             _ => "Thanks for your message! An admin will reply soon."
         };
 
+        // Persist a single-recipient Broadcast so the auto-reply shows up in the per-phone
+        // Inbox thread (and the History view). Without this, the message goes to Twilio fine
+        // but there's no DB record — admins see only their own replies on top of the parent's
+        // inbound and lose the audit trail of what we said back to an unknown sender.
+        var broadcast = new Domain.Broadcast
+        {
+            Channel = channel,
+            BodyEn = body,
+            TargetLabel = $"Auto-reply to {from}",
+        };
+        var recipient = new Domain.BroadcastRecipient
+        {
+            Phone = from,
+            Language = Domain.Language.English,
+            Status = Domain.MessageDeliveryStatus.Pending,
+        };
+        broadcast.Recipients.Add(recipient);
+        _db.Broadcasts.Add(broadcast);
+        await _db.SaveChangesAsync(ct);
+
         var result = await _sender.SendAsync(channel, from, body, ct);
+        recipient.TwilioSid = result.TwilioSid;
+        recipient.Status = result.Status;
+        recipient.StatusMessage = result.Message;
+        await _db.SaveChangesAsync(ct);
+
         if (!result.Success)
             _logger.LogWarning("Auto-reply to {From} returned {Message}", from, result.Message);
     }
