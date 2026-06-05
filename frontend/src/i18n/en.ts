@@ -301,6 +301,8 @@ const en = {
     evtGameCount: '{{count}} games',
     evtDeleteTournamentConfirm: 'Delete this tournament? Its games stay as the team\'s games (just untagged).',
     evtTournCreated: 'Tournament created.',
+    evtTournUpdated: 'Tournament updated.',
+    evtTournNameRequired: 'Tournament name is required.',
     evtTournCreateHelp: 'Step 1 of 3: enter the tournament info. After creating it you\'ll build the team and send confirmations.',
     evtTournStartDate: 'Start date',
     evtTournEndDate: 'End date',

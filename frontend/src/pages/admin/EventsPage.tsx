@@ -275,6 +275,49 @@ function TournamentCard({
   onNotice: (n: string) => void
 }) {
   const { t } = useTranslation()
+  const [editing, setEditing] = useState(false)
+  const [busy, setBusy] = useState(false)
+  // Edit form state — initialized from the current tour when entering edit mode.
+  const [editName, setEditName] = useState(tour.name)
+  const [editKind, setEditKind] = useState<TournamentKind>(tour.kind)
+  const [editStart, setEditStart] = useState(tour.startDate ?? '')
+  const [editEnd, setEditEnd] = useState(tour.endDate ?? '')
+  const [editTotalCost, setEditTotalCost] = useState(tour.totalCost?.toString() ?? '')
+  const [editCostPerPlayer, setEditCostPerPlayer] = useState(tour.costPerPlayer?.toString() ?? '')
+
+  const startEdit = () => {
+    setEditName(tour.name)
+    setEditKind(tour.kind)
+    setEditStart(tour.startDate ?? '')
+    setEditEnd(tour.endDate ?? '')
+    setEditTotalCost(tour.totalCost?.toString() ?? '')
+    setEditCostPerPlayer(tour.costPerPlayer?.toString() ?? '')
+    setEditing(true)
+  }
+
+  const saveEdit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editName.trim()) { onError(t('admin.evtTournNameRequired')); return }
+    setBusy(true); onError(''); onNotice('')
+    try {
+      await Api.updateTournament(tour.id, {
+        name: editName.trim(),
+        kind: editKind,
+        startDate: editStart || null,
+        endDate: editEnd || null,
+        totalCost: editTotalCost === '' ? null : Number(editTotalCost),
+        costPerPlayer: editCostPerPlayer === '' ? null : Number(editCostPerPlayer),
+        // Keep the existing team / sync ids so the edit doesn't accidentally clear them.
+        teamId: tour.teamId ?? null,
+        gotSportEventId: tour.gotSportEventId || null,
+        gotSportTeamId: tour.gotSportTeamId || null,
+      })
+      await onChanged()
+      onNotice(t('admin.evtTournUpdated'))
+      setEditing(false)
+    } catch (e: any) { onError(errMsg(e)) }
+    finally { setBusy(false) }
+  }
 
   const dateLabel = formatDateLabel(tour.startDate, tour.endDate)
   const costLabel = tour.costPerPlayer !== null ? `$${tour.costPerPlayer.toFixed(2)}/player` : '—'
@@ -299,6 +342,14 @@ function TournamentCard({
           </div>
         </div>
         <div className="text-sm whitespace-nowrap">
+          {!editing && (
+            <>
+              <button onClick={startEdit} className="text-emerald-700 hover:underline">
+                {t('admin.edit')}
+              </button>
+              <span className="mx-2 text-slate-300">|</span>
+            </>
+          )}
           <button onClick={onToggle} className="text-emerald-700 hover:underline">
             {expanded ? t('admin.hide') : t('admin.evtTournManage')}
           </button>
@@ -306,6 +357,56 @@ function TournamentCard({
           <button onClick={onDelete} className="text-rose-700 hover:underline">{t('admin.delete')}</button>
         </div>
       </div>
+
+      {editing && (
+        <form onSubmit={saveEdit} noValidate className="mt-3 grid sm:grid-cols-2 gap-3 border-t border-slate-100 pt-3">
+          <label className="block text-sm">
+            <span className="font-medium text-slate-700">{t('admin.evtTournName')}</span>
+            <input type="text" required value={editName}
+              onChange={e => setEditName(e.target.value)}
+              className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+          </label>
+          <label className="block text-sm">
+            <span className="font-medium text-slate-700">{t('admin.evtTournKind')}</span>
+            <select value={editKind} onChange={e => setEditKind(Number(e.target.value) as TournamentKind)}
+              className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm">
+              <option value={0}>{t('admin.evtTournKindTournament')}</option>
+              <option value={1}>{t('admin.evtTournKindLeague')}</option>
+            </select>
+          </label>
+          <label className="block text-sm">
+            <span className="font-medium text-slate-700">{t('admin.evtTournStartDate')}</span>
+            <input type="date" value={editStart} onChange={e => setEditStart(e.target.value)}
+              className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+          </label>
+          <label className="block text-sm">
+            <span className="font-medium text-slate-700">{t('admin.evtTournEndDate')}</span>
+            <input type="date" value={editEnd} onChange={e => setEditEnd(e.target.value)}
+              className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+          </label>
+          <label className="block text-sm">
+            <span className="font-medium text-slate-700">{t('admin.evtTournTotalCost')}</span>
+            <input type="number" min={0} step="0.01" value={editTotalCost}
+              onChange={e => setEditTotalCost(e.target.value)} placeholder="0.00"
+              className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+          </label>
+          <label className="block text-sm">
+            <span className="font-medium text-slate-700">{t('admin.evtTournCostPerPlayer')}</span>
+            <input type="number" min={0} step="0.01" value={editCostPerPlayer}
+              onChange={e => setEditCostPerPlayer(e.target.value)} placeholder="0.00"
+              className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+          </label>
+          <div className="sm:col-span-2 flex items-center gap-3">
+            <button type="submit" disabled={busy}
+              className="bg-emerald-700 text-white text-sm font-semibold px-4 py-2 rounded-md hover:bg-emerald-800 disabled:opacity-60">
+              {busy ? t('admin.sending') : t('admin.save')}
+            </button>
+            <button type="button" onClick={() => setEditing(false)} className="text-sm text-slate-600 hover:underline">
+              {t('admin.cancel')}
+            </button>
+          </div>
+        </form>
+      )}
 
       {expanded && (
         <TournamentManage tour={tour} onChanged={onChanged} onError={onError} onNotice={onNotice} />
@@ -1151,6 +1252,9 @@ function formatDateLabel(start: string | null, end: string | null): string {
   const s = new Date(start + 'T00:00:00')
   if (!end || end === start) return s.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
   const e = new Date(end + 'T00:00:00')
+  // Same month + year → "Jun 5–12, 2026" (don't repeat the month name).
+  if (s.getFullYear() === e.getFullYear() && s.getMonth() === e.getMonth())
+    return `${s.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}–${e.getDate()}, ${s.getFullYear()}`
   if (s.getFullYear() === e.getFullYear())
     return `${s.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – ${e.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`
   return `${s.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })} – ${e.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`

@@ -1753,6 +1753,10 @@ public class MessagingController : ControllerBase
         if (end is null || end.Value == start)
             return startDt.ToString("MMM d, yyyy", us);
         var endDt = end.Value.ToDateTime(TimeOnly.MinValue);
+        // Same month + year → "Jun 5–12, 2026" (don't repeat the month name).
+        if (startDt.Year == endDt.Year && startDt.Month == endDt.Month)
+            return $"{startDt.ToString("MMM d", us)}–{endDt.Day} {startDt.Year}";
+        // Same year, different months → "Jun 28 – Jul 4, 2026".
         if (startDt.Year == endDt.Year)
             return $"{startDt.ToString("MMM d", us)} – {endDt.ToString("MMM d, yyyy", us)}";
         return $"{startDt.ToString("MMM d, yyyy", us)} – {endDt.ToString("MMM d, yyyy", us)}";

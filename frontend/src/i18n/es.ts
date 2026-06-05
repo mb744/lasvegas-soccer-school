@@ -303,6 +303,8 @@ const es: Translations = {
     evtGameCount: '{{count}} partidos',
     evtDeleteTournamentConfirm: '¿Eliminar este torneo? Sus partidos quedan como partidos del equipo (solo se desvincula la etiqueta).',
     evtTournCreated: 'Torneo creado.',
+    evtTournUpdated: 'Torneo actualizado.',
+    evtTournNameRequired: 'El nombre del torneo es obligatorio.',
     evtTournCreateHelp: 'Paso 1 de 3: ingresa la información del torneo. Después de crearlo formarás el equipo y enviarás las confirmaciones.',
     evtTournStartDate: 'Fecha de inicio',
     evtTournEndDate: 'Fecha de fin',
