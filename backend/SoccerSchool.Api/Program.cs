@@ -124,6 +124,10 @@ builder.Services.AddSingleton<IWaiverPdfGenerator, WaiverPdfGenerator>();
 // Background reconciler that backfills missed Twilio status callbacks (server downtime,
 // post-200 webhook crashes, etc.) — see TwilioStatusReconciler for cadence + scope.
 builder.Services.AddHostedService<TwilioStatusReconciler>();
+// Companion reconciler that backfills missed messages themselves (auto-replies and other
+// paths that skipped the broadcast pipeline, or inbound webhooks Twilio retried out) — see
+// TwilioMessageReconciler for cadence + scope.
+builder.Services.AddHostedService<TwilioMessageReconciler>();
 
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();

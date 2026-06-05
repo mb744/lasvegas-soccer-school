@@ -52,7 +52,7 @@ import {
   MESSAGE_DELIVERY_LABELS,
 } from '../../api/types'
 
-type Tab = 'compose' | 'inbox' | 'groups' | 'conversations' | 'templates' | 'dictionary' | 'history' | 'settings' | 'monthly-fee'
+type Tab = 'compose' | 'inbox' | 'groups' | 'conversations' | 'dictionary' | 'history' | 'settings' | 'monthly-fee'
 type RecipientMode = 'individual' | 'curated' | 'dynamic' | 'list'
 type SendMode = 'broadcast' | 'group-chat'
 type ComposeBodyMode = 'free-form' | 'template'
@@ -146,7 +146,6 @@ export function AdminMessagingPage() {
           {tabBtn('inbox', t('admin.msgTabInbox'))}
           {tabBtn('groups', t('admin.msgTabGroups'))}
           {tabBtn('conversations', t('admin.msgTabConversations'))}
-          {tabBtn('templates', t('admin.msgTabTemplates'))}
           {tabBtn('dictionary', t('admin.msgTabDictionary'))}
           {tabBtn('history', t('admin.msgTabHistory'))}
           {tabBtn('monthly-fee', t('admin.msgTabMonthlyFee'))}
@@ -174,16 +173,6 @@ export function AdminMessagingPage() {
               await refreshGroups()
             }}
             onError={(e) => { setError(e); setNotice(null) }}
-          />
-        )}
-
-        {tab === 'templates' && (
-          <TemplatesTab
-            templates={templates}
-            emailTemplates={emailTemplates}
-            onChanged={refreshTemplates}
-            onError={(e) => setError(e)}
-            onNotice={(n) => setNotice(n)}
           />
         )}
 
@@ -1991,7 +1980,9 @@ function HistoryTab({
 
 // --- Templates tab ---------------------------------------------------------
 
-function TemplatesTab({
+/** Re-exported so the new Settings admin page can render the same WhatsApp + Email template
+ *  editor without forking the code. Inputs/outputs unchanged. */
+export function TemplatesTab({
   templates, emailTemplates, onChanged, onError, onNotice,
 }: {
   templates: WhatsAppTemplate[]
