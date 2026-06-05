@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Layout } from '../../components/Layout'
 import { Api } from '../../api/client'
@@ -9,14 +10,17 @@ function errMsg(e: any): string {
   return e?.response?.data?.title || e?.response?.data || e?.message || 'Error'
 }
 
-/** Top-level admin settings hub. Houses configuration that used to live as tabs inside the
- *  Messaging page so the day-to-day Compose/Inbox flow isn't cluttered. Currently:
+type Tab = 'templates' | 'dictionary' | 'backfill'
+
+/** Top-level admin settings hub. Tabs mirror the Messaging page so the layout is consistent
+ *  across admin cards. Currently houses:
  *    - WhatsApp + Email templates (moved from Messaging → Templates).
  *    - Phrase translation dictionary (moved from Messaging → Dictionary).
  *    - Twilio message backfill (1-30 day window) — companion to the hourly background
  *      reconciler for recovering older gaps. */
 export function AdminSettingsPage() {
   const { t } = useTranslation()
+  const [tab, setTab] = useState<Tab>('templates')
   const [templates, setTemplates] = useState<WhatsAppTemplate[]>([])
   const [emailTemplates, setEmailTemplates] = useState<EmailTemplate[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -29,14 +33,14 @@ export function AdminSettingsPage() {
     outboundInserted: number; inboundInserted: number; message: string
   } | null>(null)
 
-  const refresh = async () => {
+  const refreshTemplates = async () => {
     try {
       const [wa, em] = await Promise.all([Api.listWhatsAppTemplates(), Api.listEmailTemplates()])
       setTemplates(wa); setEmailTemplates(em)
     } catch (e: any) { setError(errMsg(e)) }
   }
 
-  useEffect(() => { refresh() }, [])
+  useEffect(() => { refreshTemplates() }, [])
 
   const runBackfill = async () => {
     if (backfillBusy) return
@@ -49,13 +53,29 @@ export function AdminSettingsPage() {
     finally { setBackfillBusy(false) }
   }
 
+  const tabBtn = (key: Tab, label: string) => (
+    <button
+      onClick={() => setTab(key)}
+      className={`px-4 py-2 text-sm font-medium border-b-2 ${tab === key
+        ? 'border-emerald-700 text-emerald-800'
+        : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+    >{label}</button>
+  )
+
   return (
     <Layout>
-      <div className="max-w-6xl mx-auto px-4 py-8 space-y-4">
-        <header>
-          <h1 className="text-2xl font-bold text-emerald-800">{t('admin.settingsTitle')}</h1>
-          <p className="mt-1 text-sm text-slate-500">{t('admin.settingsSubtitle')}</p>
-        </header>
+      <div className="max-w-6xl mx-auto px-4 py-10 space-y-6">
+        <div>
+          <Link to="/admin" className="text-sm text-emerald-700 hover:underline">← {t('admin.backToHub')}</Link>
+          <h1 className="text-3xl font-bold text-emerald-800 mt-2">{t('admin.settingsTitle')}</h1>
+          <p className="text-sm text-slate-600 mt-1">{t('admin.settingsSubtitle')}</p>
+        </div>
+
+        <div className="flex gap-1 border-b border-slate-200">
+          {tabBtn('templates', t('admin.settingsTabTemplates'))}
+          {tabBtn('dictionary', t('admin.settingsTabDictionary'))}
+          {tabBtn('backfill', t('admin.settingsTabBackfill'))}
+        </div>
 
         {error && (
           <div className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-md p-3">{error}</div>
@@ -64,55 +84,55 @@ export function AdminSettingsPage() {
           <div className="text-sm text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-md p-3">{notice}</div>
         )}
 
-        {/* Templates */}
-        <section className="bg-white border border-slate-200 rounded-lg p-4">
-          <h2 className="text-lg font-bold text-emerald-800 mb-2">{t('admin.settingsTemplatesSection')}</h2>
-          <p className="text-xs text-slate-500 mb-3">{t('admin.settingsTemplatesBlurb')}</p>
-          <TemplatesTab
-            templates={templates}
-            emailTemplates={emailTemplates}
-            onChanged={refresh}
-            onError={(e) => { setError(e); setNotice(null) }}
-            onNotice={(n) => { setNotice(n); setError(null) }}
-          />
-        </section>
+        {tab === 'templates' && (
+          <section className="bg-white border border-slate-200 rounded-lg p-4">
+            <p className="text-xs text-slate-500 mb-3">{t('admin.settingsTemplatesBlurb')}</p>
+            <TemplatesTab
+              templates={templates}
+              emailTemplates={emailTemplates}
+              onChanged={refreshTemplates}
+              onError={(e) => { setError(e); setNotice(null) }}
+              onNotice={(n) => { setNotice(n); setError(null) }}
+            />
+          </section>
+        )}
 
-        {/* Phrase translation dictionary */}
-        <section className="bg-white border border-slate-200 rounded-lg p-4">
-          <h2 className="text-lg font-bold text-emerald-800 mb-2">{t('admin.settingsDictionarySection')}</h2>
-          <p className="text-xs text-slate-500 mb-3">{t('admin.settingsDictionaryBlurb')}</p>
-          <DictionaryTab
-            onError={(e) => { setError(e); setNotice(null) }}
-            onNotice={(n) => { setNotice(n); setError(null) }}
-          />
-        </section>
+        {tab === 'dictionary' && (
+          <section className="bg-white border border-slate-200 rounded-lg p-4">
+            <p className="text-xs text-slate-500 mb-3">{t('admin.settingsDictionaryBlurb')}</p>
+            <DictionaryTab
+              onError={(e) => { setError(e); setNotice(null) }}
+              onNotice={(n) => { setNotice(n); setError(null) }}
+            />
+          </section>
+        )}
 
-        {/* Twilio message backfill */}
-        <section className="bg-white border border-slate-200 rounded-lg p-4">
-          <h2 className="text-lg font-bold text-emerald-800 mb-2">{t('admin.settingsBackfillSection')}</h2>
-          <p className="text-xs text-slate-500 mb-3">{t('admin.settingsBackfillBlurb')}</p>
-          <div className="flex flex-wrap items-end gap-3">
-            <label className="block text-sm">
-              <span className="text-slate-700">{t('admin.settingsBackfillDays')}</span>
-              <input type="number" min={1} max={30} value={backfillDays}
-                onChange={e => setBackfillDays(Math.max(1, Math.min(30, Number(e.target.value) || 1)))}
-                className="mt-1 w-24 border border-slate-300 rounded-md px-2 py-1 text-sm" />
-            </label>
-            <button onClick={runBackfill} disabled={backfillBusy}
-              className="bg-emerald-700 text-white text-sm font-semibold px-4 py-2 rounded-md hover:bg-emerald-800 disabled:opacity-60">
-              {backfillBusy ? t('admin.settingsBackfillRunning') : t('admin.settingsBackfillRun')}
-            </button>
-          </div>
-          {backfillResult && (
-            <div className="mt-3 text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded p-2">
-              <div>{t('admin.settingsBackfillResult', {
-                out: backfillResult.outboundInserted,
-                inb: backfillResult.inboundInserted,
-              })}</div>
-              <div className="text-slate-500 mt-1">{backfillResult.message}</div>
+        {tab === 'backfill' && (
+          <section className="bg-white border border-slate-200 rounded-lg p-4">
+            <p className="text-xs text-slate-500 mb-3">{t('admin.settingsBackfillBlurb')}</p>
+            <div className="flex flex-wrap items-end gap-3">
+              <label className="block text-sm">
+                <span className="text-slate-700">{t('admin.settingsBackfillDays')}</span>
+                <input type="number" min={1} max={30} value={backfillDays}
+                  onChange={e => setBackfillDays(Math.max(1, Math.min(30, Number(e.target.value) || 1)))}
+                  className="mt-1 w-24 border border-slate-300 rounded-md px-2 py-1 text-sm" />
+              </label>
+              <button onClick={runBackfill} disabled={backfillBusy}
+                className="bg-emerald-700 text-white text-sm font-semibold px-4 py-2 rounded-md hover:bg-emerald-800 disabled:opacity-60">
+                {backfillBusy ? t('admin.settingsBackfillRunning') : t('admin.settingsBackfillRun')}
+              </button>
             </div>
-          )}
-        </section>
+            {backfillResult && (
+              <div className="mt-3 text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded p-2">
+                <div>{t('admin.settingsBackfillResult', {
+                  out: backfillResult.outboundInserted,
+                  inb: backfillResult.inboundInserted,
+                })}</div>
+                <div className="text-slate-500 mt-1">{backfillResult.message}</div>
+              </div>
+            )}
+          </section>
+        )}
       </div>
     </Layout>
   )
