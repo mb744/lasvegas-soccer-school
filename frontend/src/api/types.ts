@@ -1147,3 +1147,75 @@ export const MESSAGE_DELIVERY_LABELS: Record<MessageDeliveryStatus, string> = {
   4: 'Failed',
   5: 'Undelivered',
 }
+
+// --- Coaches module (admin HR-style profile, separate from per-team TeamCoach) ---
+
+export interface Coach {
+  id: number
+  firstName: string
+  lastName: string
+  cellPhone: string | null
+  hasWhatsApp: boolean
+  email: string | null
+  addressLine1: string | null
+  addressLine2: string | null
+  city: string | null
+  state: string | null
+  postalCode: string | null
+  monthlyPayment: number | null
+  notes: string | null
+  language: Language
+  createdAt: string
+  updatedAt: string
+  certifications: CoachCertification[]
+}
+
+export interface CoachCertification {
+  id: number
+  coachId: number
+  name: string
+  issuingBody: string | null
+  /** ISO yyyy-MM-dd. */
+  issuedOn: string | null
+  /** ISO yyyy-MM-dd. */
+  expiresOn: string | null
+  certificateNumber: string | null
+  notes: string | null
+  createdAt: string
+}
+
+export interface CoachSummary {
+  id: number
+  firstName: string
+  lastName: string
+  cellPhone: string | null
+  email: string | null
+  monthlyPayment: number | null
+  certificationCount: number
+  updatedAt: string
+}
+
+export interface SaveCoachRecordRequest {
+  firstName: string
+  lastName: string
+  cellPhone?: string | null
+  hasWhatsApp: boolean
+  email?: string | null
+  addressLine1?: string | null
+  addressLine2?: string | null
+  city?: string | null
+  state?: string | null
+  postalCode?: string | null
+  monthlyPayment?: number | null
+  notes?: string | null
+  language: Language
+}
+
+export interface SaveCoachCertificationRequest {
+  name: string
+  issuingBody?: string | null
+  issuedOn?: string | null
+  expiresOn?: string | null
+  certificateNumber?: string | null
+  notes?: string | null
+}

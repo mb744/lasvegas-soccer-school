@@ -61,6 +61,8 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<Team> Teams => Set<Team>();
     public DbSet<TeamPlayer> TeamPlayers => Set<TeamPlayer>();
     public DbSet<TeamCoach> TeamCoaches => Set<TeamCoach>();
+    public DbSet<Coach> Coaches => Set<Coach>();
+    public DbSet<CoachCertification> CoachCertifications => Set<CoachCertification>();
     public DbSet<ScheduledGame> ScheduledGames => Set<ScheduledGame>();
     public DbSet<Tournament> Tournaments => Set<Tournament>();
     public DbSet<EventAttendance> EventAttendances => Set<EventAttendance>();
@@ -295,6 +297,23 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
                 .HasForeignKey(c => c.TeamId)
                 .OnDelete(DeleteBehavior.Cascade);
             b.HasIndex(c => c.TeamId);
+        });
+
+        modelBuilder.Entity<Coach>(b =>
+        {
+            // MonthlyPayment is a money amount — fix precision so EF doesn't infer a default
+            // truncating type. 10,2 covers anything realistic for a youth-league stipend.
+            b.Property(c => c.MonthlyPayment).HasPrecision(10, 2);
+            b.HasIndex(c => new { c.LastName, c.FirstName });
+        });
+
+        modelBuilder.Entity<CoachCertification>(b =>
+        {
+            b.HasOne(cc => cc.Coach)
+                .WithMany(c => c.Certifications)
+                .HasForeignKey(cc => cc.CoachId)
+                .OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(cc => cc.CoachId);
         });
 
         modelBuilder.Entity<Tournament>(b =>

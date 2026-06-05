@@ -83,6 +83,10 @@ import type {
   TemplateProperty,
   TemplateContext,
   TemplateContextOption,
+  Coach,
+  CoachSummary,
+  SaveCoachRecordRequest,
+  SaveCoachCertificationRequest,
   TranslateRequest,
   TranslateResponse,
   UserSummary,
@@ -776,6 +780,39 @@ export const Api = {
   /** Hard-coded list of TemplateContext options for the Context dropdown on the Templates tab. */
   async listTemplateContexts() {
     const r = await api.get<TemplateContextOption[]>('/messaging/template-contexts')
+    return r.data
+  },
+
+  // --- Coaches module (admin HR-style profile, separate from per-team TeamCoach) ---
+  async listCoaches() {
+    const r = await api.get<CoachSummary[]>('/coaches')
+    return r.data
+  },
+  async getCoach(id: number) {
+    const r = await api.get<Coach>(`/coaches/${id}`)
+    return r.data
+  },
+  async createCoach(payload: SaveCoachRecordRequest) {
+    const r = await api.post<Coach>('/coaches', payload)
+    return r.data
+  },
+  async updateCoach(id: number, payload: SaveCoachRecordRequest) {
+    const r = await api.put<Coach>(`/coaches/${id}`, payload)
+    return r.data
+  },
+  async deleteCoach(id: number) {
+    await api.delete(`/coaches/${id}`)
+  },
+  async addCoachCertification(id: number, payload: SaveCoachCertificationRequest) {
+    const r = await api.post<Coach>(`/coaches/${id}/certifications`, payload)
+    return r.data
+  },
+  async updateCoachCertification(id: number, certId: number, payload: SaveCoachCertificationRequest) {
+    const r = await api.put<Coach>(`/coaches/${id}/certifications/${certId}`, payload)
+    return r.data
+  },
+  async removeCoachCertification(id: number, certId: number) {
+    const r = await api.delete<Coach>(`/coaches/${id}/certifications/${certId}`)
     return r.data
   },
 }

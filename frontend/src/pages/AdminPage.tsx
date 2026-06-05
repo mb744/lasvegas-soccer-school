@@ -12,6 +12,7 @@ export function AdminPage() {
     { to: '/admin/events',              title: t('admin.hubEvents'),           blurb: t('admin.hubEventsBlurb'),           icon: '📅' },
     { to: '/admin/registrations',       title: t('admin.hubRegistrations'),    blurb: t('admin.hubRegistrationsBlurb'),    icon: '📋' },
     { to: '/admin/users',               title: t('admin.hubUsers'),            blurb: t('admin.hubUsersBlurb'),            icon: '👥' },
+    { to: '/admin/coaches',             title: t('admin.hubCoaches'),          blurb: t('admin.hubCoachesBlurb'),          icon: '🧤' },
     { to: '/admin/settings',            title: t('admin.hubSettings'),         blurb: t('admin.hubSettingsBlurb'),         icon: '⚙️' },
   ] as const
 
