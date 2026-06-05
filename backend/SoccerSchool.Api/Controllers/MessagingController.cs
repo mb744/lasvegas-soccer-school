@@ -798,14 +798,18 @@ public class MessagingController : ControllerBase
     }
 
 
-    /// <summary>Full chronological thread for one phone — inbounds + outbounds interleaved.</summary>
+    /// <summary>Full chronological thread for one phone — inbounds + outbounds interleaved.
+    /// Match by every common phone-form variant so a recipient stored as 8317568859 still surfaces
+    /// the broadcast row recorded as +18317568859 (and vice versa) — otherwise outbounds get
+    /// dropped from the inbox view depending on which form was stored.</summary>
     [HttpGet("threads/{phone}")]
     public async Task<ActionResult<ThreadDetailDto>> GetThread(string phone, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(phone)) return BadRequest("Phone is required.");
+        var phoneVariants = PhoneNormalizer.Variants(phone).ToList();
 
         var inbound = await _db.InboundMessages
-            .Where(m => m.FromPhone == phone)
+            .Where(m => m.FromPhone != null && phoneVariants.Contains(m.FromPhone))
             .Select(m => new ThreadMessageDto(
                 ThreadDirection.Inbound,
                 m.Channel,
@@ -817,7 +821,7 @@ public class MessagingController : ControllerBase
             .ToListAsync(ct);
 
         var outbound = await _db.BroadcastRecipients
-            .Where(r => r.Phone == phone)
+            .Where(r => phoneVariants.Contains(r.Phone))
             .Select(r => new ThreadMessageDto(
                 ThreadDirection.Outbound,
                 r.Broadcast!.Channel,
@@ -832,9 +836,8 @@ public class MessagingController : ControllerBase
 
         var messages = inbound.Concat(outbound).OrderBy(m => m.At).ToList();
 
-        var variants = PhoneNormalizer.Variants(phone);
         var parent = await _db.ParentAccounts
-            .Where(p => p.CellPhone != null && variants.Contains(p.CellPhone))
+            .Where(p => p.CellPhone != null && phoneVariants.Contains(p.CellPhone))
             .FirstOrDefaultAsync(ct);
 
         string? name = parent is null ? null : $"{parent.FirstName} {parent.LastName}".Trim();
@@ -846,7 +849,7 @@ public class MessagingController : ControllerBase
             // Fall back to an additional guardian so the thread is still identified by name and
             // linked to the family, even though that guardian has no login of their own.
             var contact = await _db.ParentContacts
-                .Where(c => c.CellPhone != null && variants.Contains(c.CellPhone))
+                .Where(c => c.CellPhone != null && phoneVariants.Contains(c.CellPhone))
                 .FirstOrDefaultAsync(ct);
             if (contact is not null)
             {
