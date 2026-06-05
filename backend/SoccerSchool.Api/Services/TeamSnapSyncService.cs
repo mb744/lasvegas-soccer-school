@@ -241,6 +241,20 @@ public class TeamSnapSyncService : ITeamSnapSyncService
         int added = 0, updated = 0, restored = 0;
         var now = DateTime.UtcNow;
 
+        // For migrating rows that were created under the old time-based UID format
+        // (ts-paste:{ttId}:{yyyyMMddHHmm}:{slug}) — match them by opponent slug and re-key
+        // to the new slot-based UID inside the upsert below. Each candidate is consumed at
+        // most once, picked in chronological order so slot 1 in the new paste maps to the
+        // earliest old row for that opponent.
+        var uidPrefix = $"ts-paste:{tt.Id}:";
+        var oldStyleCandidatesBySlug = existing
+            .Where(g => g.ExternalUid.StartsWith(uidPrefix, StringComparison.Ordinal))
+            .Where(g => TryExtractOldStyleSlug(g.ExternalUid, uidPrefix) is not null)
+            .GroupBy(g => TryExtractOldStyleSlug(g.ExternalUid, uidPrefix)!)
+            .ToDictionary(grp => grp.Key, grp => new Queue<ScheduledGame>(grp.OrderBy(g => g.StartsAt)),
+                StringComparer.OrdinalIgnoreCase);
+        var rekeyed = 0;
+
         foreach (var (g, isHomeUs, startsAt, opponent) in ourGames)
         {
             var slug = Slug(opponent);
@@ -249,7 +263,22 @@ public class TeamSnapSyncService : ITeamSnapSyncService
             touchedUids.Add(uid);
             var summary = $"{g.HomeName} vs {g.AwayName}";
 
-            if (byUid.TryGetValue(uid, out var row))
+            ScheduledGame? row = null;
+            if (byUid.TryGetValue(uid, out var matched))
+            {
+                row = matched;
+            }
+            else if (oldStyleCandidatesBySlug.TryGetValue(slug, out var queue) && queue.Count > 0)
+            {
+                // Migrate the old time-based row to the new slot UID.
+                row = queue.Dequeue();
+                byUid.Remove(row.ExternalUid);
+                row.ExternalUid = uid;
+                byUid[uid] = row;
+                rekeyed++;
+            }
+
+            if (row is not null)
             {
                 row.StartsAt = startsAt;
                 row.Summary = Trim(summary, 512);
@@ -281,15 +310,21 @@ public class TeamSnapSyncService : ITeamSnapSyncService
         }
 
         // Orphans: existing ts-paste rows for this TournamentTeam not touched by the new paste.
-        // Mark them cancelled (gentler than deleting — attendance rows stay valid for audit;
-        // the upcoming-events UI hides cancelled rows by default).
-        var uidPrefix = $"ts-paste:{tt.Id}:";
+        // Rows that are already cancelled get deleted (the admin re-pasted without including
+        // them, so they're clutter at this point — EventAttendance is cascade-delete). Newly
+        // orphaned rows get marked cancelled; the upcoming-events UI hides them by default.
         int orphanedCancelled = 0;
+        int orphanedDeleted = 0;
         foreach (var row in existing)
         {
             if (!row.ExternalUid.StartsWith(uidPrefix, StringComparison.Ordinal)) continue;
             if (touchedUids.Contains(row.ExternalUid)) continue;
-            if (row.IsCancelled) continue;
+            if (row.IsCancelled)
+            {
+                _db.ScheduledGames.Remove(row);
+                orphanedDeleted++;
+                continue;
+            }
             row.IsCancelled = true;
             row.CancelledAt = now;
             orphanedCancelled++;
@@ -305,8 +340,10 @@ public class TeamSnapSyncService : ITeamSnapSyncService
             var parts = new List<string>();
             if (added > 0) parts.Add($"{added} added");
             if (updated > 0) parts.Add($"{updated} updated");
+            if (rekeyed > 0) parts.Add($"{rekeyed} migrated from old uid");
             if (restored > 0) parts.Add($"{restored} un-cancelled");
             if (orphanedCancelled > 0) parts.Add($"{orphanedCancelled} cancelled (no longer in paste)");
+            if (orphanedDeleted > 0) parts.Add($"{orphanedDeleted} stale cancelled row(s) cleaned up");
             tt.LastSyncMessage = parts.Count > 0
                 ? string.Join(", ", parts) + $" from {ourGames.Count} matching game(s) in the paste."
                 : $"No changes — all {ourGames.Count} game(s) already up to date.";
@@ -326,6 +363,23 @@ public class TeamSnapSyncService : ITeamSnapSyncService
         if (string.IsNullOrWhiteSpace(s)) return string.Empty;
         var arr = s.ToLowerInvariant().Where(c => char.IsLetterOrDigit(c)).ToArray();
         return new string(arr);
+    }
+
+    /// <summary>Pulls the opponent slug out of an old-style time-based UID
+    /// (<c>ts-paste:{ttId}:{yyyyMMddHHmm}:{slug}</c>). Returns null when the UID is in the
+    /// new slot-based shape (<c>ts-paste:{ttId}:{slug}:{N}</c>) — those don't need migration.
+    /// Heuristic: the segment after the prefix is 12 digits in the old format and is the
+    /// slug in the new format.</summary>
+    private static string? TryExtractOldStyleSlug(string uid, string prefix)
+    {
+        if (!uid.StartsWith(prefix, StringComparison.Ordinal)) return null;
+        var tail = uid[prefix.Length..];
+        var firstColon = tail.IndexOf(':');
+        if (firstColon <= 0) return null;
+        var firstSegment = tail[..firstColon];
+        // Old style: 12-digit yyyyMMddHHmm. New style: slug (letters+digits, but won't be exactly 12 digits in practice).
+        if (firstSegment.Length != 12 || !firstSegment.All(char.IsDigit)) return null;
+        return tail[(firstColon + 1)..];
     }
 
     /// <summary>Parses the TeamSnap-table format the admin pastes — typically three lines per
