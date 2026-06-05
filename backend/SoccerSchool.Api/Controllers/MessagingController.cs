@@ -608,6 +608,87 @@ public class MessagingController : ControllerBase
     }
 
 
+    /// <summary>Read-only "why is this message missing from the inbox?" diagnostic. Looks up a
+    /// BroadcastRecipient by its Twilio SID OR by any phone-form variant of <paramref name="phone"/>,
+    /// returns the raw stored Phone string + the parent Broadcast headline, and reports whether
+    /// the row would have matched the per-phone thread query. Handy when a phone format wasn't
+    /// normalized (the row is in the DB but never surfaces in the inbox).</summary>
+    [HttpGet("diagnostic/message")]
+    public async Task<ActionResult<object>> DiagnoseMessage(
+        [FromQuery] string? sid, [FromQuery] string? phone, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(sid) && string.IsNullOrWhiteSpace(phone))
+            return BadRequest("Provide either sid (Twilio SM/MM/IM) or phone.");
+
+        var matchedBySid = !string.IsNullOrWhiteSpace(sid)
+            ? await _db.BroadcastRecipients
+                .Where(r => r.TwilioSid == sid.Trim())
+                .Select(r => new
+                {
+                    r.Id,
+                    r.BroadcastId,
+                    StoredPhone = r.Phone,
+                    r.Email,
+                    r.Language,
+                    r.Status,
+                    r.ErrorCode,
+                    r.StatusMessage,
+                    r.TwilioSid,
+                    BroadcastCreatedAt = r.Broadcast!.CreatedAt,
+                    BroadcastChannel = r.Broadcast.Channel,
+                    BroadcastBodyEn = r.Broadcast.BodyEn,
+                    BroadcastBodyEs = r.Broadcast.BodyEs,
+                    r.Broadcast.TargetLabel,
+                })
+                .ToListAsync(ct)
+            : null;
+
+        // Match by every phone-form variant the inbox would use. Also do a digit-suffix LIKE so
+        // punctuated rows (e.g. "(831) 756-8859") surface even though Variants doesn't produce
+        // that exact string.
+        List<string>? phoneVariants = null;
+        object? matchedByPhone = null;
+        string? digitSuffix = null;
+        if (!string.IsNullOrWhiteSpace(phone))
+        {
+            phoneVariants = PhoneNormalizer.Variants(phone).ToList();
+            // Last 10 digits = strongest "same human" signal for US numbers.
+            var digits = new string(phone.Where(char.IsDigit).ToArray());
+            digitSuffix = digits.Length >= 10 ? digits[^10..] : digits;
+            var likePattern = $"%{digitSuffix}%";
+
+            var byVariants = await _db.BroadcastRecipients
+                .Where(r => phoneVariants.Contains(r.Phone))
+                .Select(r => new { r.Id, r.BroadcastId, r.Phone, r.TwilioSid, r.Status, MatchMode = "variant", r.Broadcast!.CreatedAt })
+                .ToListAsync(ct);
+            var byLike = await _db.BroadcastRecipients
+                .Where(r => EF.Functions.Like(r.Phone, likePattern) && !phoneVariants.Contains(r.Phone))
+                .Select(r => new { r.Id, r.BroadcastId, r.Phone, r.TwilioSid, r.Status, MatchMode = "digit-suffix-only", r.Broadcast!.CreatedAt })
+                .ToListAsync(ct);
+            var inboundByVariants = await _db.InboundMessages
+                .Where(m => m.FromPhone != null && phoneVariants.Contains(m.FromPhone))
+                .Select(m => new { m.Id, FromPhone = m.FromPhone, m.TwilioSid, m.ReceivedAt, MatchMode = "variant" })
+                .ToListAsync(ct);
+            matchedByPhone = new
+            {
+                BroadcastRecipientsByVariant = byVariants,
+                BroadcastRecipientsByDigitSuffixOnly = byLike,
+                InboundMessagesByVariant = inboundByVariants,
+            };
+        }
+
+        return Ok(new
+        {
+            InputSid = sid,
+            InputPhone = phone,
+            PhoneVariantsTried = phoneVariants,
+            DigitSuffix = digitSuffix,
+            MatchedBySid = matchedBySid,
+            MatchedByPhone = matchedByPhone,
+        });
+    }
+
+
     [HttpGet("inbound")]
     public async Task<ActionResult<IEnumerable<InboundMessageDto>>> ListInbound(CancellationToken ct)
     {
