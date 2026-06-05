@@ -45,6 +45,12 @@ public record TeamCoachDto(
     string? Phone,
     Language Language,
     bool HasWhatsApp,
+    /// <summary>FK to the admin Coaches roster when this row was picked from the directory;
+    /// null when the admin typed the coach in by hand on the team card. Lets the UI show
+    /// a "View coach profile" link.</summary>
+    int? CoachId,
+    /// <summary>Head vs assistant. Drives the role badge in the per-team coach editor.</summary>
+    TeamCoachRole Role,
     DateTime CreatedAt);
 
 public record AddTeamCoachRequest
@@ -54,6 +60,11 @@ public record AddTeamCoachRequest
     [MaxLength(32)] public string? Phone { get; init; }
     public Language Language { get; init; } = Language.English;
     public bool HasWhatsApp { get; init; }
+    /// <summary>Optional: pick from the admin Coaches roster. When set, the controller pulls
+    /// name/email/phone/language/HasWhatsApp from the Coach record and ignores the values in
+    /// this request — the pick is authoritative.</summary>
+    public int? CoachId { get; init; }
+    public TeamCoachRole Role { get; init; } = TeamCoachRole.HeadCoach;
 }
 
 public record UpdateTeamCoachRequest
@@ -63,6 +74,10 @@ public record UpdateTeamCoachRequest
     [MaxLength(32)] public string? Phone { get; init; }
     public Language Language { get; init; } = Language.English;
     public bool HasWhatsApp { get; init; }
+    /// <summary>Optional rebind to a Coach profile. Same precedence rule as Add: when set,
+    /// the controller pulls contact details from the Coach record.</summary>
+    public int? CoachId { get; init; }
+    public TeamCoachRole Role { get; init; } = TeamCoachRole.HeadCoach;
 }
 
 /// <summary>One roster player. Age bracket / parent contact are pulled from the player's

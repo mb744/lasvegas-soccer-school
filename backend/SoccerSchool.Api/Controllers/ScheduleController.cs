@@ -70,7 +70,7 @@ public class ScheduleController : ControllerBase
             .ToList();
         var coaches = team.Coaches
             .OrderBy(c => c.CreatedAt)
-            .Select(c => new TeamCoachDto(c.Id, c.TeamId, c.Name, c.Email, c.Phone, c.Language, c.HasWhatsApp, c.CreatedAt))
+            .Select(c => new TeamCoachDto(c.Id, c.TeamId, c.Name, c.Email, c.Phone, c.Language, c.HasWhatsApp, c.CoachId, c.Role, c.CreatedAt))
             .ToList();
 
         return Ok(new TeamDetail(

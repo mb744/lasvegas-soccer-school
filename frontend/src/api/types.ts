@@ -964,6 +964,8 @@ export interface SaveCoachRequest {
   coachPhone?: string | null
 }
 
+export type TeamCoachRole = 0 | 1 // 0 = HeadCoach, 1 = AssistantCoach
+
 export interface TeamCoach {
   id: number
   teamId: number
@@ -972,6 +974,11 @@ export interface TeamCoach {
   phone: string | null
   language: Language
   hasWhatsApp: boolean
+  /** When set, this team-coach row was picked from the Coaches roster — contact details
+   *  came from the linked Coach profile and the UI can offer "View profile". Null when the
+   *  admin typed the contact in directly. */
+  coachId: number | null
+  role: TeamCoachRole
   createdAt: string
 }
 
@@ -981,6 +988,10 @@ export interface SaveTeamCoachRequest {
   phone?: string | null
   language: Language
   hasWhatsApp: boolean
+  /** When set, the backend pulls name/email/phone/language/HasWhatsApp from the Coach
+   *  profile and ignores the values in this payload — the pick wins. */
+  coachId?: number | null
+  role: TeamCoachRole
 }
 
 export interface AvailablePlayer {

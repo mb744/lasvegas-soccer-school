@@ -137,7 +137,7 @@ public class TeamsController : ControllerBase
 
         var coaches = team.Coaches
             .OrderBy(c => c.CreatedAt)
-            .Select(c => new TeamCoachDto(c.Id, c.TeamId, c.Name, c.Email, c.Phone, c.Language, c.HasWhatsApp, c.CreatedAt))
+            .Select(c => new TeamCoachDto(c.Id, c.TeamId, c.Name, c.Email, c.Phone, c.Language, c.HasWhatsApp, c.CoachId, c.Role, c.CreatedAt))
             .ToList();
 
         return Ok(new RosterTeamDetail(
@@ -165,22 +165,30 @@ public class TeamsController : ControllerBase
         return await Get(id, ct);
     }
 
-    /// <summary>Add a coach to a team's coach list. Phone is E.164-normalized on save.</summary>
+    /// <summary>Add a coach to a team's coach list. When <c>CoachId</c> is set, the contact
+    /// details are pulled from the admin Coaches roster (the picked profile wins); otherwise
+    /// the typed-in values are used and the row stays "manual". Phone is E.164-normalized.</summary>
     [HttpPost("{id:int}/coaches")]
     public async Task<ActionResult<RosterTeamDetail>> AddCoach(
         int id, [FromBody] AddTeamCoachRequest request, CancellationToken ct)
     {
         if (!await _db.Teams.AnyAsync(t => t.Id == id, ct)) return NotFound();
-        if (string.IsNullOrWhiteSpace(request.Name)) return BadRequest("Coach name is required.");
+
+        // Resolve the fields: pick from the roster when CoachId is set, else trust the request.
+        var resolved = await ResolveCoachFieldsAsync(request.CoachId,
+            request.Name, request.Email, request.Phone, request.Language, request.HasWhatsApp, ct);
+        if (resolved is null) return BadRequest("Coach name is required (or pick a coach from the roster).");
 
         _db.TeamCoaches.Add(new TeamCoach
         {
             TeamId = id,
-            Name = request.Name.Trim(),
-            Email = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim(),
-            Phone = string.IsNullOrWhiteSpace(request.Phone) ? null : PhoneNormalizer.Normalize(request.Phone),
-            Language = request.Language,
-            HasWhatsApp = request.HasWhatsApp,
+            Name = resolved.Value.Name,
+            Email = resolved.Value.Email,
+            Phone = resolved.Value.Phone,
+            Language = resolved.Value.Language,
+            HasWhatsApp = resolved.Value.HasWhatsApp,
+            CoachId = request.CoachId,
+            Role = request.Role,
         });
         await _db.SaveChangesAsync(ct);
         return await Get(id, ct);
@@ -193,14 +201,39 @@ public class TeamsController : ControllerBase
     {
         var coach = await _db.TeamCoaches.FirstOrDefaultAsync(c => c.Id == coachId && c.TeamId == id, ct);
         if (coach is null) return NotFound();
-        if (string.IsNullOrWhiteSpace(request.Name)) return BadRequest("Coach name is required.");
-        coach.Name = request.Name.Trim();
-        coach.Email = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim();
-        coach.Phone = string.IsNullOrWhiteSpace(request.Phone) ? null : PhoneNormalizer.Normalize(request.Phone);
-        coach.Language = request.Language;
-        coach.HasWhatsApp = request.HasWhatsApp;
+
+        var resolved = await ResolveCoachFieldsAsync(request.CoachId,
+            request.Name, request.Email, request.Phone, request.Language, request.HasWhatsApp, ct);
+        if (resolved is null) return BadRequest("Coach name is required (or pick a coach from the roster).");
+
+        coach.Name = resolved.Value.Name;
+        coach.Email = resolved.Value.Email;
+        coach.Phone = resolved.Value.Phone;
+        coach.Language = resolved.Value.Language;
+        coach.HasWhatsApp = resolved.Value.HasWhatsApp;
+        coach.CoachId = request.CoachId;
+        coach.Role = request.Role;
         await _db.SaveChangesAsync(ct);
         return await Get(id, ct);
+    }
+
+    private async Task<(string Name, string? Email, string? Phone, Language Language, bool HasWhatsApp)?>
+        ResolveCoachFieldsAsync(int? coachId, string? name, string? email, string? phone,
+            Language language, bool hasWhatsApp, CancellationToken ct)
+    {
+        if (coachId is int cid)
+        {
+            var c = await _db.Coaches.FirstOrDefaultAsync(x => x.Id == cid, ct);
+            if (c is null) return null;
+            return ($"{c.FirstName} {c.LastName}".Trim(), c.Email, c.CellPhone, c.Language, c.HasWhatsApp);
+        }
+        if (string.IsNullOrWhiteSpace(name)) return null;
+        return (
+            name.Trim(),
+            string.IsNullOrWhiteSpace(email) ? null : email.Trim(),
+            string.IsNullOrWhiteSpace(phone) ? null : PhoneNormalizer.Normalize(phone),
+            language,
+            hasWhatsApp);
     }
 
     [HttpDelete("{id:int}/coaches/{coachId:int}")]

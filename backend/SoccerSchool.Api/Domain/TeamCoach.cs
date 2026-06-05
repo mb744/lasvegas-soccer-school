@@ -29,5 +29,17 @@ public class TeamCoach
 
     public bool HasWhatsApp { get; set; }
 
+    /// <summary>Optional link back to the admin Coaches roster (the HR-style profile that
+    /// holds mailing address, monthly stipend, certifications). When set, the row is a "pick"
+    /// from the roster; when null, the admin typed the contact in directly without binding it
+    /// to a coach profile. Null doesn't break anything — the row still routes for messaging.</summary>
+    public int? CoachId { get; set; }
+    public Coach? Coach { get; set; }
+
+    /// <summary>Head vs assistant coach. Surfaced as a badge on the per-team coach editor;
+    /// future routing rules (e.g. head coach gets the schedule-change ping but not the
+    /// "we need a sub" thread) can branch on this.</summary>
+    public TeamCoachRole Role { get; set; } = TeamCoachRole.HeadCoach;
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

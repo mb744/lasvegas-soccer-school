@@ -296,7 +296,14 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
                 .WithMany(t => t.Coaches)
                 .HasForeignKey(c => c.TeamId)
                 .OnDelete(DeleteBehavior.Cascade);
+            // Coach link is optional. SetNull on delete so removing a coach profile doesn't
+            // wipe their team-coach card — the card stays as a manually-typed entry.
+            b.HasOne(c => c.Coach)
+                .WithMany()
+                .HasForeignKey(c => c.CoachId)
+                .OnDelete(DeleteBehavior.SetNull);
             b.HasIndex(c => c.TeamId);
+            b.HasIndex(c => c.CoachId);
         });
 
         modelBuilder.Entity<Coach>(b =>

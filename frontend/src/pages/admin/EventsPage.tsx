@@ -4,11 +4,12 @@ import { useTranslation } from 'react-i18next'
 import { Layout } from '../../components/Layout'
 import { TeamScheduleSection } from '../../components/TeamScheduleSection'
 import { RequiredLabel, useRequiredValidation } from '../../components/RequiredField'
+import { TeamCoachEditor } from '../../components/TeamCoachEditor'
 import { Api } from '../../api/client'
 import type {
   RosterTeamSummary, RosterTeamDetail, TournamentSummary, TournamentTeam, TournamentKind,
   AttendanceStatus, TournamentAttendanceList, AvailablePlayer,
-  TeamDetail, TeamCoach, Language, ScheduledGame, TournamentSendPreview,
+  TeamDetail, ScheduledGame, TournamentSendPreview,
 } from '../../api/types'
 
 function errMsg(e: any): string {
@@ -1374,136 +1375,15 @@ function TournamentTeamCoaches({
   onNotice: (n: string) => void
 }) {
   const { t } = useTranslation()
-  const coaches = teamDetail?.coaches ?? []
-  const [adding, setAdding] = useState(false)
-  const [editingId, setEditingId] = useState<number | null>(null)
-  const [form, setForm] = useState<{ name: string; email: string; phone: string; language: Language; hasWhatsApp: boolean }>(
-    { name: '', email: '', phone: '', language: 0, hasWhatsApp: false })
-  const [busy, setBusy] = useState(false)
-
   if (teamDetail === null) {
     return <p className="text-xs text-slate-400">{t('common.loading')}</p>
   }
-
-  const cancel = () => { setAdding(false); setEditingId(null) }
-  const startAdd = () => {
-    setEditingId(null)
-    setForm({ name: '', email: '', phone: '', language: 0, hasWhatsApp: false })
-    setAdding(true)
-  }
-  const startEdit = (c: TeamCoach) => {
-    setAdding(false)
-    setEditingId(c.id)
-    setForm({ name: c.name, email: c.email ?? '', phone: c.phone ?? '', language: c.language, hasWhatsApp: c.hasWhatsApp })
-  }
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!form.name.trim()) { onError(t('admin.teamCoachNameRequired')); return }
-    setBusy(true); onError(''); onNotice('')
-    try {
-      const payload = {
-        name: form.name.trim(),
-        email: form.email.trim() || null,
-        phone: form.phone.trim() || null,
-        language: form.language,
-        hasWhatsApp: form.hasWhatsApp,
-      }
-      if (editingId !== null) await Api.updateTeamCoachEntry(teamDetail.id, editingId, payload)
-      else await Api.addTeamCoachEntry(teamDetail.id, payload)
-      onNotice(editingId !== null ? t('admin.teamCoachUpdated') : t('admin.teamCoachAdded'))
-      cancel()
-      await onChanged()
-    } catch (e: any) { onError(errMsg(e)) }
-    finally { setBusy(false) }
-  }
-
-  const remove = async (c: TeamCoach) => {
-    if (!confirm(t('admin.teamCoachRemoveConfirm', { name: c.name }))) return
-    onError(''); onNotice('')
-    try {
-      await Api.removeTeamCoachEntry(teamDetail.id, c.id)
-      onNotice(t('admin.teamCoachRemoved'))
-      await onChanged()
-    } catch (e: any) { onError(errMsg(e)) }
-  }
-
   return (
-    <div className="space-y-2">
-      {coaches.length === 0 ? (
-        <p className="text-xs text-slate-400">{t('admin.teamCoachNone')}</p>
-      ) : (
-        <ul className="divide-y divide-slate-100 border border-slate-200 rounded bg-white">
-          {coaches.map(c => (
-            <li key={c.id} className="px-2 py-1.5 flex items-start justify-between gap-2 text-xs">
-              <div>
-                <div className="font-medium text-slate-800">{c.name}
-                  <span className="ml-2 text-[10px] uppercase tracking-wide text-slate-500">
-                    {c.language === 1 ? 'ES' : 'EN'}{c.hasWhatsApp ? ' · WA' : ''}
-                  </span>
-                </div>
-                <div className="text-[11px] text-slate-500 font-mono">
-                  {c.phone ?? '—'}{c.email ? ` · ${c.email}` : ''}
-                </div>
-              </div>
-              <div className="flex items-center gap-2 whitespace-nowrap">
-                <button onClick={() => startEdit(c)} className="text-emerald-700 hover:underline">{t('admin.edit')}</button>
-                <button onClick={() => remove(c)} className="text-rose-700 hover:underline">{t('admin.delete')}</button>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-      {!adding && editingId === null && (
-        <button onClick={startAdd} className="text-xs text-emerald-700 hover:underline">
-          + {t('admin.teamCoachAdd')}
-        </button>
-      )}
-      {(adding || editingId !== null) && (
-        <form onSubmit={submit} className="grid sm:grid-cols-2 gap-2 border border-emerald-200 rounded p-2 bg-emerald-50/40">
-          <label className="block text-xs sm:col-span-2">
-            <span className="text-slate-600">{t('admin.teamCoachName')}</span>
-            <input type="text" value={form.name} required
-              onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-              className="mt-1 w-full border border-slate-300 rounded px-2 py-1 text-sm" />
-          </label>
-          <label className="block text-xs">
-            <span className="text-slate-600">{t('admin.teamCoachPhone')}</span>
-            <input type="tel" value={form.phone}
-              onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
-              className="mt-1 w-full border border-slate-300 rounded px-2 py-1 text-sm" />
-          </label>
-          <label className="block text-xs">
-            <span className="text-slate-600">{t('admin.teamCoachEmail')}</span>
-            <input type="email" value={form.email}
-              onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
-              className="mt-1 w-full border border-slate-300 rounded px-2 py-1 text-sm" />
-          </label>
-          <label className="block text-xs">
-            <span className="text-slate-600">{t('admin.language')}</span>
-            <select value={form.language}
-              onChange={e => setForm(f => ({ ...f, language: Number(e.target.value) as Language }))}
-              className="mt-1 w-full border border-slate-300 rounded px-2 py-1 text-sm">
-              <option value={0}>English</option>
-              <option value={1}>Español</option>
-            </select>
-          </label>
-          <label className="block text-xs flex items-center gap-2 pt-5">
-            <input type="checkbox" checked={form.hasWhatsApp}
-              onChange={e => setForm(f => ({ ...f, hasWhatsApp: e.target.checked }))} />
-            <span>{t('admin.teamCoachWhatsApp')}</span>
-          </label>
-          <div className="sm:col-span-2 flex gap-2">
-            <button type="submit" disabled={busy}
-              className="text-xs bg-emerald-700 text-white px-3 py-1 rounded-md hover:bg-emerald-800 disabled:opacity-60">
-              {busy ? t('admin.sending') : t('admin.save')}
-            </button>
-            <button type="button" onClick={cancel} className="text-xs text-slate-600 hover:underline">
-              {t('admin.cancel')}
-            </button>
-          </div>
-        </form>
-      )}
-    </div>
+    <TeamCoachEditor coaches={teamDetail.coaches}
+      onAdd={(p) => Api.addTeamCoachEntry(teamDetail.id, p)}
+      onUpdate={(coachId, p) => Api.updateTeamCoachEntry(teamDetail.id, coachId, p)}
+      onRemove={async (coachId) => { await Api.removeTeamCoachEntry(teamDetail.id, coachId); return undefined }}
+      onChanged={() => { void onChanged() }}
+      onError={onError} onNotice={onNotice} />
   )
 }
