@@ -880,6 +880,9 @@ public class MessagingController : ControllerBase
         if (!_sender.IsAvailable(request.Channel))
             return BadRequest($"{request.Channel} not configured on this server.");
 
+        // Normalize so the stored Phone is in E.164 — that way the same recipient row will
+        // surface in the thread regardless of which phone-form variant the next URL uses.
+        var normalizedPhone = PhoneNormalizer.Normalize(phone) ?? phone.Trim();
         var variants = PhoneNormalizer.Variants(phone);
         var parent = await _db.ParentAccounts
             .Where(p => p.CellPhone != null && variants.Contains(p.CellPhone))
@@ -892,12 +895,12 @@ public class MessagingController : ControllerBase
             Channel = request.Channel,
             BodyEn = lang == Language.English ? request.Body.Trim() : null,
             BodyEs = lang == Language.Spanish ? request.Body.Trim() : null,
-            TargetLabel = $"Reply to {phone}",
+            TargetLabel = $"Reply to {normalizedPhone}",
         };
         var recipient = new BroadcastRecipient
         {
             Name = name,
-            Phone = phone,
+            Phone = normalizedPhone,
             Email = null,
             Language = lang,
             Status = MessageDeliveryStatus.Pending
@@ -906,7 +909,7 @@ public class MessagingController : ControllerBase
         _db.Broadcasts.Add(broadcast);
         await _db.SaveChangesAsync(ct);
 
-        var send = await _sender.SendAsync(request.Channel, phone, request.Body.Trim(), ct);
+        var send = await _sender.SendAsync(request.Channel, normalizedPhone, request.Body.Trim(), ct);
         recipient.TwilioSid = send.TwilioSid;
         recipient.Status = send.Status;
         recipient.StatusMessage = send.Message;
