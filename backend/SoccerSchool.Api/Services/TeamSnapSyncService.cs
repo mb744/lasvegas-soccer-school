@@ -213,29 +213,52 @@ public class TeamSnapSyncService : ITeamSnapSyncService
             .ToListAsync(ct);
         var byUid = existing.ToDictionary(g => g.ExternalUid, g => g, StringComparer.Ordinal);
 
-        var games = ParsePastedSchedule(pastedText, yearHint);
-        int added = 0, updated = 0, ours = 0;
-        var now = DateTime.UtcNow;
-        foreach (var g in games)
+        var allParsed = ParsePastedSchedule(pastedText, yearHint);
+
+        // Pick out the games where our team appears, convert to UTC, and sort chronologically.
+        // Sorting by start time makes the per-opponent slot index stable regardless of the
+        // order the admin pasted the rows in.
+        var ourGames = new List<(PastedScheduleGame Parsed, bool IsHomeUs, DateTime StartsAt, string Opponent)>();
+        foreach (var g in allParsed)
         {
             var isHomeUs = NamesMatch(g.HomeName, ourName);
             var isAwayUs = NamesMatch(g.AwayName, ourName);
             if (!isHomeUs && !isAwayUs) continue;
-            ours++;
-            var opponent = isHomeUs ? g.AwayName : g.HomeName;
             var startsAt = PastedRowToUtc(g.LocalDate, g.LocalTime, g.YearHint);
             if (startsAt is null) continue;
-            // Stable per-team uid that survives re-paste: date + time + opponent.
-            var uid = $"ts-paste:{tt.Id}:{startsAt.Value:yyyyMMddHHmm}:{Slug(opponent)}";
+            var opponent = isHomeUs ? g.AwayName : g.HomeName;
+            ourGames.Add((g, isHomeUs, startsAt.Value, opponent));
+        }
+        ourGames.Sort((a, b) => a.StartsAt.CompareTo(b.StartsAt));
+
+        // Stable UID per opponent-slot ("ts-paste:{ttId}:{opponent}:{N}" — 1st game vs opponent
+        // is slot 1, 2nd is slot 2, etc., in chronological order). Time/venue changes upsert
+        // into the same row instead of creating a duplicate. Orphans (rows in the DB whose
+        // UID isn't touched by the new paste) get marked cancelled so they fall out of the
+        // upcoming-games UI without losing their attendance rows.
+        var opponentSlot = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var touchedUids = new HashSet<string>(StringComparer.Ordinal);
+        int added = 0, updated = 0, restored = 0;
+        var now = DateTime.UtcNow;
+
+        foreach (var (g, isHomeUs, startsAt, opponent) in ourGames)
+        {
+            var slug = Slug(opponent);
+            opponentSlot[slug] = opponentSlot.GetValueOrDefault(slug) + 1;
+            var uid = $"ts-paste:{tt.Id}:{slug}:{opponentSlot[slug]}";
+            touchedUids.Add(uid);
             var summary = $"{g.HomeName} vs {g.AwayName}";
+
             if (byUid.TryGetValue(uid, out var row))
             {
-                row.StartsAt = startsAt.Value;
+                row.StartsAt = startsAt;
                 row.Summary = Trim(summary, 512);
                 row.Location = Trim(g.Venue, 512);
                 row.OpponentName = Trim(opponent, 256);
                 row.IsHome = isHomeUs;
                 row.LastSeenAt = now;
+                // A prior re-sync may have cancelled this row; restore it if it's back in the paste.
+                if (row.IsCancelled) { row.IsCancelled = false; row.CancelledAt = null; restored++; }
                 updated++;
             }
             else
@@ -245,7 +268,7 @@ public class TeamSnapSyncService : ITeamSnapSyncService
                     TeamId = tt.TeamId,
                     TournamentId = tt.TournamentId,
                     ExternalUid = uid,
-                    StartsAt = startsAt.Value,
+                    StartsAt = startsAt,
                     Summary = Trim(summary, 512),
                     Location = Trim(g.Venue, 512),
                     OpponentName = Trim(opponent, 256),
@@ -256,10 +279,38 @@ public class TeamSnapSyncService : ITeamSnapSyncService
                 added++;
             }
         }
+
+        // Orphans: existing ts-paste rows for this TournamentTeam not touched by the new paste.
+        // Mark them cancelled (gentler than deleting — attendance rows stay valid for audit;
+        // the upcoming-events UI hides cancelled rows by default).
+        var uidPrefix = $"ts-paste:{tt.Id}:";
+        int orphanedCancelled = 0;
+        foreach (var row in existing)
+        {
+            if (!row.ExternalUid.StartsWith(uidPrefix, StringComparison.Ordinal)) continue;
+            if (touchedUids.Contains(row.ExternalUid)) continue;
+            if (row.IsCancelled) continue;
+            row.IsCancelled = true;
+            row.CancelledAt = now;
+            orphanedCancelled++;
+        }
+
         tt.LastSyncedAt = now;
-        tt.LastSyncMessage = ours == 0
-            ? $"Parsed {games.Count} game(s) but none matched team name \"{ourName}\"."
-            : $"{added} added, {updated} updated from {ours} matching game(s) in the paste.";
+        if (ourGames.Count == 0)
+        {
+            tt.LastSyncMessage = $"Parsed {allParsed.Count} game(s) but none matched team name \"{ourName}\".";
+        }
+        else
+        {
+            var parts = new List<string>();
+            if (added > 0) parts.Add($"{added} added");
+            if (updated > 0) parts.Add($"{updated} updated");
+            if (restored > 0) parts.Add($"{restored} un-cancelled");
+            if (orphanedCancelled > 0) parts.Add($"{orphanedCancelled} cancelled (no longer in paste)");
+            tt.LastSyncMessage = parts.Count > 0
+                ? string.Join(", ", parts) + $" from {ourGames.Count} matching game(s) in the paste."
+                : $"No changes — all {ourGames.Count} game(s) already up to date.";
+        }
         await _db.SaveChangesAsync(ct);
         return new ScheduleSyncResult(true, added, updated, tt.LastSyncMessage);
     }
