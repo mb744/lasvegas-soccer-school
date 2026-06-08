@@ -30,6 +30,7 @@ public class MessagingController : ControllerBase
     private readonly IPhraseTranslator _translator;
     private readonly ITwilioMessageReconciler _reconciler;
     private readonly TwilioOptions _twilio;
+    private readonly AppOptions _app;
 
     public MessagingController(
         AppDbContext db,
@@ -39,7 +40,8 @@ public class MessagingController : ControllerBase
         IConversationService conversations,
         IPhraseTranslator translator,
         ITwilioMessageReconciler reconciler,
-        IOptions<TwilioOptions> twilio)
+        IOptions<TwilioOptions> twilio,
+        IOptions<AppOptions> app)
     {
         _db = db;
         _sender = sender;
@@ -49,6 +51,7 @@ public class MessagingController : ControllerBase
         _translator = translator;
         _reconciler = reconciler;
         _twilio = twilio.Value;
+        _app = app.Value;
     }
 
     /// <summary>Admin-triggered backfill of Twilio messages our DB is missing. The hourly
@@ -1251,7 +1254,7 @@ public class MessagingController : ControllerBase
             return BadRequest("Set the cost per player before previewing.");
 
         var team = await _db.Teams
-            .Include(t => t.Roster).ThenInclude(tp => tp.Player)
+            .Include(t => t.Roster).ThenInclude(tp => tp.Player!).ThenInclude(p => p.ParentAccount!).ThenInclude(pa => pa.User)
             .FirstOrDefaultAsync(t => t.Id == teamId, ct);
         if (team is null) return NotFound();
         if (team.Roster.Count == 0)
@@ -1443,7 +1446,7 @@ public class MessagingController : ControllerBase
             return BadRequest("This tournament has no team. Add a team to the tournament first.");
 
         var team = await _db.Teams
-            .Include(tt => tt.Roster).ThenInclude(tp => tp.Player)
+            .Include(tt => tt.Roster).ThenInclude(tp => tp.Player!).ThenInclude(p => p.ParentAccount!).ThenInclude(pa => pa.User)
             .FirstOrDefaultAsync(tt => tt.Id == effectiveTeamId, ct);
         if (team is null) return NotFound();
         if (team.Roster.Count == 0)
@@ -1530,7 +1533,7 @@ public class MessagingController : ControllerBase
             return BadRequest("Set the cost per player before previewing.");
 
         var team = await _db.Teams
-            .Include(t => t.Roster).ThenInclude(tp => tp.Player)
+            .Include(t => t.Roster).ThenInclude(tp => tp.Player!).ThenInclude(p => p.ParentAccount!).ThenInclude(pa => pa.User)
             .FirstOrDefaultAsync(t => t.Id == teamId, ct);
         if (team is null) return NotFound();
         if (team.Roster.Count == 0)
@@ -1689,24 +1692,63 @@ public class MessagingController : ControllerBase
     /// <summary>Per-property resolved values for a tournament confirmation send. Keys here match
     /// the property registry exposed by <see cref="TemplatePropertyRegistry"/>; mapped variables
     /// pull their value from this dict at fan-out time.</summary>
-    private static Dictionary<string, string> BuildTournamentProperties(
+    private Dictionary<string, string> BuildTournamentProperties(
         Tournament tournament, Domain.Team team, Domain.Player player)
     {
         var us = System.Globalization.CultureInfo.GetCultureInfo("en-US");
-        return new Dictionary<string, string>
+        var props = new Dictionary<string, string>
         {
+            // --- Tournament / League ---
+            ["tournament.name"] = tournament.Name,
+            ["tournament.kind"] = tournament.Kind == TournamentKind.League ? "League" : "Tournament",
             ["tournament.dates"] = tournament.StartDate is null ? string.Empty
                 : FormatTournamentDates(tournament.StartDate.Value, tournament.EndDate),
             ["tournament.startDate"] = tournament.StartDate?.ToString("MMM d, yyyy", us) ?? string.Empty,
             ["tournament.endDate"] = tournament.EndDate?.ToString("MMM d, yyyy", us) ?? string.Empty,
-            ["tournament.name"] = tournament.Name,
+            ["tournament.startDateLong"] = tournament.StartDate?.ToString("MMMM d, yyyy", us) ?? string.Empty,
+            ["tournament.endDateLong"] = tournament.EndDate?.ToString("MMMM d, yyyy", us) ?? string.Empty,
+            ["tournament.startDateShort"] = tournament.StartDate?.ToString("MM/dd", us) ?? string.Empty,
+            ["tournament.endDateShort"] = tournament.EndDate?.ToString("MM/dd", us) ?? string.Empty,
+            ["tournament.startDayOfWeek"] = tournament.StartDate?.ToDateTime(TimeOnly.MinValue).ToString("dddd", us) ?? string.Empty,
+            ["tournament.endDayOfWeek"] = tournament.EndDate?.ToDateTime(TimeOnly.MinValue).ToString("dddd", us) ?? string.Empty,
             ["tournament.costPerPlayer"] = tournament.CostPerPlayer?.ToString("C", us) ?? string.Empty,
+            ["tournament.costPerPlayerPlain"] = tournament.CostPerPlayer?.ToString("0.00", us) ?? string.Empty,
             ["tournament.totalCost"] = tournament.TotalCost?.ToString("C", us) ?? string.Empty,
+            ["tournament.totalCostPlain"] = tournament.TotalCost?.ToString("0.00", us) ?? string.Empty,
+            // --- Team ---
             ["team.name"] = team.Name,
+            // --- Player ---
             ["player.firstName"] = player.FirstName,
             ["player.lastName"] = player.LastName,
             ["player.fullName"] = $"{player.FirstName} {player.LastName}".Trim(),
         };
+
+        // --- Parent / guardian (resolved from the player's primary account when loaded) ---
+        var parent = player.ParentAccount;
+        props["parent.firstName"] = parent?.FirstName ?? string.Empty;
+        props["parent.lastName"] = parent?.LastName ?? string.Empty;
+        props["parent.fullName"] = parent is null ? string.Empty : $"{parent.FirstName} {parent.LastName}".Trim();
+        props["parent.cellPhone"] = parent?.CellPhone ?? string.Empty;
+        props["parent.email"] = parent?.User?.Email ?? string.Empty;
+
+        // --- App-level (admin settings) ---
+        // Lazy-load from MessagingSettings exactly once per call. The build is invoked per
+        // player so multiple lookups inside a fan-out would add up; cache via a small private
+        // helper that fetches once per controller scope.
+        props["app.zellePhone"] = _cachedZellePhone ??= ResolveZellePhone();
+        props["app.activeSeason"] = _app.ActiveSeason ?? string.Empty;
+        props["app.publicBaseUrl"] = _app.PublicBaseUrl?.TrimEnd('/') ?? string.Empty;
+        return props;
+    }
+
+    /// <summary>Per-request cache so the per-player fan-out doesn't re-query MessagingSettings
+    /// for every recipient. Set on first call to <see cref="BuildTournamentProperties"/>.</summary>
+    private string? _cachedZellePhone;
+
+    private string ResolveZellePhone()
+    {
+        var s = _db.MessagingSettings.AsNoTracking().FirstOrDefault();
+        return s?.ZellePhone ?? string.Empty;
     }
 
     /// <summary>Walks the template's variables and fills each one from the resolved property

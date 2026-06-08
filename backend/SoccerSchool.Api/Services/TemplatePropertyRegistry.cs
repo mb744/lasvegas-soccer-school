@@ -17,18 +17,43 @@ public record TemplateProperty(string Key, string Label);
 /// </summary>
 public static class TemplatePropertyRegistry
 {
+    // Curated catalog. Order in each section matters — the admin sees these in this order
+    // in the "Map to" dropdown when configuring a template variable. Group related fields
+    // together (all tournament.*, all team.*, etc.) so the list scans.
     private static readonly TemplateProperty[] TournamentConfirmationProps = new[]
     {
-        new TemplateProperty("tournament.dates", "Tournament dates (formatted, e.g. Jun 15 – Jun 17, 2026)"),
-        new TemplateProperty("tournament.startDate", "Tournament start date"),
-        new TemplateProperty("tournament.endDate", "Tournament end date"),
-        new TemplateProperty("tournament.name", "Tournament name"),
+        // --- Tournament / League ---
+        new TemplateProperty("tournament.name", "Tournament / League name"),
+        new TemplateProperty("tournament.kind", "Kind (\"Tournament\" or \"League\")"),
+        new TemplateProperty("tournament.dates", "Dates (formatted range, e.g. Jun 5–12, 2026)"),
+        new TemplateProperty("tournament.startDate", "Start date (Jun 5, 2026)"),
+        new TemplateProperty("tournament.endDate", "End date (Jun 12, 2026)"),
+        new TemplateProperty("tournament.startDateLong", "Start date — long form (June 5, 2026)"),
+        new TemplateProperty("tournament.endDateLong", "End date — long form (June 12, 2026)"),
+        new TemplateProperty("tournament.startDateShort", "Start date — short (06/05)"),
+        new TemplateProperty("tournament.endDateShort", "End date — short (06/12)"),
+        new TemplateProperty("tournament.startDayOfWeek", "Start day of week (Sunday)"),
+        new TemplateProperty("tournament.endDayOfWeek", "End day of week (Sunday)"),
         new TemplateProperty("tournament.costPerPlayer", "Cost per player ($, formatted)"),
+        new TemplateProperty("tournament.costPerPlayerPlain", "Cost per player — plain number (150.00)"),
         new TemplateProperty("tournament.totalCost", "Total tournament cost ($, formatted)"),
+        new TemplateProperty("tournament.totalCostPlain", "Total cost — plain number (1500.00)"),
+        // --- Team ---
         new TemplateProperty("team.name", "Team name"),
+        // --- Player ---
         new TemplateProperty("player.firstName", "Player first name"),
         new TemplateProperty("player.lastName", "Player last name"),
         new TemplateProperty("player.fullName", "Player full name"),
+        // --- Parent / guardian (primary account holder for the player) ---
+        new TemplateProperty("parent.firstName", "Parent first name"),
+        new TemplateProperty("parent.lastName", "Parent last name"),
+        new TemplateProperty("parent.fullName", "Parent full name"),
+        new TemplateProperty("parent.cellPhone", "Parent cell phone (E.164)"),
+        new TemplateProperty("parent.email", "Parent email"),
+        // --- App-level (admin settings) ---
+        new TemplateProperty("app.zellePhone", "Zelle phone (Messaging → Settings)"),
+        new TemplateProperty("app.activeSeason", "Active season (e.g. 2026/27)"),
+        new TemplateProperty("app.publicBaseUrl", "Public site URL"),
     };
 
     public static IReadOnlyList<TemplateProperty> ForContext(TemplateContext context) => context switch
