@@ -56,11 +56,53 @@ public static class TemplatePropertyRegistry
         new TemplateProperty("app.publicBaseUrl", "Public site URL"),
     };
 
+    private static readonly TemplateProperty[] EventReminderProps = new[]
+    {
+        // --- Event ---
+        new TemplateProperty("event.kind", "Kind (\"Game\", \"Practice\", or \"Event\")"),
+        new TemplateProperty("event.summary", "Event summary (e.g. \"LVSS vs Albion\")"),
+        new TemplateProperty("event.opponent", "Opponent name (games only)"),
+        new TemplateProperty("event.isHome", "Home / Away / blank (games only)"),
+        new TemplateProperty("event.dateTime", "Date + time (Sun, Jun 5, 2026 — 2:00 PM)"),
+        new TemplateProperty("event.date", "Date (Jun 5, 2026)"),
+        new TemplateProperty("event.dateLong", "Date — long form (June 5, 2026)"),
+        new TemplateProperty("event.dateShort", "Date — short (06/05)"),
+        new TemplateProperty("event.dayOfWeek", "Day of week (Sunday)"),
+        new TemplateProperty("event.time", "Time (2:00 PM)"),
+        new TemplateProperty("event.location", "Location / venue"),
+        new TemplateProperty("event.description", "Description (admin notes)"),
+        // --- Team ---
+        new TemplateProperty("team.name", "Team name"),
+        // --- App-level (admin settings) ---
+        new TemplateProperty("app.zellePhone", "Zelle phone (Messaging → Settings)"),
+        new TemplateProperty("app.activeSeason", "Active season (e.g. 2026/27)"),
+        new TemplateProperty("app.publicBaseUrl", "Public site URL"),
+    };
+
+    // Cancellation reuses the same event/team/app set — the body wording is what differs,
+    // not the available data.
+    private static readonly TemplateProperty[] EventCancellationProps = EventReminderProps;
+
+    private static readonly TemplateProperty[] MonthlyFeeProps = new[]
+    {
+        // --- Month ---
+        new TemplateProperty("month.short", "Current month — short (Jun)"),
+        new TemplateProperty("month.long", "Current month — long (June)"),
+        new TemplateProperty("month.year", "Current year (2026)"),
+        new TemplateProperty("month.number", "Month number (06)"),
+        new TemplateProperty("month.label", "Month + year (June 2026)"),
+        // --- App-level (admin settings) ---
+        new TemplateProperty("app.zellePhone", "Zelle phone (Messaging → Settings)"),
+        new TemplateProperty("app.activeSeason", "Active season (e.g. 2026/27)"),
+        new TemplateProperty("app.publicBaseUrl", "Public site URL"),
+    };
+
     public static IReadOnlyList<TemplateProperty> ForContext(TemplateContext context) => context switch
     {
         TemplateContext.TournamentConfirmation => TournamentConfirmationProps,
-        // Other contexts haven't been migrated to mapping yet (they still use hard-coded
-        // fillers). Return an empty list so the admin sees no options + can't map.
+        TemplateContext.EventReminder => EventReminderProps,
+        TemplateContext.EventCancellation => EventCancellationProps,
+        TemplateContext.MonthlyFee => MonthlyFeeProps,
         _ => Array.Empty<TemplateProperty>(),
     };
 }

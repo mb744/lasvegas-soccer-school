@@ -290,6 +290,31 @@ public class MessagingController : ControllerBase
             templateVars = (request.TemplateVariables ?? new())
                 .Where(kv => !string.IsNullOrEmpty(kv.Key))
                 .ToDictionary(kv => kv.Key, kv => kv.Value ?? string.Empty);
+
+            // Property-mapping fill: when the template has a non-FreeForm context, resolve
+            // context properties (event details, month/year, app settings) and use them to
+            // fill any variable whose PropertyKey is set AND the admin hasn't typed a value.
+            // Admin-typed values always win — the mapping is just a default.
+            if (template.Context != TemplateContext.FreeForm)
+            {
+                var properties = await ResolveContextPropertiesAsync(template.Context, request, ct);
+                if (properties.Count > 0)
+                {
+                    foreach (var v in template.Variables)
+                    {
+                        var key = v.Position.ToString(CultureInfo.InvariantCulture);
+                        var hasAdminValue = templateVars.TryGetValue(key, out var adminVal) && !string.IsNullOrWhiteSpace(adminVal);
+                        if (hasAdminValue) continue;
+                        if (!string.IsNullOrEmpty(v.PropertyKey)
+                            && properties.TryGetValue(v.PropertyKey, out var mapped)
+                            && !string.IsNullOrEmpty(mapped))
+                        {
+                            templateVars[key] = mapped;
+                        }
+                    }
+                }
+            }
+
             var missing = template.Variables
                 .Select(v => v.Position.ToString(CultureInfo.InvariantCulture))
                 .Where(key => !templateVars.ContainsKey(key) || string.IsNullOrWhiteSpace(templateVars[key]))
@@ -1120,6 +1145,28 @@ public class MessagingController : ControllerBase
         var templateVars = (request.TemplateVariables ?? new())
             .Where(kv => !string.IsNullOrEmpty(kv.Key))
             .ToDictionary(kv => kv.Key, kv => kv.Value ?? string.Empty);
+
+        // Property-mapping fill for the MonthlyFee context: any unmapped variable whose
+        // PropertyKey resolves (month.*, app.*) gets the resolved value. Admin-typed values
+        // always win — this is just a default so the admin doesn't have to retype the
+        // current month / Zelle number every cycle.
+        if (primary.Context == TemplateContext.MonthlyFee)
+        {
+            var properties = BuildMonthlyFeeProperties();
+            foreach (var v in primary.Variables)
+            {
+                var key = v.Position.ToString(CultureInfo.InvariantCulture);
+                var hasAdminValue = templateVars.TryGetValue(key, out var adminVal) && !string.IsNullOrWhiteSpace(adminVal);
+                if (hasAdminValue) continue;
+                if (!string.IsNullOrEmpty(v.PropertyKey)
+                    && properties.TryGetValue(v.PropertyKey, out var mapped)
+                    && !string.IsNullOrEmpty(mapped))
+                {
+                    templateVars[key] = mapped;
+                }
+            }
+        }
+
         var missing = primary.Variables
             .Select(v => v.Position.ToString(CultureInfo.InvariantCulture))
             .Where(key => !templateVars.ContainsKey(key) || string.IsNullOrWhiteSpace(templateVars[key]))
@@ -1751,6 +1798,97 @@ public class MessagingController : ControllerBase
         return s?.ZellePhone ?? string.Empty;
     }
 
+    /// <summary>Dispatches to the right context-specific resolver. Empty dict for FreeForm
+    /// or contexts the caller's request can't satisfy (e.g. EventReminder without a
+    /// ScheduledGameId).</summary>
+    private async Task<IReadOnlyDictionary<string, string>> ResolveContextPropertiesAsync(
+        TemplateContext context, CreateBroadcastRequest request, CancellationToken ct) =>
+        context switch
+        {
+            TemplateContext.EventReminder or TemplateContext.EventCancellation =>
+                await BuildEventPropertiesAsync(request.ScheduledGameId, ct),
+            TemplateContext.MonthlyFee => BuildMonthlyFeeProperties(),
+            _ => new Dictionary<string, string>(),
+        };
+
+    /// <summary>Resolves event/team values for the EventReminder + EventCancellation
+    /// contexts. When the request didn't pick a specific event, returns just the app-level
+    /// values (admin can still type variable values manually).</summary>
+    private async Task<IReadOnlyDictionary<string, string>> BuildEventPropertiesAsync(
+        int? scheduledGameId, CancellationToken ct)
+    {
+        var us = System.Globalization.CultureInfo.GetCultureInfo("en-US");
+        var props = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["app.zellePhone"] = _cachedZellePhone ??= ResolveZellePhone(),
+            ["app.activeSeason"] = _app.ActiveSeason ?? string.Empty,
+            ["app.publicBaseUrl"] = _app.PublicBaseUrl?.TrimEnd('/') ?? string.Empty,
+        };
+
+        if (scheduledGameId is not int eventId) return props;
+        var ev = await _db.ScheduledGames
+            .Include(g => g.Team)
+            .AsNoTracking()
+            .FirstOrDefaultAsync(g => g.Id == eventId, ct);
+        if (ev is null) return props;
+
+        // Convert from UTC storage to Pacific for display, mirroring the date convention
+        // used elsewhere in the app (event scrapes/imports are Pacific too).
+        TimeZoneInfo? pacific = TryGetPacific();
+        var localStart = pacific is null ? ev.StartsAt : TimeZoneInfo.ConvertTimeFromUtc(ev.StartsAt, pacific);
+
+        props["event.kind"] = ev.Kind switch
+        {
+            ScheduledEventKind.Game => "Game",
+            ScheduledEventKind.Practice => "Practice",
+            ScheduledEventKind.Miscellaneous => "Event",
+            _ => "Event",
+        };
+        props["event.summary"] = ev.Summary ?? string.Empty;
+        props["event.opponent"] = ev.OpponentName ?? string.Empty;
+        props["event.isHome"] = ev.IsHome switch { true => "Home", false => "Away", _ => string.Empty };
+        props["event.dateTime"] = localStart.ToString("ddd, MMM d, yyyy — h:mm tt", us);
+        props["event.date"] = localStart.ToString("MMM d, yyyy", us);
+        props["event.dateLong"] = localStart.ToString("MMMM d, yyyy", us);
+        props["event.dateShort"] = localStart.ToString("MM/dd", us);
+        props["event.dayOfWeek"] = localStart.ToString("dddd", us);
+        props["event.time"] = localStart.ToString("h:mm tt", us);
+        props["event.location"] = ev.Location ?? string.Empty;
+        props["event.description"] = ev.Description ?? string.Empty;
+        props["team.name"] = ev.Team?.Name ?? string.Empty;
+        return props;
+    }
+
+    /// <summary>Resolves month/year + app values for the MonthlyFee context. Month is always
+    /// "this month" from the server clock — the admin runs the broadcast manually each month
+    /// so there's no ambiguity about which one.</summary>
+    private IReadOnlyDictionary<string, string> BuildMonthlyFeeProperties()
+    {
+        var us = System.Globalization.CultureInfo.GetCultureInfo("en-US");
+        var now = DateTime.UtcNow;
+        return new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["month.short"] = now.ToString("MMM", us),
+            ["month.long"] = now.ToString("MMMM", us),
+            ["month.year"] = now.Year.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["month.number"] = now.ToString("MM", us),
+            ["month.label"] = now.ToString("MMMM yyyy", us),
+            ["app.zellePhone"] = _cachedZellePhone ??= ResolveZellePhone(),
+            ["app.activeSeason"] = _app.ActiveSeason ?? string.Empty,
+            ["app.publicBaseUrl"] = _app.PublicBaseUrl?.TrimEnd('/') ?? string.Empty,
+        };
+    }
+
+    private static TimeZoneInfo? TryGetPacific()
+    {
+        try { return TimeZoneInfo.FindSystemTimeZoneById("America/Los_Angeles"); }
+        catch
+        {
+            try { return TimeZoneInfo.FindSystemTimeZoneById("Pacific Standard Time"); }
+            catch { return null; }
+        }
+    }
+
     /// <summary>Walks the template's variables and fills each one from the resolved property
     /// dict using <see cref="WhatsAppTemplateVariable.PropertyKey"/>. Falls back to the
     /// caller's positional defaults for variables that haven't been mapped yet (so legacy
@@ -2120,9 +2258,9 @@ public class MessagingController : ControllerBase
         {
             new TemplateContextOptionDto(TemplateContext.FreeForm, "Free-form (admin fills variables manually)"),
             new TemplateContextOptionDto(TemplateContext.TournamentConfirmation, "Tournament confirmation"),
-            new TemplateContextOptionDto(TemplateContext.EventReminder, "Event reminder (game/practice) — coming soon"),
-            new TemplateContextOptionDto(TemplateContext.EventCancellation, "Event cancellation — coming soon"),
-            new TemplateContextOptionDto(TemplateContext.MonthlyFee, "Monthly fee — coming soon"),
+            new TemplateContextOptionDto(TemplateContext.EventReminder, "Event reminder (game/practice)"),
+            new TemplateContextOptionDto(TemplateContext.EventCancellation, "Event cancellation"),
+            new TemplateContextOptionDto(TemplateContext.MonthlyFee, "Monthly fee"),
         };
         return Ok(opts);
     }
