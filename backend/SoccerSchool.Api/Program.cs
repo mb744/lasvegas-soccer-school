@@ -205,14 +205,17 @@ static async Task MigrateWithRetryAsync(AppDbContext db, ILogger logger)
     }
 }
 
-// Ensures the four canonical WhatsApp Content templates exist (practice/game × en/es). Retires
-// any prior single-template SIDs we previously seeded so the templates list doesn't carry stale
-// rows. Idempotent: subsequent boots are no-ops once the four current SIDs are present.
+// Bootstrap-only seed for the four canonical WhatsApp Content templates (practice/game × en/es).
+// Runs only on a fresh database (zero existing templates). Once the admin has any template at
+// all — seeded, hand-added, or partially deleted — this is a no-op. That keeps deletes sticky:
+// admin removes the practice_english entry, the next deploy won't resurrect it. To re-seed from
+// a partial state, delete every template and let the next boot repopulate.
+//
+// Also clears any legacy SIDs from earlier seed iterations on first boot.
 static async Task SeedWhatsAppTemplatesAsync(AppDbContext db, ILogger logger)
 {
-    // SIDs from previous canonical-template iterations. When found, the rows are removed so the
-    // Templates tab doesn't show stale entries. (FK on Broadcast.WhatsAppTemplateId is SetNull, so
-    // historical broadcasts lose their template link but stay readable.)
+    // SIDs from previous canonical-template iterations. Always cleaned up — those rows are
+    // obsolete regardless of whether the admin has been curating their own templates.
     string[] retiredSids =
     {
         "HX75106c2d166e9b0e87dbb8ecdc325116", // practice_or_game           (initial)
@@ -227,6 +230,14 @@ static async Task SeedWhatsAppTemplatesAsync(AppDbContext db, ILogger logger)
         db.WhatsAppTemplates.RemoveRange(retired);
         await db.SaveChangesAsync();
         logger.LogInformation("Retired {Count} legacy WhatsApp template(s).", retired.Count);
+    }
+
+    // Bootstrap guard: only seed when the templates table is empty (after the retire pass).
+    // Prevents the per-SID resurrection that surprised admins after a delete.
+    if (await db.WhatsAppTemplates.AnyAsync())
+    {
+        logger.LogDebug("WhatsApp templates already exist; skipping canonical seed.");
+        return;
     }
 
     // Practice template: 2 positional vars — {{1}} = when, {{2}} = location.
