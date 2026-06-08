@@ -17,4 +17,11 @@ public enum TemplateContext
     EventReminder = 2,
     EventCancellation = 3,
     MonthlyFee = 4,
+    /// <summary>Consolidated catalog covering tournaments, games, and practices in one place
+    /// — every field across event details, dates/times, costs, opponent, team, player, parent,
+    /// and app-level settings. Resolves whichever properties the surrounding broadcast can
+    /// satisfy; the rest stay blank. Use this for new templates so the admin's "Map to" picker
+    /// shows the full set; the per-context variants above are kept as aliases for templates
+    /// that were tagged before the consolidation.</summary>
+    EventDetails = 5,
 }

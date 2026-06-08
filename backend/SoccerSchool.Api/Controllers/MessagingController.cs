@@ -1743,32 +1743,18 @@ public class MessagingController : ControllerBase
         Tournament tournament, Domain.Team team, Domain.Player player)
     {
         var us = System.Globalization.CultureInfo.GetCultureInfo("en-US");
-        var props = new Dictionary<string, string>
-        {
-            // --- Tournament / League ---
-            ["tournament.name"] = tournament.Name,
-            ["tournament.kind"] = tournament.Kind == TournamentKind.League ? "League" : "Tournament",
-            ["tournament.dates"] = tournament.StartDate is null ? string.Empty
-                : FormatTournamentDates(tournament.StartDate.Value, tournament.EndDate),
-            ["tournament.startDate"] = tournament.StartDate?.ToString("MMM d, yyyy", us) ?? string.Empty,
-            ["tournament.endDate"] = tournament.EndDate?.ToString("MMM d, yyyy", us) ?? string.Empty,
-            ["tournament.startDateLong"] = tournament.StartDate?.ToString("MMMM d, yyyy", us) ?? string.Empty,
-            ["tournament.endDateLong"] = tournament.EndDate?.ToString("MMMM d, yyyy", us) ?? string.Empty,
-            ["tournament.startDateShort"] = tournament.StartDate?.ToString("MM/dd", us) ?? string.Empty,
-            ["tournament.endDateShort"] = tournament.EndDate?.ToString("MM/dd", us) ?? string.Empty,
-            ["tournament.startDayOfWeek"] = tournament.StartDate?.ToDateTime(TimeOnly.MinValue).ToString("dddd", us) ?? string.Empty,
-            ["tournament.endDayOfWeek"] = tournament.EndDate?.ToDateTime(TimeOnly.MinValue).ToString("dddd", us) ?? string.Empty,
-            ["tournament.costPerPlayer"] = tournament.CostPerPlayer?.ToString("C", us) ?? string.Empty,
-            ["tournament.costPerPlayerPlain"] = tournament.CostPerPlayer?.ToString("0.00", us) ?? string.Empty,
-            ["tournament.totalCost"] = tournament.TotalCost?.ToString("C", us) ?? string.Empty,
-            ["tournament.totalCostPlain"] = tournament.TotalCost?.ToString("0.00", us) ?? string.Empty,
-            // --- Team ---
-            ["team.name"] = team.Name,
-            // --- Player ---
-            ["player.firstName"] = player.FirstName,
-            ["player.lastName"] = player.LastName,
-            ["player.fullName"] = $"{player.FirstName} {player.LastName}".Trim(),
-        };
+        var props = new Dictionary<string, string>();
+
+        // tournament.* (and the team/app props below) match the consolidated EventDetails
+        // catalog. The per-player fan-out adds player.* + parent.* on top because it has
+        // a specific recipient in hand.
+        FillTournamentProperties(props, tournament, us);
+        props["team.name"] = team.Name;
+
+        // --- Player ---
+        props["player.firstName"] = player.FirstName;
+        props["player.lastName"] = player.LastName;
+        props["player.fullName"] = $"{player.FirstName} {player.LastName}".Trim();
 
         // --- Parent / guardian (resolved from the player's primary account when loaded) ---
         var parent = player.ParentAccount;
@@ -1778,10 +1764,8 @@ public class MessagingController : ControllerBase
         props["parent.cellPhone"] = parent?.CellPhone ?? string.Empty;
         props["parent.email"] = parent?.User?.Email ?? string.Empty;
 
-        // --- App-level (admin settings) ---
-        // Lazy-load from MessagingSettings exactly once per call. The build is invoked per
-        // player so multiple lookups inside a fan-out would add up; cache via a small private
-        // helper that fetches once per controller scope.
+        // --- App-level (admin settings). Zelle phone is cached per-request so the fan-out
+        // loop doesn't re-query MessagingSettings for every recipient.
         props["app.zellePhone"] = _cachedZellePhone ??= ResolveZellePhone();
         props["app.activeSeason"] = _app.ActiveSeason ?? string.Empty;
         props["app.publicBaseUrl"] = _app.PublicBaseUrl?.TrimEnd('/') ?? string.Empty;
@@ -1799,23 +1783,31 @@ public class MessagingController : ControllerBase
     }
 
     /// <summary>Dispatches to the right context-specific resolver. Empty dict for FreeForm
-    /// or contexts the caller's request can't satisfy (e.g. EventReminder without a
-    /// ScheduledGameId).</summary>
+    /// or contexts the caller's request can't satisfy.</summary>
     private async Task<IReadOnlyDictionary<string, string>> ResolveContextPropertiesAsync(
         TemplateContext context, CreateBroadcastRequest request, CancellationToken ct) =>
         context switch
         {
-            TemplateContext.EventReminder or TemplateContext.EventCancellation =>
-                await BuildEventPropertiesAsync(request.ScheduledGameId, ct),
+            // Consolidated catalog: pulls whichever properties the broadcast can satisfy.
+            // Legacy TournamentConfirmation/EventReminder/EventCancellation tags are aliased
+            // to the same resolver so old templates keep working with the new superset.
+            TemplateContext.EventDetails
+                or TemplateContext.TournamentConfirmation
+                or TemplateContext.EventReminder
+                or TemplateContext.EventCancellation =>
+                    await BuildEventDetailsPropertiesAsync(request.ScheduledGameId, request.TournamentId, ct),
             TemplateContext.MonthlyFee => BuildMonthlyFeeProperties(),
             _ => new Dictionary<string, string>(),
         };
 
-    /// <summary>Resolves event/team values for the EventReminder + EventCancellation
-    /// contexts. When the request didn't pick a specific event, returns just the app-level
-    /// values (admin can still type variable values manually).</summary>
-    private async Task<IReadOnlyDictionary<string, string>> BuildEventPropertiesAsync(
-        int? scheduledGameId, CancellationToken ct)
+    /// <summary>Consolidated resolver for the EventDetails context (and its legacy aliases).
+    /// Pulls whichever properties the broadcast can satisfy: event.* + team.* from the
+    /// ScheduledGame when set; tournament.* (incl. dates and costs) from the Tournament
+    /// when set; app.* always. Player and parent fields stay empty because this resolver
+    /// runs on a single group broadcast — the per-player tournament fan-out uses
+    /// <see cref="BuildTournamentProperties"/> instead, which DOES fill player/parent.</summary>
+    private async Task<IReadOnlyDictionary<string, string>> BuildEventDetailsPropertiesAsync(
+        int? scheduledGameId, int? tournamentId, CancellationToken ct)
     {
         var us = System.Globalization.CultureInfo.GetCultureInfo("en-US");
         var props = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -1825,15 +1817,87 @@ public class MessagingController : ControllerBase
             ["app.publicBaseUrl"] = _app.PublicBaseUrl?.TrimEnd('/') ?? string.Empty,
         };
 
-        if (scheduledGameId is not int eventId) return props;
-        var ev = await _db.ScheduledGames
-            .Include(g => g.Team)
-            .AsNoTracking()
-            .FirstOrDefaultAsync(g => g.Id == eventId, ct);
-        if (ev is null) return props;
+        // --- Event (game / practice / misc) ---
+        if (scheduledGameId is int eventId)
+        {
+            var ev = await _db.ScheduledGames
+                .Include(g => g.Team)
+                .Include(g => g.Tournament)
+                .AsNoTracking()
+                .FirstOrDefaultAsync(g => g.Id == eventId, ct);
+            if (ev is not null)
+            {
+                var pacific = TryGetPacific();
+                var localStart = pacific is null ? ev.StartsAt : TimeZoneInfo.ConvertTimeFromUtc(ev.StartsAt, pacific);
+                props["event.kind"] = ev.Kind switch
+                {
+                    ScheduledEventKind.Game => "Game",
+                    ScheduledEventKind.Practice => "Practice",
+                    ScheduledEventKind.Miscellaneous => "Event",
+                    _ => "Event",
+                };
+                props["event.summary"] = ev.Summary ?? string.Empty;
+                props["event.opponent"] = ev.OpponentName ?? string.Empty;
+                props["event.isHome"] = ev.IsHome switch { true => "Home", false => "Away", _ => string.Empty };
+                props["event.dateTime"] = localStart.ToString("ddd, MMM d, yyyy — h:mm tt", us);
+                props["event.date"] = localStart.ToString("MMM d, yyyy", us);
+                props["event.dateLong"] = localStart.ToString("MMMM d, yyyy", us);
+                props["event.dateShort"] = localStart.ToString("MM/dd", us);
+                props["event.dayOfWeek"] = localStart.ToString("dddd", us);
+                props["event.time"] = localStart.ToString("h:mm tt", us);
+                props["event.location"] = ev.Location ?? string.Empty;
+                props["event.description"] = ev.Description ?? string.Empty;
+                if (ev.Team is not null) props["team.name"] = ev.Team.Name;
+                // If the event is part of a tournament, promote that tournament too even when
+                // the caller didn't pass TournamentId explicitly. Lets event reminders pull
+                // tournament.dates / tournament.costPerPlayer for tournament-tagged games.
+                if (ev.Tournament is not null) FillTournamentProperties(props, ev.Tournament, us);
+            }
+        }
 
-        // Convert from UTC storage to Pacific for display, mirroring the date convention
-        // used elsewhere in the app (event scrapes/imports are Pacific too).
+        // --- Tournament (explicit) ---
+        if (tournamentId is int tid)
+        {
+            var t = await _db.Tournaments
+                .Include(x => x.Team)
+                .AsNoTracking()
+                .FirstOrDefaultAsync(x => x.Id == tid, ct);
+            if (t is not null)
+            {
+                FillTournamentProperties(props, t, us);
+                if (t.Team is not null && !props.ContainsKey("team.name")) props["team.name"] = t.Team.Name;
+            }
+        }
+
+        return props;
+    }
+
+    /// <summary>Writes the tournament.* keys into <paramref name="props"/>. Used by both the
+    /// per-player fan-out and the single-group EventDetails resolver so the format stays
+    /// consistent.</summary>
+    private static void FillTournamentProperties(
+        Dictionary<string, string> props, Tournament t, System.Globalization.CultureInfo us)
+    {
+        props["tournament.name"] = t.Name;
+        props["tournament.kind"] = t.Kind == TournamentKind.League ? "League" : "Tournament";
+        props["tournament.dates"] = t.StartDate is null ? string.Empty
+            : FormatTournamentDates(t.StartDate.Value, t.EndDate);
+        props["tournament.startDate"] = t.StartDate?.ToString("MMM d, yyyy", us) ?? string.Empty;
+        props["tournament.endDate"] = t.EndDate?.ToString("MMM d, yyyy", us) ?? string.Empty;
+        props["tournament.startDateLong"] = t.StartDate?.ToString("MMMM d, yyyy", us) ?? string.Empty;
+        props["tournament.endDateLong"] = t.EndDate?.ToString("MMMM d, yyyy", us) ?? string.Empty;
+        props["tournament.startDateShort"] = t.StartDate?.ToString("MM/dd", us) ?? string.Empty;
+        props["tournament.endDateShort"] = t.EndDate?.ToString("MM/dd", us) ?? string.Empty;
+        props["tournament.startDayOfWeek"] = t.StartDate?.ToDateTime(TimeOnly.MinValue).ToString("dddd", us) ?? string.Empty;
+        props["tournament.endDayOfWeek"] = t.EndDate?.ToDateTime(TimeOnly.MinValue).ToString("dddd", us) ?? string.Empty;
+        props["tournament.costPerPlayer"] = t.CostPerPlayer?.ToString("C", us) ?? string.Empty;
+        props["tournament.costPerPlayerPlain"] = t.CostPerPlayer?.ToString("0.00", us) ?? string.Empty;
+        props["tournament.totalCost"] = t.TotalCost?.ToString("C", us) ?? string.Empty;
+        props["tournament.totalCostPlain"] = t.TotalCost?.ToString("0.00", us) ?? string.Empty;
+    }
+
+    /* Superseded by BuildEventDetailsPropertiesAsync; the original body is preserved below
+       inside a block comment so git history stays readable. Safe to remove on the next pass.
         TimeZoneInfo? pacific = TryGetPacific();
         var localStart = pacific is null ? ev.StartsAt : TimeZoneInfo.ConvertTimeFromUtc(ev.StartsAt, pacific);
 
@@ -1846,7 +1910,7 @@ public class MessagingController : ControllerBase
         };
         props["event.summary"] = ev.Summary ?? string.Empty;
         props["event.opponent"] = ev.OpponentName ?? string.Empty;
-        props["event.isHome"] = ev.IsHome switch { true => "Home", false => "Away", _ => string.Empty };
+        props["event.isHome"] = ev.IsHome switch { true => "Home", false => "Away", _ => "" };
         props["event.dateTime"] = localStart.ToString("ddd, MMM d, yyyy — h:mm tt", us);
         props["event.date"] = localStart.ToString("MMM d, yyyy", us);
         props["event.dateLong"] = localStart.ToString("MMMM d, yyyy", us);
@@ -1857,7 +1921,7 @@ public class MessagingController : ControllerBase
         props["event.description"] = ev.Description ?? string.Empty;
         props["team.name"] = ev.Team?.Name ?? string.Empty;
         return props;
-    }
+    */
 
     /// <summary>Resolves month/year + app values for the MonthlyFee context. Month is always
     /// "this month" from the server clock — the admin runs the broadcast manually each month
@@ -2257,10 +2321,13 @@ public class MessagingController : ControllerBase
         var opts = new[]
         {
             new TemplateContextOptionDto(TemplateContext.FreeForm, "Free-form (admin fills variables manually)"),
-            new TemplateContextOptionDto(TemplateContext.TournamentConfirmation, "Tournament confirmation"),
-            new TemplateContextOptionDto(TemplateContext.EventReminder, "Event reminder (game/practice)"),
-            new TemplateContextOptionDto(TemplateContext.EventCancellation, "Event cancellation"),
+            new TemplateContextOptionDto(TemplateContext.EventDetails, "Event details (tournament / game / practice)"),
             new TemplateContextOptionDto(TemplateContext.MonthlyFee, "Monthly fee"),
+            // Kept for backward compat — existing templates can stay on these tags. New
+            // templates should pick "Event details" so the dropdown shows the full catalog.
+            new TemplateContextOptionDto(TemplateContext.TournamentConfirmation, "Tournament confirmation (legacy alias of Event details)"),
+            new TemplateContextOptionDto(TemplateContext.EventReminder, "Event reminder (legacy alias of Event details)"),
+            new TemplateContextOptionDto(TemplateContext.EventCancellation, "Event cancellation (legacy alias of Event details)"),
         };
         return Ok(opts);
     }

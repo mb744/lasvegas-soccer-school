@@ -17,49 +17,19 @@ public record TemplateProperty(string Key, string Label);
 /// </summary>
 public static class TemplatePropertyRegistry
 {
-    // Curated catalog. Order in each section matters — the admin sees these in this order
-    // in the "Map to" dropdown when configuring a template variable. Group related fields
-    // together (all tournament.*, all team.*, etc.) so the list scans.
-    private static readonly TemplateProperty[] TournamentConfirmationProps = new[]
+    // ============================================================================
+    // EventDetails — the consolidated superset.
+    //
+    // Every event-flavored context (TournamentConfirmation / EventReminder /
+    // EventCancellation) returns this list, so the admin sees the same dropdown
+    // regardless of which legacy context a template was tagged with. The send-time
+    // resolver fills whichever properties it can satisfy — fields the surrounding
+    // broadcast can't fill (e.g. player.* on a non-per-player send) stay empty.
+    // ============================================================================
+    private static readonly TemplateProperty[] EventDetailsProps = new[]
     {
-        // --- Tournament / League ---
-        new TemplateProperty("tournament.name", "Tournament / League name"),
-        new TemplateProperty("tournament.kind", "Kind (\"Tournament\" or \"League\")"),
-        new TemplateProperty("tournament.dates", "Dates (formatted range, e.g. Jun 5–12, 2026)"),
-        new TemplateProperty("tournament.startDate", "Start date (Jun 5, 2026)"),
-        new TemplateProperty("tournament.endDate", "End date (Jun 12, 2026)"),
-        new TemplateProperty("tournament.startDateLong", "Start date — long form (June 5, 2026)"),
-        new TemplateProperty("tournament.endDateLong", "End date — long form (June 12, 2026)"),
-        new TemplateProperty("tournament.startDateShort", "Start date — short (06/05)"),
-        new TemplateProperty("tournament.endDateShort", "End date — short (06/12)"),
-        new TemplateProperty("tournament.startDayOfWeek", "Start day of week (Sunday)"),
-        new TemplateProperty("tournament.endDayOfWeek", "End day of week (Sunday)"),
-        new TemplateProperty("tournament.costPerPlayer", "Cost per player ($, formatted)"),
-        new TemplateProperty("tournament.costPerPlayerPlain", "Cost per player — plain number (150.00)"),
-        new TemplateProperty("tournament.totalCost", "Total tournament cost ($, formatted)"),
-        new TemplateProperty("tournament.totalCostPlain", "Total cost — plain number (1500.00)"),
-        // --- Team ---
-        new TemplateProperty("team.name", "Team name"),
-        // --- Player ---
-        new TemplateProperty("player.firstName", "Player first name"),
-        new TemplateProperty("player.lastName", "Player last name"),
-        new TemplateProperty("player.fullName", "Player full name"),
-        // --- Parent / guardian (primary account holder for the player) ---
-        new TemplateProperty("parent.firstName", "Parent first name"),
-        new TemplateProperty("parent.lastName", "Parent last name"),
-        new TemplateProperty("parent.fullName", "Parent full name"),
-        new TemplateProperty("parent.cellPhone", "Parent cell phone (E.164)"),
-        new TemplateProperty("parent.email", "Parent email"),
-        // --- App-level (admin settings) ---
-        new TemplateProperty("app.zellePhone", "Zelle phone (Messaging → Settings)"),
-        new TemplateProperty("app.activeSeason", "Active season (e.g. 2026/27)"),
-        new TemplateProperty("app.publicBaseUrl", "Public site URL"),
-    };
-
-    private static readonly TemplateProperty[] EventReminderProps = new[]
-    {
-        // --- Event ---
-        new TemplateProperty("event.kind", "Kind (\"Game\", \"Practice\", or \"Event\")"),
+        // --- Event details (game / practice / misc one-off) ---
+        new TemplateProperty("event.kind", "Event kind (\"Game\", \"Practice\", or \"Event\")"),
         new TemplateProperty("event.summary", "Event summary (e.g. \"LVSS vs Albion\")"),
         new TemplateProperty("event.opponent", "Opponent name (games only)"),
         new TemplateProperty("event.isHome", "Home / Away / blank (games only)"),
@@ -71,17 +41,40 @@ public static class TemplatePropertyRegistry
         new TemplateProperty("event.time", "Time (2:00 PM)"),
         new TemplateProperty("event.location", "Location / venue"),
         new TemplateProperty("event.description", "Description (admin notes)"),
+        // --- Tournament / League ---
+        new TemplateProperty("tournament.name", "Tournament / League name"),
+        new TemplateProperty("tournament.kind", "Kind (\"Tournament\" or \"League\")"),
+        new TemplateProperty("tournament.dates", "Dates (formatted range, e.g. Jun 5–12, 2026)"),
+        new TemplateProperty("tournament.startDate", "Start date (Jun 5, 2026)"),
+        new TemplateProperty("tournament.endDate", "End date (Jun 12, 2026)"),
+        new TemplateProperty("tournament.startDateLong", "Start date — long (June 5, 2026)"),
+        new TemplateProperty("tournament.endDateLong", "End date — long (June 12, 2026)"),
+        new TemplateProperty("tournament.startDateShort", "Start date — short (06/05)"),
+        new TemplateProperty("tournament.endDateShort", "End date — short (06/12)"),
+        new TemplateProperty("tournament.startDayOfWeek", "Start day of week (Sunday)"),
+        new TemplateProperty("tournament.endDayOfWeek", "End day of week (Sunday)"),
+        // --- Costs / fees ---
+        new TemplateProperty("tournament.costPerPlayer", "Cost per player ($, formatted)"),
+        new TemplateProperty("tournament.costPerPlayerPlain", "Cost per player — plain (150.00)"),
+        new TemplateProperty("tournament.totalCost", "Total cost ($, formatted)"),
+        new TemplateProperty("tournament.totalCostPlain", "Total cost — plain (1500.00)"),
         // --- Team ---
         new TemplateProperty("team.name", "Team name"),
+        // --- Player (per-recipient — only filled on per-player sends) ---
+        new TemplateProperty("player.firstName", "Player first name"),
+        new TemplateProperty("player.lastName", "Player last name"),
+        new TemplateProperty("player.fullName", "Player full name"),
+        // --- Parent / guardian (per-recipient — primary account holder for the player) ---
+        new TemplateProperty("parent.firstName", "Parent first name"),
+        new TemplateProperty("parent.lastName", "Parent last name"),
+        new TemplateProperty("parent.fullName", "Parent full name"),
+        new TemplateProperty("parent.cellPhone", "Parent cell phone (E.164)"),
+        new TemplateProperty("parent.email", "Parent email"),
         // --- App-level (admin settings) ---
         new TemplateProperty("app.zellePhone", "Zelle phone (Messaging → Settings)"),
         new TemplateProperty("app.activeSeason", "Active season (e.g. 2026/27)"),
         new TemplateProperty("app.publicBaseUrl", "Public site URL"),
     };
-
-    // Cancellation reuses the same event/team/app set — the body wording is what differs,
-    // not the available data.
-    private static readonly TemplateProperty[] EventCancellationProps = EventReminderProps;
 
     private static readonly TemplateProperty[] MonthlyFeeProps = new[]
     {
@@ -99,9 +92,11 @@ public static class TemplatePropertyRegistry
 
     public static IReadOnlyList<TemplateProperty> ForContext(TemplateContext context) => context switch
     {
-        TemplateContext.TournamentConfirmation => TournamentConfirmationProps,
-        TemplateContext.EventReminder => EventReminderProps,
-        TemplateContext.EventCancellation => EventCancellationProps,
+        // Legacy + consolidated event-flavored contexts all share the same catalog.
+        TemplateContext.EventDetails => EventDetailsProps,
+        TemplateContext.TournamentConfirmation => EventDetailsProps,
+        TemplateContext.EventReminder => EventDetailsProps,
+        TemplateContext.EventCancellation => EventDetailsProps,
         TemplateContext.MonthlyFee => MonthlyFeeProps,
         _ => Array.Empty<TemplateProperty>(),
     };
