@@ -4,6 +4,8 @@ import type {
   BroadcastDetail,
   BroadcastSummary,
   CreateBroadcastRequest,
+  SendPerPlayerRequest,
+  SendPerPlayerResult,
   CreateGroupConversationRequest,
   CreateOutreachRequest,
   GroupConversationDetail,
@@ -377,6 +379,10 @@ export const Api = {
   },
   async createBroadcast(payload: CreateBroadcastRequest) {
     const r = await api.post<BroadcastDetail>('/messaging/broadcasts', payload)
+    return r.data
+  },
+  async sendEventPerPlayer(payload: SendPerPlayerRequest) {
+    const r = await api.post<SendPerPlayerResult>('/messaging/broadcasts/send-per-player', payload)
     return r.data
   },
   async listBroadcasts() {

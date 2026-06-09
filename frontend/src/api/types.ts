@@ -415,6 +415,21 @@ export interface CreateBroadcastRequest {
   target: BroadcastTarget
 }
 
+export interface SendPerPlayerRequest {
+  channel: MessageChannel
+  whatsAppTemplateId: number
+  defaultLanguage?: Language
+  scheduledGameId?: number | null
+  templateVariables?: Record<string, string> | null
+  target: BroadcastTarget
+}
+
+export interface SendPerPlayerResult {
+  sent: number
+  skipped: number
+  total: number
+}
+
 export interface BroadcastSummary {
   id: number
   channel: MessageChannel

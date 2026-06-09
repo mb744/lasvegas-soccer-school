@@ -155,6 +155,28 @@ public record CreateBroadcastRequest
     public BroadcastTargetDto Target { get; init; } = new();
 }
 
+/// <summary>Send a personalized copy of a WhatsApp template to every rostered player on the team
+/// behind <see cref="Target"/> (a "Team: …" dynamic group, or a curated group linked to a team).
+/// Each player's guardians get their own message with player.*/parent.* resolved per player — so
+/// a parent with two players on the team receives one message per child.</summary>
+public record SendPerPlayerRequest
+{
+    public MessageChannel Channel { get; init; } = MessageChannel.WhatsApp;
+    public int WhatsAppTemplateId { get; init; }
+    public Language DefaultLanguage { get; init; } = Language.English;
+
+    /// <summary>The event whose details fill event.* (optional).</summary>
+    public int? ScheduledGameId { get; init; }
+
+    /// <summary>Admin-supplied/auto-filled values by position. Positions mapped to player.*/parent.*
+    /// are ignored so each player gets their own resolved value.</summary>
+    public Dictionary<string, string>? TemplateVariables { get; init; }
+
+    public BroadcastTargetDto Target { get; init; } = new();
+}
+
+public record SendPerPlayerResult(int Sent, int Skipped, int Total);
+
 public record BroadcastSummary(
     int Id,
     MessageChannel Channel,

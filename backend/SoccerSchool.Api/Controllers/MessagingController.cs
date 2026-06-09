@@ -486,6 +486,88 @@ public class MessagingController : ControllerBase
         return Ok(ToDetail(broadcast));
     }
 
+    /// <summary>Personalized per-player send: fans a WhatsApp template out to every rostered player
+    /// on the target team, one broadcast per player to that player's guardians. player.*/parent.*
+    /// resolve per player (so a parent with two players on the team gets one message per child);
+    /// event.* + everything else come from the shared values. Built on top of CreateBroadcast.</summary>
+    [HttpPost("broadcasts/send-per-player")]
+    public async Task<ActionResult<SendPerPlayerResult>> SendPerPlayer(
+        [FromBody] SendPerPlayerRequest request, CancellationToken ct)
+    {
+        if (request.Channel != MessageChannel.WhatsApp)
+            return BadRequest("Per-player personalization is available on WhatsApp templates.");
+        if (request.WhatsAppTemplateId <= 0)
+            return BadRequest("A WhatsApp template is required for a per-player send.");
+
+        var template = await _db.WhatsAppTemplates.Include(t => t.Variables)
+            .FirstOrDefaultAsync(t => t.Id == request.WhatsAppTemplateId, ct);
+        if (template is null) return BadRequest("Template not found.");
+
+        var teamId = await ResolveTeamIdFromTargetAsync(request.Target, ct);
+        if (teamId is null)
+            return BadRequest("Per-player send needs a team recipient — pick a \"Team: …\" group or a team's message group.");
+
+        var team = await _db.Teams
+            .Include(t => t.Roster).ThenInclude(tp => tp.Player)
+            .FirstOrDefaultAsync(t => t.Id == teamId, ct);
+        if (team is null) return NotFound();
+        if (team.Roster.Count == 0) return BadRequest("This team has no rostered players.");
+
+        // Shared values for every player, minus any position mapped to a per-player property —
+        // those are resolved per player inside CreateBroadcast so each child gets their own name.
+        var shared = (request.TemplateVariables ?? new())
+            .Where(kv => !string.IsNullOrEmpty(kv.Key))
+            .ToDictionary(kv => kv.Key, kv => kv.Value ?? string.Empty);
+        foreach (var v in template.Variables)
+        {
+            if (v.PropertyKey is not null
+                && (v.PropertyKey.StartsWith("player.", StringComparison.Ordinal)
+                    || v.PropertyKey.StartsWith("parent.", StringComparison.Ordinal)))
+                shared.Remove(v.Position.ToString(CultureInfo.InvariantCulture));
+        }
+
+        var batchId = Guid.NewGuid();
+        int sent = 0, skipped = 0;
+        foreach (var tp in team.Roster)
+        {
+            var player = tp.Player;
+            if (player is null) { skipped++; continue; }
+            var req = new CreateBroadcastRequest
+            {
+                Channel = MessageChannel.WhatsApp,
+                WhatsAppTemplateId = template.Id,
+                TemplateVariables = new Dictionary<string, string>(shared),
+                DefaultLanguage = request.DefaultLanguage,
+                ScheduledGameId = request.ScheduledGameId,
+                PlayerId = player.Id,
+                BatchId = batchId,
+                Target = new BroadcastTargetDto
+                {
+                    Kind = RecipientTargetKindDto.DynamicGroup,
+                    DynamicGroupKey = $"{RecipientResolver.DynamicPlayerPrefix}{player.Id}",
+                },
+            };
+            var result = await CreateBroadcast(req, ct);
+            if (result.Result is ObjectResult ok && ok.StatusCode == 200) sent++;
+            else skipped++;
+        }
+        return Ok(new SendPerPlayerResult(sent, skipped, team.Roster.Count));
+    }
+
+    /// <summary>Maps a broadcast target to the team it represents: a "team-{id}" dynamic group, or
+    /// a curated group linked to a team via Team.MessageGroupId. Null when the target isn't a team.</summary>
+    private async Task<int?> ResolveTeamIdFromTargetAsync(BroadcastTargetDto target, CancellationToken ct)
+    {
+        if (target.Kind == RecipientTargetKindDto.DynamicGroup
+            && target.DynamicGroupKey is string key
+            && key.StartsWith(RecipientResolver.DynamicTeamPrefix, StringComparison.Ordinal)
+            && int.TryParse(key.AsSpan(RecipientResolver.DynamicTeamPrefix.Length), out var tid))
+            return tid;
+        if (target.Kind == RecipientTargetKindDto.CustomGroup && target.CustomGroupId is int gid)
+            return await _db.Teams.Where(t => t.MessageGroupId == gid).Select(t => (int?)t.Id).FirstOrDefaultAsync(ct);
+        return null;
+    }
+
     /// <summary>Re-sends the most recent message for an event to the rostered players' guardians who
     /// haven't confirmed yet ("no response"). Clones the original's channel + template/body and runs
     /// the normal broadcast pipeline against the <c>event-pending-{id}</c> audience.</summary>
@@ -1806,7 +1888,7 @@ public class MessagingController : ControllerBase
                 or TemplateContext.TournamentConfirmation
                 or TemplateContext.EventReminder
                 or TemplateContext.EventCancellation =>
-                    await BuildEventDetailsPropertiesAsync(request.ScheduledGameId, request.TournamentId, ct),
+                    await BuildEventDetailsPropertiesAsync(request.ScheduledGameId, request.TournamentId, request.PlayerId, ct),
             TemplateContext.MonthlyFee => BuildMonthlyFeeProperties(),
             _ => new Dictionary<string, string>(),
         };
@@ -1818,7 +1900,7 @@ public class MessagingController : ControllerBase
     /// runs on a single group broadcast — the per-player tournament fan-out uses
     /// <see cref="BuildTournamentProperties"/> instead, which DOES fill player/parent.</summary>
     private async Task<IReadOnlyDictionary<string, string>> BuildEventDetailsPropertiesAsync(
-        int? scheduledGameId, int? tournamentId, CancellationToken ct)
+        int? scheduledGameId, int? tournamentId, int? playerId, CancellationToken ct)
     {
         var us = System.Globalization.CultureInfo.GetCultureInfo("en-US");
         var props = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -1827,6 +1909,28 @@ public class MessagingController : ControllerBase
             ["app.activeSeason"] = _app.ActiveSeason ?? string.Empty,
             ["app.publicBaseUrl"] = _app.PublicBaseUrl?.TrimEnd('/') ?? string.Empty,
         };
+
+        // --- Player + guardian: only on per-player sends (PlayerId set). Group broadcasts pass
+        // null and leave these empty, since one group message can't personalize per recipient. ---
+        if (playerId is int pid)
+        {
+            var player = await _db.Players
+                .Include(p => p.ParentAccount).ThenInclude(pa => pa!.User)
+                .AsNoTracking()
+                .FirstOrDefaultAsync(p => p.Id == pid, ct);
+            if (player is not null)
+            {
+                props["player.firstName"] = player.FirstName;
+                props["player.lastName"] = player.LastName;
+                props["player.fullName"] = $"{player.FirstName} {player.LastName}".Trim();
+                var parent = player.ParentAccount;
+                props["parent.firstName"] = parent?.FirstName ?? string.Empty;
+                props["parent.lastName"] = parent?.LastName ?? string.Empty;
+                props["parent.fullName"] = parent is null ? string.Empty : $"{parent.FirstName} {parent.LastName}".Trim();
+                props["parent.cellPhone"] = parent?.CellPhone ?? string.Empty;
+                props["parent.email"] = parent?.User?.Email ?? string.Empty;
+            }
+        }
 
         // --- Event (game / practice / misc) ---
         if (scheduledGameId is int eventId)

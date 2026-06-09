@@ -325,6 +325,9 @@ function ComposeTab({
   const [subjectEs, setSubjectEs] = useState('')
   const [defaultLang, setDefaultLang] = useState<Language>(0)
   const [pickedEventId, setPickedEventId] = useState<number | null>(null)
+  // Personalize per player: fan one message out per rostered player (each child's name resolved
+  // individually), so a parent with multiple players on the team gets one message per child.
+  const [perPlayer, setPerPlayer] = useState(false)
   const [previewStep, setPreviewStep] = useState<'edit' | 'confirm' | null>(null)
   const [templatePreviewOpen, setTemplatePreviewOpen] = useState(false)
   const [sending, setSending] = useState(false)
@@ -448,6 +451,14 @@ function ComposeTab({
     return { kind: 2 as const, dynamicGroupKey: dynamicKey }
   }
 
+  // Per-player personalization needs a team recipient + a WhatsApp template: a "Team: X" dynamic
+  // group, or a curated group (the backend maps it to its team). Then each rostered player's
+  // guardians get their own copy with player.*/parent.* resolved individually.
+  const isTeamTarget = (recipientMode === 'dynamic' && /^team-\d+$/.test(dynamicKey))
+    || (recipientMode === 'curated' && customGroupId !== '')
+  const canPerPlayer = isWhatsAppChannel && mode === 'broadcast' && bodyMode === 'template'
+    && !!selectedTemplate && isTeamTarget
+
   /** Final validation that's shared between the "send straight" paths and the bilingual modal. */
   const validate = (): string | null => {
     if (!channelAvailable(channel)) return `${MESSAGE_CHANNEL_LABELS[channel]} is not configured on this server.`
@@ -479,6 +490,7 @@ function ComposeTab({
         .filter(v => !v.propertyKey && !templateValues[v.position.toString()]?.trim())
         .map(v => v.label)
       if (missing.length) { onError(`Fill in: ${missing.join(', ')}.`); return }
+      if (perPlayer && canPerPlayer) { await sendPerPlayer(); return }
       setTemplatePreviewOpen(true)
       return
     }
@@ -505,6 +517,22 @@ function ComposeTab({
       return
     }
     setPreviewStep('edit')
+  }
+
+  const sendPerPlayer = async () => {
+    setSending(true)
+    try {
+      const r = await Api.sendEventPerPlayer({
+        channel,
+        whatsAppTemplateId: selectedTemplate!.id,
+        defaultLanguage: defaultLang,
+        scheduledGameId: pickedEventId,
+        templateVariables: templateValues,
+        target: target(),
+      })
+      await onSent(t('admin.msgPerPlayerSent', { sent: r.sent, total: r.total }))
+    } catch (e: any) { onError(extractError(e)) }
+    finally { setSending(false) }
   }
 
   const sendNow = async (args: { usingTemplate: boolean }) => {
@@ -781,6 +809,15 @@ function ComposeTab({
               </select>
               <p className="mt-1 text-xs text-slate-500">{t('admin.msgPickGameHelp')}</p>
             </div>
+          )}
+          {canPerPlayer && (
+            <label className="flex items-start gap-2 text-sm bg-emerald-50/60 border border-emerald-200 rounded-md p-2">
+              <input type="checkbox" checked={perPlayer} onChange={e => setPerPlayer(e.target.checked)} className="mt-0.5" />
+              <span>
+                <span className="font-medium text-slate-700">{t('admin.msgPerPlayer')}</span>
+                <span className="block text-xs text-slate-500">{t('admin.msgPerPlayerHelp')}</span>
+              </span>
+            </label>
           )}
           {isEmailChannel && selectedEmailTemplate && (
             <div className="space-y-2">
