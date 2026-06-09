@@ -411,6 +411,8 @@ const es: Translations = {
     evtTournTsPasteTeamNameHelp: 'Por defecto, el nombre de este equipo. Sobrescriba cuando TeamSnap lo escriba diferente (p. ej. "Las Vegas Soccer School B17 Red" vs "LVSS B17 Red"). La coincidencia es exacta (sin distinguir mayúsculas).',
     evtTournGames: '{{count}} partidos en este torneo',
     evtTournNoGames: 'Aún sin partidos. Sincroniza desde GotSport o agrega uno manualmente.',
+    evtGameDeleteConfirm: '¿Eliminar este partido? Esta acción no se puede deshacer.',
+    evtEditGame: 'Editar partido',
     evtTournSendPreviewTitle: 'Enviar confirmaciones del torneo — vista previa',
     evtTournSendPreviewHelp: 'Se enviará un WhatsApp con plantilla por cada jugador del roster ({{count}} en total). Cada guardián recibe la versión en su idioma preferido. El ejemplo abajo usa el primer jugador del roster; los envíos reales completan el nombre de cada hijo/a.',
     evtTournSendPreviewSample: 'Ejemplo para {{name}}',

@@ -16,6 +16,14 @@ function errMsg(e: any): string {
   return e?.response?.data?.title || e?.response?.data || e?.message || 'Error'
 }
 
+/** Format a UTC ISO string as the local-time value an <input type="datetime-local"> expects
+ *  (YYYY-MM-DDTHH:mm, no timezone). Used to prefill the edit-game form. */
+function toDateTimeLocal(iso: string): string {
+  const d = new Date(iso)
+  const pad = (n: number) => n.toString().padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 type Tab = 'practices' | 'games' | 'tournaments' | 'misc'
 
 export function AdminEventsPage() {
@@ -521,8 +529,9 @@ function TournamentTeamPanel({
   // spelled in the TeamSnap roster (e.g. our "LVSS B17 Red" vs "Las Vegas Soccer School B17 Red").
   const [tsPasteName, setTsPasteName] = useState(tt.teamName)
 
-  // Manual add-game form
+  // Manual add/edit-game form. editId is null when adding, or the game id being edited.
   const [showAdd, setShowAdd] = useState(false)
+  const [editId, setEditId] = useState<number | null>(null)
   const [gStart, setGStart] = useState('')
   const [gOpponent, setGOpponent] = useState('')
   const [gHome, setGHome] = useState<'home' | 'away' | 'unknown'>('unknown')
@@ -737,27 +746,64 @@ function TournamentTeamPanel({
     finally { setSyncing(false) }
   }
 
-  const addManualGame = async (e: React.FormEvent) => {
+  const resetGameForm = () => {
+    setGStart(''); setGOpponent(''); setGHome('unknown'); setGLocation('')
+    vGame.reset()
+  }
+
+  const closeGameForm = () => { setShowAdd(false); setEditId(null); resetGameForm() }
+
+  // Prefill the shared form from an existing game and switch it into edit mode.
+  const startEditGame = (g: ScheduledGame) => {
+    onError(''); onNotice('')
+    setEditId(g.id)
+    setGStart(toDateTimeLocal(g.startsAt))
+    setGOpponent(g.opponentName ?? '')
+    setGHome(g.isHome === true ? 'home' : g.isHome === false ? 'away' : 'unknown')
+    setGLocation(g.location ?? '')
+    vGame.reset()
+    setShowAdd(true)
+  }
+
+  const saveManualGame = async (e: React.FormEvent) => {
     e.preventDefault()
     onError(''); onNotice('')
     if (!vGame.checkSubmit({ startsAt: gStart })) { onError(t('admin.teamStartRequired')); return }
     setBusy(true)
     try {
-      await Api.createGame(tt.teamId, {
+      const payload = {
         startsAt: new Date(gStart).toISOString(),
         opponentName: gOpponent.trim() || null,
         isHome: gHome === 'home' ? true : gHome === 'away' ? false : null,
         location: gLocation.trim() || null,
         tournamentId: tour.id,
-      })
-      // Keep the form open so multiple games can be added back-to-back; just reset the fields.
-      setGStart(''); setGOpponent(''); setGHome('unknown'); setGLocation('')
-      vGame.reset()
+      }
+      if (editId !== null) {
+        await Api.updateGame(editId, payload)
+        // Editing targets one row — close the form when done.
+        closeGameForm()
+      } else {
+        await Api.createGame(tt.teamId, payload)
+        // Keep the form open so multiple games can be added back-to-back; just reset the fields.
+        resetGameForm()
+      }
       await reloadAll()
       await onChanged()
       onNotice(t('admin.teamSaved'))
     } catch (e: any) { onError(errMsg(e)) }
     finally { setBusy(false) }
+  }
+
+  const deleteManualGame = async (g: ScheduledGame) => {
+    if (!confirm(t('admin.evtGameDeleteConfirm'))) return
+    onError(''); onNotice('')
+    try {
+      await Api.deleteGame(g.id)
+      if (editId === g.id) closeGameForm()
+      await reloadAll()
+      await onChanged()
+      onNotice(t('admin.teamSaved'))
+    } catch (e: any) { onError(errMsg(e)) }
   }
 
   const remove = async () => {
@@ -910,13 +956,13 @@ function TournamentTeamPanel({
             {t('admin.evtTournGames', { count: tournamentGames.length })}
           </h3>
           {!showAdd && (
-            <button onClick={() => setShowAdd(true)} className="text-sm text-emerald-700 hover:underline">
+            <button onClick={() => { setEditId(null); resetGameForm(); setShowAdd(true) }} className="text-sm text-emerald-700 hover:underline">
               + {t('admin.msgAddGame')}
             </button>
           )}
         </div>
         {showAdd && (
-          <form onSubmit={addManualGame} noValidate className="grid sm:grid-cols-2 gap-2 mb-2 border border-slate-200 rounded p-2 bg-white">
+          <form onSubmit={saveManualGame} noValidate className="grid sm:grid-cols-2 gap-2 mb-2 border border-slate-200 rounded p-2 bg-white">
             <label className="block text-xs">
               <RequiredLabel className="text-slate-600">{t('admin.msgPracticeStart')}</RequiredLabel>
               <input ref={vGame.register('startsAt')} type="datetime-local" value={gStart}
@@ -946,9 +992,9 @@ function TournamentTeamPanel({
             <div className="sm:col-span-2 flex gap-2">
               <button type="submit" disabled={busy}
                 className="text-xs bg-emerald-700 text-white px-3 py-1.5 rounded-md hover:bg-emerald-800 disabled:opacity-60">
-                {t('admin.evtAddGame')}
+                {editId !== null ? t('admin.save') : t('admin.evtAddGame')}
               </button>
-              <button type="button" onClick={() => setShowAdd(false)} className="text-xs text-slate-600 hover:underline">
+              <button type="button" onClick={closeGameForm} className="text-xs text-slate-600 hover:underline">
                 {t('admin.cancel')}
               </button>
             </div>
@@ -961,6 +1007,7 @@ function TournamentTeamPanel({
                 <th className="py-1 pr-2">{t('admin.msgWhen')}</th>
                 <th className="py-1 pr-2">{t('admin.msgGameOpponent')}</th>
                 <th className="py-1 pr-2">{t('admin.msgLocation')}</th>
+                <th className="py-1 pr-2 text-right"></th>
               </tr>
             </thead>
             <tbody>
@@ -969,6 +1016,13 @@ function TournamentTeamPanel({
                   <td className="py-1 pr-2 whitespace-nowrap">{new Date(g.startsAt).toLocaleString()}</td>
                   <td className="py-1 pr-2">{g.opponentName ?? '—'}{g.isHome === true ? ' (H)' : g.isHome === false ? ' (A)' : ''}</td>
                   <td className="py-1 pr-2">{g.location ?? '—'}</td>
+                  <td className="py-1 pr-2 text-right whitespace-nowrap">
+                    <button type="button" onClick={() => startEditGame(g)}
+                      className="text-emerald-700 hover:underline">{t('admin.edit')}</button>
+                    <span className="mx-1.5 text-slate-300">|</span>
+                    <button type="button" onClick={() => deleteManualGame(g)}
+                      className="text-red-600 hover:underline">{t('admin.delete')}</button>
+                  </td>
                 </tr>
               ))}
             </tbody>

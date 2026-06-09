@@ -409,6 +409,8 @@ const en = {
     evtTournTsPasteTeamNameHelp: 'Defaults to this team\'s name. Override when TeamSnap spells it differently (e.g. "Las Vegas Soccer School B17 Red" vs "LVSS B17 Red"). Matching is exact (case-insensitive).',
     evtTournGames: '{{count}} games in this tournament',
     evtTournNoGames: 'No games yet. Sync from GotSport or add one manually.',
+    evtGameDeleteConfirm: 'Delete this game? This cannot be undone.',
+    evtEditGame: 'Edit game',
     evtTournSendPreviewTitle: 'Send tournament confirmations — preview',
     evtTournSendPreviewHelp: 'One templated WhatsApp will go out per rostered player ({{count}} total). Each guardian receives the version matching their language preference. Sample below uses the first roster player\'s name; the actual sends fill in each kid\'s.',
     evtTournSendPreviewSample: 'Sample for {{name}}',
