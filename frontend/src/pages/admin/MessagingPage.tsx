@@ -2121,8 +2121,14 @@ export function TemplatesTab({
   }, [])
 
   // Refresh the per-variable property dropdown options whenever the picked context changes.
+  // Dedupe by key defensively so the "Map to" dropdown never lists the same property twice.
   useEffect(() => {
-    Api.listTemplateProperties(context).then(setPropertyOptions).catch(() => setPropertyOptions([]))
+    Api.listTemplateProperties(context)
+      .then(opts => {
+        const seen = new Set<string>()
+        setPropertyOptions(opts.filter(o => (seen.has(o.key) ? false : (seen.add(o.key), true))))
+      })
+      .catch(() => setPropertyOptions([]))
   }, [context])
 
   const loadForm = (tpl: WhatsAppTemplate | null) => {
