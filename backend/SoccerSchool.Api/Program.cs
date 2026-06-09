@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.SqlClient;
@@ -52,6 +53,14 @@ builder.Services.AddIdentity<ApplicationUser, IdentityRole>(opts =>
 })
 .AddEntityFrameworkStores<AppDbContext>()
 .AddDefaultTokenProviders();
+
+// Persist the data-protection key ring in SQL with a fixed application name. The Container App
+// runs with scale-to-zero (minReplicas=0), so the container is regularly torn down and replaced.
+// The default in-memory key ring would be regenerated on each new container, invalidating every
+// auth cookie and logging users out within minutes. Shared SQL keys make the 6h session real.
+builder.Services.AddDataProtection()
+    .PersistKeysToDbContext<AppDbContext>()
+    .SetApplicationName("lvss");
 
 builder.Services.ConfigureApplicationCookie(opts =>
 {

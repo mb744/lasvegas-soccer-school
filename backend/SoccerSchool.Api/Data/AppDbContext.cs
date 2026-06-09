@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
@@ -6,7 +7,10 @@ using SoccerSchool.Api.Domain;
 
 namespace SoccerSchool.Api.Data;
 
-public class AppDbContext : IdentityDbContext<ApplicationUser>
+// Implements IDataProtectionKeyContext so the data-protection key ring (used to encrypt the
+// auth cookie) is stored in SQL instead of container memory. Without this, every container
+// restart/scale-to-zero regenerates the keys and silently invalidates everyone's session.
+public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionKeyContext
 {
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
@@ -72,6 +76,10 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<InboundMessage> InboundMessages => Set<InboundMessage>();
     public DbSet<MessagingSettings> MessagingSettings => Set<MessagingSettings>();
     public DbSet<AgeClassification> AgeClassifications => Set<AgeClassification>();
+
+    /// <summary>Backing store for the ASP.NET Core data-protection key ring (cookie encryption
+    /// keys). Persisting these in SQL keeps auth cookies valid across container restarts.</summary>
+    public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
