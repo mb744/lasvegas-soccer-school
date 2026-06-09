@@ -440,9 +440,9 @@ export function TeamScheduleSection({
                 onVenuesChanged={reloadVenues} onError={onError} />
             </label>
             <label className="block text-sm sm:col-span-2">
-              <span className="font-medium text-slate-700">{t('admin.msgLocation')}</span>
+              <span className="font-medium text-slate-700">{t('admin.evtField')}</span>
               <input type="text" value={location} onChange={e => setLocation(e.target.value)}
-                placeholder="Sunset Park, field 3"
+                placeholder="Field 3"
                 className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
             </label>
             <label className="block text-sm sm:col-span-2">
@@ -516,9 +516,9 @@ export function TeamScheduleSection({
                 onVenuesChanged={reloadVenues} onError={onError} />
             </label>
             <label className="block text-sm sm:col-span-2">
-              <span className="font-medium text-slate-700">{t('admin.msgLocation')}</span>
+              <span className="font-medium text-slate-700">{t('admin.evtField')}</span>
               <input type="text" value={location} onChange={e => setLocation(e.target.value)}
-                placeholder="Sunset Park, field 3"
+                placeholder="Field 3"
                 className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
             </label>
             <label className="block text-sm sm:col-span-2">
@@ -544,7 +544,7 @@ export function TeamScheduleSection({
               <th className="py-1 pr-4">{t('admin.msgWhen')}</th>
               <th className="py-1 pr-4">{t('admin.msgKind')}</th>
               <th className="py-1 pr-4">{t('admin.msgSummary')}</th>
-              <th className="py-1 pr-4">{t('admin.msgLocation')}</th>
+              <th className="py-1 pr-4">{t('admin.evtField')}</th>
               <th className="py-1 pr-4"></th>
             </tr>
           </thead>

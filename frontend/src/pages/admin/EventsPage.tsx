@@ -1043,7 +1043,7 @@ function TournamentTeamPanel({
                 onVenuesChanged={reloadVenues} onError={onError} />
             </label>
             <label className="block text-xs">
-              <span className="text-slate-600">{t('admin.msgLocation')}</span>
+              <span className="text-slate-600">{t('admin.evtField')}</span>
               <input type="text" value={gLocation} onChange={e => setGLocation(e.target.value)}
                 className="mt-1 w-full border border-slate-300 rounded-md px-2 py-1 text-sm" />
             </label>
@@ -1074,7 +1074,7 @@ function TournamentTeamPanel({
                 <th className="py-1 pr-2">{t('admin.evtGameBeThere')}</th>
                 <th className="py-1 pr-2">{t('admin.msgGameOpponent')}</th>
                 <th className="py-1 pr-2">{t('admin.evtVenue')}</th>
-                <th className="py-1 pr-2">{t('admin.msgLocation')}</th>
+                <th className="py-1 pr-2">{t('admin.evtField')}</th>
                 <th className="py-1 pr-2">{t('admin.evtGameUniform')}</th>
                 <th className="py-1 pr-2 text-right"></th>
               </tr>

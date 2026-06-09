@@ -254,6 +254,7 @@ const es: Translations = {
     venueSaved: 'Lugar guardado.',
     venueDeleteConfirm: '¿Eliminar el lugar "{{name}}"? Los eventos que lo usan conservarán su ubicación de texto libre.',
     evtVenue: 'Lugar',
+    evtField: 'Campo',
     settingsAutoResponseBlurb: 'Auto respuesta entrante: texto (EN/ES) e interruptor on/off. Solo se activa para remitentes que no reconocemos como padres, tutores adicionales o entrenadores.',
     settingsAgeClassificationsBlurb: 'Categorías de edad que etiquetan automáticamente a cada jugador del roster según su fecha de nacimiento. Los extremos de DOB son inclusivos.',
     settingsTemplatesSection: 'Plantillas de mensajes',
