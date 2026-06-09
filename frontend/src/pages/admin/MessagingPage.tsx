@@ -21,6 +21,7 @@ import type {
   PhraseTranslation,
   SaveTemplateVariable,
   ScheduledGame,
+  Uniform,
   TemplateContext,
   TemplateContextOption,
   TemplateProperty,
@@ -47,6 +48,34 @@ const WEAR_AWAY: Record<Language, string> = {
 }
 const GAME_VS_PREFIX: Record<Language, string> = { 0: 'Game vs', 1: 'Partido vs' }
 const PRACTICE_FALLBACK: Record<Language, string> = { 0: 'Practice', 1: 'Práctica' }
+
+/** Wear text for a game's "Uniform" variable. Priority: the game's explicit uniform, then the
+ *  club-wide uniform whose designation matches its home/away (1 = Home, 2 = Away). Falls back to
+ *  the legacy hardcoded LVSS colors when no uniform is configured, so behavior is unchanged until
+ *  the admin adds uniforms in Settings. Returns null for practices/unknown with no mapping. */
+function uniformWearText(game: ScheduledGame, uniforms: Uniform[], lang: Language): string | null {
+  const text = (u: Uniform) => {
+    const parts = [
+      u.shirtColor && `${u.shirtColor} jersey`,
+      u.shortsColor && `${u.shortsColor} shorts`,
+      u.sockColor && `${u.sockColor} socks`,
+    ].filter(Boolean) as string[]
+    return parts.length ? parts.join(', ') : u.name
+  }
+  if (game.uniformId != null) {
+    const u = uniforms.find(x => x.id === game.uniformId)
+    if (u) return text(u)
+  }
+  if (game.isHome === true) {
+    const u = uniforms.find(x => x.designation === 1)
+    return u ? text(u) : WEAR_HOME[lang]
+  }
+  if (game.isHome === false) {
+    const u = uniforms.find(x => x.designation === 2)
+    return u ? text(u) : WEAR_AWAY[lang]
+  }
+  return null
+}
 import {
   MESSAGE_CHANNEL_LABELS,
   MESSAGE_DELIVERY_LABELS,
@@ -74,6 +103,7 @@ export function AdminMessagingPage() {
   const [templates, setTemplates] = useState<WhatsAppTemplate[]>([])
   const [emailTemplates, setEmailTemplates] = useState<EmailTemplate[]>([])
   const [upcomingGames, setUpcomingGames] = useState<ScheduledGame[]>([])
+  const [uniforms, setUniforms] = useState<Uniform[]>([])
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
 
@@ -104,6 +134,10 @@ export function AdminMessagingPage() {
     try { setUpcomingGames(await Api.listUpcomingGames(30)) }
     catch (e: any) { setError(extractError(e)) }
   }
+  const refreshUniforms = async () => {
+    try { setUniforms(await Api.listUniforms()) }
+    catch (e: any) { setError(extractError(e)) }
+  }
 
   useEffect(() => {
     refreshConfig()
@@ -111,6 +145,7 @@ export function AdminMessagingPage() {
     refreshHistory()
     refreshTemplates()
     refreshUpcomingGames()
+    refreshUniforms()
   }, [])
 
   const tabBtn = (key: Tab, label: string) => (
@@ -165,6 +200,7 @@ export function AdminMessagingPage() {
             templates={templates}
             emailTemplates={emailTemplates}
             upcomingGames={upcomingGames}
+            uniforms={uniforms}
             onSent={async (msg) => {
               setNotice(msg); setError(null)
               await refreshHistory()
@@ -254,7 +290,7 @@ function baseTemplateName(name: string): string {
 // --- Compose tab -----------------------------------------------------------
 
 function ComposeTab({
-  config, curated, dynamicGroups, templates, emailTemplates, upcomingGames, onSent, onError,
+  config, curated, dynamicGroups, templates, emailTemplates, upcomingGames, uniforms, onSent, onError,
 }: {
   config: MessagingConfig | null
   curated: MessageGroupSummary[]
@@ -262,6 +298,7 @@ function ComposeTab({
   templates: WhatsAppTemplate[]
   emailTemplates: EmailTemplate[]
   upcomingGames: ScheduledGame[]
+  uniforms: Uniform[]
   onSent: (msg: string) => void | Promise<void>
   onError: (e: string) => void
 }) {
@@ -706,7 +743,7 @@ function ComposeTab({
                     }
                   }
                   if (activeTemplate) {
-                    applyGameToTemplate(g, activeTemplate, setTemplateValues)
+                    applyGameToTemplate(g, uniforms, activeTemplate, setTemplateValues)
                   }
                   // Record event-id on this compose state so the broadcast links back to it —
                   // unlocks the cancellation-notification flow finding "who got reminded".
@@ -789,7 +826,7 @@ function ComposeTab({
                   if (!gameId) return
                   const g = upcomingGames.find(x => x.id === gameId)
                   if (!g) return
-                  applyGameToFreeForm(g, setBodyEn, setBodyEs)
+                  applyGameToFreeForm(g, uniforms, setBodyEn, setBodyEs)
                   setPickedEventId(g.id)
                   // Same rule as the template path: only auto-target the linked group when the
                   // admin hasn't already chosen a recipient.
@@ -2521,6 +2558,7 @@ function pickTemplateForEvent(
  */
 function applyGameToFreeForm(
   game: ScheduledGame,
+  uniforms: Uniform[],
   setBodyEn: (v: string) => void,
   setBodyEs: (v: string) => void,
 ) {
@@ -2534,9 +2572,7 @@ function applyGameToFreeForm(
       : (game.summary?.trim() || PRACTICE_FALLBACK[lang])
     const when = fmt(lang === 1 ? 'es-US' : 'en-US')
     const where = game.location?.trim() || ''
-    const wear = game.isHome === true ? WEAR_HOME[lang]
-               : game.isHome === false ? WEAR_AWAY[lang]
-               : null
+    const wear = uniformWearText(game, uniforms, lang)
 
     // Localized scaffolding ("on/at" → "el/en", "Wear:" → "Vestimenta:") so the free-form text
     // reads naturally in the recipient's language.
@@ -2565,6 +2601,7 @@ function applyGameToFreeForm(
  */
 function applyGameToTemplate(
   game: ScheduledGame,
+  uniforms: Uniform[],
   template: WhatsAppTemplate,
   setValues: React.Dispatch<React.SetStateAction<Record<string, string>>>,
 ) {
@@ -2591,9 +2628,9 @@ function applyGameToTemplate(
       } else if (label.includes('where') || label.includes('location')) {
         next[key] = game.location?.trim() || ''
       } else if (label.includes('uniform') || label.includes('wear')) {
-        if (game.isHome === true) next[key] = WEAR_HOME[lang]
-        else if (game.isHome === false) next[key] = WEAR_AWAY[lang]
-        // game.isHome === null (practice/training): leave for admin to type.
+        const wear = uniformWearText(game, uniforms, lang)
+        if (wear) next[key] = wear
+        // No mapping (practice/training with no uniform): leave for admin to type.
       }
     }
     return next

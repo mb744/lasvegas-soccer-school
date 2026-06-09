@@ -76,6 +76,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
     public DbSet<InboundMessage> InboundMessages => Set<InboundMessage>();
     public DbSet<MessagingSettings> MessagingSettings => Set<MessagingSettings>();
     public DbSet<AgeClassification> AgeClassifications => Set<AgeClassification>();
+    public DbSet<Uniform> Uniforms => Set<Uniform>();
 
     /// <summary>Backing store for the ASP.NET Core data-protection key ring (cookie encryption
     /// keys). Persisting these in SQL keeps auth cookies valid across container restarts.</summary>
@@ -396,6 +397,20 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
             // Upsert key on re-sync: (team, ICS UID) must be unique.
             b.HasIndex(g => new { g.TeamId, g.ExternalUid }).IsUnique();
             b.HasIndex(g => g.StartsAt);
+            // Optional override of the auto (home/away → designation) uniform mapping. SetNull so
+            // deleting a uniform just drops the override and the game reverts to the mapping.
+            b.HasOne(g => g.Uniform)
+                .WithMany()
+                .HasForeignKey(g => g.UniformId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<Uniform>(b =>
+        {
+            b.HasIndex(u => u.Name).IsUnique();
+            // At most one uniform per non-None designation (one Home, one Away, one Practice).
+            // Filtered so multiple None rows remain allowed.
+            b.HasIndex(u => u.Designation).IsUnique().HasFilter("[Designation] <> 0");
         });
 
         modelBuilder.Entity<PhraseTranslation>(b =>

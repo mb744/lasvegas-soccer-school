@@ -48,6 +48,12 @@ public class ScheduledGame
     /// before <see cref="StartsAt"/>). Admin-entered for games; null when unset.</summary>
     public DateTime? ArriveAt { get; set; }
 
+    /// <summary>Explicit uniform override for this event. Null = use the club-wide mapping (the
+    /// uniform whose <see cref="UniformDesignation"/> matches this game's home/away setting, or
+    /// the Practice uniform for practices).</summary>
+    public int? UniformId { get; set; }
+    public Uniform? Uniform { get; set; }
+
     /// <summary>SUMMARY field — typically "{team} vs {opponent}" or "Practice — {field}" depending
     /// on how the feed source formats it. Surfaced to the admin in the game picker.</summary>
     [MaxLength(512)]

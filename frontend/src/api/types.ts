@@ -661,6 +661,30 @@ export interface ScheduledGame {
   /** "Be There" arrival time (ISO, UTC) — when players should show up, typically 15–30 min
    *  before startsAt. null when unset. */
   arriveAt: string | null
+  /** Explicit uniform override; null = use the home/away → designation mapping. */
+  uniformId: number | null
+}
+
+/** 0 = None, 1 = Home, 2 = Away, 3 = Practice. At most one uniform per non-None value. */
+export type UniformDesignation = 0 | 1 | 2 | 3
+
+export interface Uniform {
+  id: number
+  name: string
+  shirtColor: string | null
+  shortsColor: string | null
+  sockColor: string | null
+  designation: UniformDesignation
+  createdAt: string
+  updatedAt: string
+}
+
+export interface SaveUniformRequest {
+  name: string
+  shirtColor?: string | null
+  shortsColor?: string | null
+  sockColor?: string | null
+  designation: UniformDesignation
 }
 
 export type TournamentKind = 0 | 1 // Tournament | League
@@ -843,6 +867,7 @@ export interface SaveGameRequest {
   location?: string | null
   summary?: string | null
   tournamentId?: number | null
+  uniformId?: number | null  // explicit uniform override; null = use mapping
 }
 
 export interface SavePracticeSeriesRequest {

@@ -9,7 +9,7 @@ import { Api } from '../../api/client'
 import type {
   RosterTeamSummary, RosterTeamDetail, TournamentSummary, TournamentTeam, TournamentKind,
   AttendanceStatus, TournamentAttendanceList, AvailablePlayer,
-  TeamDetail, ScheduledGame, TournamentSendPreview,
+  TeamDetail, ScheduledGame, TournamentSendPreview, Uniform,
 } from '../../api/types'
 
 function errMsg(e: any): string {
@@ -514,6 +514,7 @@ function TournamentTeamPanel({
   const [search, setSearch] = useState('')
   const [attendance, setAttendance] = useState<TournamentAttendanceList | null>(null)
   const [teamDetail, setTeamDetail] = useState<TeamDetail | null>(null)
+  const [uniforms, setUniforms] = useState<Uniform[]>([])
   const [sending, setSending] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -549,16 +550,19 @@ function TournamentTeamPanel({
   const [gOpponent, setGOpponent] = useState('')
   const [gHome, setGHome] = useState<'home' | 'away' | 'unknown'>('unknown')
   const [gLocation, setGLocation] = useState('')
+  // '' = use the home/away → designation mapping; otherwise the chosen uniform's id.
+  const [gUniformId, setGUniformId] = useState('')
   const vGame = useRequiredValidation(['startsAt'])
 
   const reloadAll = async () => {
     try {
-      const [av, att, td] = await Promise.all([
+      const [av, att, td, uni] = await Promise.all([
         Api.listAvailablePlayers(tt.teamId),
         Api.getTournamentTeamAttendance(tour.id, tt.teamId),
         Api.getTeam(tt.teamId, { includePast: true }),
+        Api.listUniforms(),
       ])
-      setAvailable(av); setAttendance(att); setTeamDetail(td)
+      setAvailable(av); setAttendance(att); setTeamDetail(td); setUniforms(uni)
     } catch (e: any) { onError(errMsg(e)) }
   }
   useEffect(() => { reloadAll() }, [tt.id])
@@ -761,7 +765,7 @@ function TournamentTeamPanel({
 
   const resetGameForm = () => {
     setGStart(''); setGArrive(''); setGArriveTouched(false)
-    setGOpponent(''); setGHome('unknown'); setGLocation('')
+    setGOpponent(''); setGHome('unknown'); setGLocation(''); setGUniformId('')
     vGame.reset()
   }
 
@@ -778,6 +782,7 @@ function TournamentTeamPanel({
     setGOpponent(g.opponentName ?? '')
     setGHome(g.isHome === true ? 'home' : g.isHome === false ? 'away' : 'unknown')
     setGLocation(g.location ?? '')
+    setGUniformId(g.uniformId != null ? String(g.uniformId) : '')
     vGame.reset()
     setShowAdd(true)
   }
@@ -795,6 +800,7 @@ function TournamentTeamPanel({
         isHome: gHome === 'home' ? true : gHome === 'away' ? false : null,
         location: gLocation.trim() || null,
         tournamentId: tour.id,
+        uniformId: gUniformId ? Number(gUniformId) : null,
       }
       if (editId !== null) {
         await Api.updateGame(editId, payload)
@@ -837,6 +843,15 @@ function TournamentTeamPanel({
     `${p.firstName} ${p.lastName}`.toLowerCase().includes(search.trim().toLowerCase()))
 
   const tournamentGames = (teamDetail?.upcomingGames ?? []).filter(g => g.tournamentId === tour.id)
+
+  // Resolve the uniform shown for a game: the explicit override, else the club-wide uniform whose
+  // designation (1=Home, 2=Away) matches the game's home/away. undefined when nothing maps.
+  const effectiveUniform = (g: ScheduledGame): Uniform | undefined => {
+    if (g.uniformId != null) return uniforms.find(u => u.id === g.uniformId)
+    if (g.isHome === true) return uniforms.find(u => u.designation === 1)
+    if (g.isHome === false) return uniforms.find(u => u.designation === 2)
+    return undefined
+  }
 
   return (
     <div className="space-y-4 border border-slate-200 rounded-md p-3 bg-slate-50/40">
@@ -1018,6 +1033,14 @@ function TournamentTeamPanel({
               <input type="text" value={gLocation} onChange={e => setGLocation(e.target.value)}
                 className="mt-1 w-full border border-slate-300 rounded-md px-2 py-1 text-sm" />
             </label>
+            <label className="block text-xs">
+              <span className="text-slate-600">{t('admin.evtGameUniform')}</span>
+              <select value={gUniformId} onChange={e => setGUniformId(e.target.value)}
+                className="mt-1 w-full border border-slate-300 rounded-md px-2 py-1 text-sm">
+                <option value="">{t('admin.evtGameUniformDefault')}</option>
+                {uniforms.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+            </label>
             <div className="sm:col-span-2 flex gap-2">
               <button type="submit" disabled={busy}
                 className="text-xs bg-emerald-700 text-white px-3 py-1.5 rounded-md hover:bg-emerald-800 disabled:opacity-60">
@@ -1037,6 +1060,7 @@ function TournamentTeamPanel({
                 <th className="py-1 pr-2">{t('admin.evtGameBeThere')}</th>
                 <th className="py-1 pr-2">{t('admin.msgGameOpponent')}</th>
                 <th className="py-1 pr-2">{t('admin.msgLocation')}</th>
+                <th className="py-1 pr-2">{t('admin.evtGameUniform')}</th>
                 <th className="py-1 pr-2 text-right"></th>
               </tr>
             </thead>
@@ -1047,6 +1071,7 @@ function TournamentTeamPanel({
                   <td className="py-1 pr-2 whitespace-nowrap">{g.arriveAt ? new Date(g.arriveAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '—'}</td>
                   <td className="py-1 pr-2">{g.opponentName ?? '—'}{g.isHome === true ? ' (H)' : g.isHome === false ? ' (A)' : ''}</td>
                   <td className="py-1 pr-2">{g.location ?? '—'}</td>
+                  <td className="py-1 pr-2">{effectiveUniform(g)?.name ?? '—'}</td>
                   <td className="py-1 pr-2 text-right whitespace-nowrap">
                     <button type="button" onClick={() => startEditGame(g)}
                       className="text-emerald-700 hover:underline">{t('admin.edit')}</button>

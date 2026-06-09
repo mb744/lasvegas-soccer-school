@@ -1823,6 +1823,7 @@ public class MessagingController : ControllerBase
             var ev = await _db.ScheduledGames
                 .Include(g => g.Team)
                 .Include(g => g.Tournament)
+                .Include(g => g.Uniform)
                 .AsNoTracking()
                 .FirstOrDefaultAsync(g => g.Id == eventId, ct);
             if (ev is not null)
@@ -1839,6 +1840,7 @@ public class MessagingController : ControllerBase
                 props["event.summary"] = ev.Summary ?? string.Empty;
                 props["event.opponent"] = ev.OpponentName ?? string.Empty;
                 props["event.isHome"] = ev.IsHome switch { true => "Home", false => "Away", _ => string.Empty };
+                props["event.uniform"] = await ResolveEventUniformTextAsync(ev, ct);
                 props["event.dateTime"] = localStart.ToString("ddd, MMM d, yyyy — h:mm tt", us);
                 props["event.date"] = localStart.ToString("MMM d, yyyy", us);
                 props["event.dateLong"] = localStart.ToString("MMMM d, yyyy", us);
@@ -1870,6 +1872,28 @@ public class MessagingController : ControllerBase
         }
 
         return props;
+    }
+
+    /// <summary>Resolves the wear text for an event's uniform: the explicitly-assigned uniform when
+    /// set, otherwise the club-wide uniform whose designation matches the event (Home/Away by the
+    /// game's IsHome; Practice for practice events). Empty string when nothing maps.</summary>
+    private async Task<string> ResolveEventUniformTextAsync(ScheduledGame ev, CancellationToken ct)
+    {
+        if (ev.Uniform is not null) return ev.Uniform.ToWearText();
+
+        var designation = ev.Kind == ScheduledEventKind.Practice
+            ? UniformDesignation.Practice
+            : ev.IsHome switch
+            {
+                true => UniformDesignation.Home,
+                false => UniformDesignation.Away,
+                _ => UniformDesignation.None,
+            };
+        if (designation == UniformDesignation.None) return string.Empty;
+
+        var mapped = await _db.Uniforms.AsNoTracking()
+            .FirstOrDefaultAsync(u => u.Designation == designation, ct);
+        return mapped?.ToWearText() ?? string.Empty;
     }
 
     /// <summary>Writes the tournament.* keys into <paramref name="props"/>. Used by both the

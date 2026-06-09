@@ -5,13 +5,14 @@ import { Layout } from '../../components/Layout'
 import { Api } from '../../api/client'
 import { TemplatesTab, DictionaryTab, SettingsTab as AutoResponseSettingsTab } from './MessagingPage'
 import { AgeClassificationsSection } from './AgeClassificationsPage'
+import { UniformsSection } from './UniformsSection'
 import type { WhatsAppTemplate, EmailTemplate } from '../../api/types'
 
 function errMsg(e: any): string {
   return e?.response?.data?.title || e?.response?.data || e?.message || 'Error'
 }
 
-type Tab = 'templates' | 'dictionary' | 'autoResponse' | 'ageClassifications' | 'backfill'
+type Tab = 'templates' | 'dictionary' | 'autoResponse' | 'ageClassifications' | 'uniforms' | 'backfill'
 
 /** Top-level admin settings hub. Tabs mirror the Messaging page so the layout is consistent
  *  across admin cards. Currently houses:
@@ -79,6 +80,7 @@ export function AdminSettingsPage() {
           {tabBtn('dictionary', t('admin.settingsTabDictionary'))}
           {tabBtn('autoResponse', t('admin.settingsTabAutoResponse'))}
           {tabBtn('ageClassifications', t('admin.settingsTabAgeClassifications'))}
+          {tabBtn('uniforms', t('admin.settingsTabUniforms'))}
           {tabBtn('backfill', t('admin.settingsTabBackfill'))}
         </div>
 
@@ -126,6 +128,15 @@ export function AdminSettingsPage() {
           <section className="bg-white border border-slate-200 rounded-lg p-4">
             <p className="text-xs text-slate-500 mb-3">{t('admin.settingsAgeClassificationsBlurb')}</p>
             <AgeClassificationsSection
+              onError={(e) => { setError(e); if (e) setNotice(null) }}
+              onNotice={(n) => { setNotice(n); if (n) setError(null) }}
+            />
+          </section>
+        )}
+
+        {tab === 'uniforms' && (
+          <section className="bg-white border border-slate-200 rounded-lg p-4">
+            <UniformsSection
               onError={(e) => { setError(e); if (e) setNotice(null) }}
               onNotice={(n) => { setNotice(n); if (n) setError(null) }}
             />

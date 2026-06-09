@@ -66,6 +66,8 @@ import type {
   UpdateRegistrationRequest,
   AgeClassification,
   SaveAgeClassificationRequest,
+  Uniform,
+  SaveUniformRequest,
   MonthlyFeePreview,
   SendMonthlyFeeRequest,
   TeamDetail,
@@ -249,6 +251,21 @@ export const Api = {
   },
   async deleteAgeClassification(id: number) {
     await api.delete(`/age-classifications/${id}`)
+  },
+  async listUniforms() {
+    const r = await api.get<Uniform[]>('/uniforms')
+    return r.data
+  },
+  async createUniform(payload: SaveUniformRequest) {
+    const r = await api.post<Uniform>('/uniforms', payload)
+    return r.data
+  },
+  async updateUniform(id: number, payload: SaveUniformRequest) {
+    const r = await api.put<Uniform>(`/uniforms/${id}`, payload)
+    return r.data
+  },
+  async deleteUniform(id: number) {
+    await api.delete(`/uniforms/${id}`)
   },
   async deleteRegistration(id: number) {
     await api.delete(`/registrations/${id}`)

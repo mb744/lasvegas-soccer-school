@@ -70,7 +70,7 @@ public class ScheduleController : ControllerBase
                 g.Id, team.Id, team.Name, team.MessageGroupId, team.MessageGroup?.Name,
                 g.Kind, g.StartsAt, g.EndsAt, g.Summary, g.Location, g.Description,
                 g.OpponentName, g.IsHome, g.SeriesId, g.IsCancelled, g.CancelledAt,
-                g.TournamentId, g.Tournament?.Name, g.ArriveAt))
+                g.TournamentId, g.Tournament?.Name, g.ArriveAt, g.UniformId))
             .ToList();
         var coaches = team.Coaches
             .OrderBy(c => c.CreatedAt)
@@ -744,6 +744,9 @@ public class ScheduleController : ControllerBase
                 t => t.Id == tid && (t.TeamId == teamId || t.Teams.Any(tt => tt.TeamId == teamId)), ct))
             return BadRequest("Tournament not found for this team.");
 
+        if (request.UniformId is int uid && !await _db.Uniforms.AnyAsync(u => u.Id == uid, ct))
+            return BadRequest("Uniform not found.");
+
         var game = new ScheduledGame
         {
             TeamId = team.Id,
@@ -753,6 +756,7 @@ public class ScheduleController : ControllerBase
             StartsAt = DateTime.SpecifyKind(request.StartsAt, DateTimeKind.Utc),
             EndsAt = request.EndsAt.HasValue ? DateTime.SpecifyKind(request.EndsAt.Value, DateTimeKind.Utc) : null,
             ArriveAt = request.ArriveAt.HasValue ? DateTime.SpecifyKind(request.ArriveAt.Value, DateTimeKind.Utc) : null,
+            UniformId = request.UniformId,
             OpponentName = string.IsNullOrWhiteSpace(request.OpponentName) ? null : request.OpponentName.Trim(),
             IsHome = request.IsHome,
             Location = string.IsNullOrWhiteSpace(request.Location) ? null : request.Location.Trim(),
@@ -776,10 +780,13 @@ public class ScheduleController : ControllerBase
             .FirstOrDefaultAsync(g => g.Id == id && g.Kind == ScheduledEventKind.Game, ct);
         if (game is null) return NotFound();
         if (request.StartsAt == default) return BadRequest("Start time is required.");
+        if (request.UniformId is int uid && !await _db.Uniforms.AnyAsync(u => u.Id == uid, ct))
+            return BadRequest("Uniform not found.");
 
         game.StartsAt = DateTime.SpecifyKind(request.StartsAt, DateTimeKind.Utc);
         game.EndsAt = request.EndsAt.HasValue ? DateTime.SpecifyKind(request.EndsAt.Value, DateTimeKind.Utc) : null;
         game.ArriveAt = request.ArriveAt.HasValue ? DateTime.SpecifyKind(request.ArriveAt.Value, DateTimeKind.Utc) : null;
+        game.UniformId = request.UniformId;
         game.OpponentName = string.IsNullOrWhiteSpace(request.OpponentName) ? null : request.OpponentName.Trim();
         game.IsHome = request.IsHome;
         game.Location = string.IsNullOrWhiteSpace(request.Location) ? null : request.Location.Trim();
@@ -1125,7 +1132,7 @@ public class ScheduleController : ControllerBase
         g.Id, team.Id, team.Name, team.MessageGroupId, team.MessageGroup?.Name,
         g.Kind, g.StartsAt, g.EndsAt, g.Summary, g.Location, g.Description,
         g.OpponentName, g.IsHome, g.SeriesId, g.IsCancelled, g.CancelledAt,
-        g.TournamentId, g.Tournament?.Name, g.ArriveAt);
+        g.TournamentId, g.Tournament?.Name, g.ArriveAt, g.UniformId);
 
     /// <summary>
     /// Upcoming games across all teams within the given window. Used by the Compose tab game
@@ -1148,7 +1155,7 @@ public class ScheduleController : ControllerBase
                 g.Id, g.TeamId, g.Team!.Name, g.Team.MessageGroupId, g.Team.MessageGroup != null ? g.Team.MessageGroup.Name : null,
                 g.Kind, g.StartsAt, g.EndsAt, g.Summary, g.Location, g.Description,
                 g.OpponentName, g.IsHome, g.SeriesId, g.IsCancelled, g.CancelledAt,
-                g.TournamentId, g.Tournament != null ? g.Tournament.Name : null, g.ArriveAt))
+                g.TournamentId, g.Tournament != null ? g.Tournament.Name : null, g.ArriveAt, g.UniformId))
             .ToListAsync(ct);
         return Ok(games);
     }

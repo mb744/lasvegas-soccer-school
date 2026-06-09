@@ -69,7 +69,9 @@ public record ScheduledGameDto(
     string? TournamentName,
     /// <summary>"Be There" time — when players should arrive (typically 15–30 min before
     /// StartsAt). Null when not set. Games only; practices leave it null.</summary>
-    DateTime? ArriveAt);
+    DateTime? ArriveAt,
+    /// <summary>Explicit uniform override (null = use the home/away → designation mapping).</summary>
+    int? UniformId);
 
 public record SavePracticeRequest
 {
@@ -111,6 +113,9 @@ public record SaveGameRequest
     /// <summary>"Be There" arrival time — when players should show up (typically 15–30 min
     /// before StartsAt). Null = not set.</summary>
     public DateTime? ArriveAt { get; init; }
+
+    /// <summary>Explicit uniform override. Null = use the club-wide home/away → designation mapping.</summary>
+    public int? UniformId { get; init; }
 }
 
 /// <summary>Create a recurring practice series. Each combination of (day-of-week × occurrence date
