@@ -733,9 +733,11 @@ public class ScheduleController : ControllerBase
         if (team is null) return NotFound();
         if (request.StartsAt == default) return BadRequest("Start time is required.");
 
-        // If tied to a tournament, it must belong to this team.
+        // If tied to a tournament, this team must participate in it — either as the legacy
+        // single team (Tournament.TeamId) or via the multi-team join (TournamentTeam).
         if (request.TournamentId is int tid &&
-            !await _db.Tournaments.AnyAsync(t => t.Id == tid && t.TeamId == teamId, ct))
+            !await _db.Tournaments.AnyAsync(
+                t => t.Id == tid && (t.TeamId == teamId || t.Teams.Any(tt => tt.TeamId == teamId)), ct))
             return BadRequest("Tournament not found for this team.");
 
         var game = new ScheduledGame
