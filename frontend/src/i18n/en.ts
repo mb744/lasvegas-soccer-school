@@ -704,6 +704,7 @@ const en = {
     msgPerPlayer: 'Personalize per player',
     msgPerPlayerHelp: 'Send one message per rostered player instead of one to the group. Player / parent variables are filled per player, so a parent with more than one player gets a separate message for each child.',
     msgPerPlayerSent: 'Personalized send: messaged {{sent}} of {{total}} players.',
+    msgNoEvent: 'No event',
     msgPickGameFreeFormHelp: 'Picking an event drafts both the English and Spanish body using the event info + your home/away wear policy. You can edit either side in the preview modal before sending.',
     msgTeamsHeader: 'Teams',
     msgNewTeam: 'New',

@@ -467,6 +467,8 @@ export interface BroadcastRecipientRow {
   /** Numeric carrier/WhatsApp error code (e.g. "131049" = rate limit). Null for non-failed
    *  rows. Captured into its own field so the resend flow can skip rate-limited recipients. */
   errorCode: string | null
+  /** Display label of the event this message was about; null when not tied to an event. */
+  eventName: string | null
 }
 
 export interface BroadcastDetail {

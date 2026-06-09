@@ -706,6 +706,7 @@ const es: Translations = {
     msgPerPlayer: 'Personalizar por jugador',
     msgPerPlayerHelp: 'Envía un mensaje por cada jugador del roster en lugar de uno al grupo. Las variables de jugador / padre se completan por jugador, así un padre con más de un jugador recibe un mensaje por cada hijo.',
     msgPerPlayerSent: 'Envío personalizado: se envió a {{sent}} de {{total}} jugadores.',
+    msgNoEvent: 'Sin evento',
     msgPickGameFreeFormHelp: 'Al elegir un evento se redactan ambos cuerpos (inglés y español) usando la info del evento y la política de vestimenta local/visitante. Puede editar cualquier lado en la vista previa antes de enviar.',
     msgTeamsHeader: 'Equipos',
     msgNewTeam: 'Nuevo',

@@ -8,6 +8,7 @@ import { pickLatestTemplate } from '../../api/templateNaming'
 import type {
   AdHocRecipient,
   BroadcastDetail,
+  BroadcastRecipientRow,
   BroadcastSummary,
   DynamicGroup,
   GroupConversationDetail,
@@ -1887,6 +1888,25 @@ export function SettingsTab({
 
 // --- History tab -----------------------------------------------------------
 
+/** Groups History detail recipients by the event they were about, preserving first-seen order.
+ *  When no recipient is tied to an event, returns a single group with label `undefined` so the
+ *  caller renders no event header (plain flat list). Recipients with no event fall under a `null`
+ *  label ("No event"). */
+function groupRecipientsByEvent(
+  recipients: BroadcastRecipientRow[],
+): { label: string | null | undefined; rows: BroadcastRecipientRow[] }[] {
+  if (!recipients.some(r => r.eventName)) return [{ label: undefined, rows: recipients }]
+  const groups: { label: string | null; rows: BroadcastRecipientRow[] }[] = []
+  const idx = new Map<string, number>()
+  for (const r of recipients) {
+    const key = r.eventName ?? ' '
+    let i = idx.get(key)
+    if (i === undefined) { i = groups.length; idx.set(key, i); groups.push({ label: r.eventName ?? null, rows: [] }) }
+    groups[i].rows.push(r)
+  }
+  return groups
+}
+
 function HistoryTab({
   broadcasts, onRefresh,
 }: {
@@ -1986,22 +2006,34 @@ function HistoryTab({
                         </tr>
                       </thead>
                       <tbody>
-                        {expanded.recipients.map(r => (
-                          <tr key={r.id}>
-                            <td className="py-1 pr-4">{r.name ?? '—'}</td>
-                            <td className="py-1 pr-4">{r.phone}</td>
-                            <td className="py-1 pr-4">{r.language === 1 ? 'ES' : 'EN'}</td>
-                            <td className="py-1 pr-4">{r.templateUsed ?? '—'}</td>
-                            <td className="py-1 pr-4">{MESSAGE_DELIVERY_LABELS[r.status]}</td>
-                            <td className="py-1 pr-4 font-mono">
-                              {r.errorCode ? (
-                                r.errorCode === '131049'
-                                  ? <span className="text-amber-700" title={t('admin.msgRateLimitedTip')}>{r.errorCode}</span>
-                                  : <span className="text-rose-700">{r.errorCode}</span>
-                              ) : '—'}
-                            </td>
-                            <td className="py-1 pr-4 text-slate-500">{r.statusMessage ?? ''}</td>
-                          </tr>
+                        {groupRecipientsByEvent(expanded.recipients).map((g, gi) => (
+                          <Fragment key={gi}>
+                            {g.label !== undefined && (
+                              <tr className="bg-emerald-50/70">
+                                <td colSpan={7} className="py-1 pr-4 font-medium text-emerald-800">
+                                  {g.label ?? t('admin.msgNoEvent')}{' '}
+                                  <span className="text-slate-400 font-normal">({g.rows.length})</span>
+                                </td>
+                              </tr>
+                            )}
+                            {g.rows.map(r => (
+                              <tr key={r.id}>
+                                <td className="py-1 pr-4">{r.name ?? '—'}</td>
+                                <td className="py-1 pr-4">{r.phone}</td>
+                                <td className="py-1 pr-4">{r.language === 1 ? 'ES' : 'EN'}</td>
+                                <td className="py-1 pr-4">{r.templateUsed ?? '—'}</td>
+                                <td className="py-1 pr-4">{MESSAGE_DELIVERY_LABELS[r.status]}</td>
+                                <td className="py-1 pr-4 font-mono">
+                                  {r.errorCode ? (
+                                    r.errorCode === '131049'
+                                      ? <span className="text-amber-700" title={t('admin.msgRateLimitedTip')}>{r.errorCode}</span>
+                                      : <span className="text-rose-700">{r.errorCode}</span>
+                                  ) : '—'}
+                                </td>
+                                <td className="py-1 pr-4 text-slate-500">{r.statusMessage ?? ''}</td>
+                              </tr>
+                            ))}
+                          </Fragment>
                         ))}
                       </tbody>
                     </table>

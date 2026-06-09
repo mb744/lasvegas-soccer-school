@@ -207,7 +207,10 @@ public record BroadcastRecipientDto(
     string? StatusMessage,
     string? TwilioSid,
     string? TemplateUsed,
-    string? ErrorCode);
+    string? ErrorCode,
+    /// <summary>Display label of the event this message was about (e.g. "vs Albion · Jun 12, 2:00 PM"),
+    /// or null when the send wasn't tied to an event. Lets the History details group by event.</summary>
+    string? EventName = null);
 
 public record BroadcastDetail(
     int Id,

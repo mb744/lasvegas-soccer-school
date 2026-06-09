@@ -2238,10 +2238,16 @@ public class MessagingController : ControllerBase
             .OrderBy(b => b.CreatedAt)
             .ToListAsync(ct);
         if (rows.Count == 0) return NotFound();
+        var labels = await LoadEventLabelsAsync(
+            rows.Where(b => b.ScheduledGameId.HasValue).Select(b => b.ScheduledGameId!.Value), ct);
         var head = rows[0];
         var recipients = rows
-            .SelectMany(b => b.Recipients.Select(r => new BroadcastRecipientDto(
-                r.Id, r.Name, r.Phone, r.Email, r.Language, r.Status, r.StatusMessage, r.TwilioSid, r.TemplateUsed, r.ErrorCode)))
+            .SelectMany(b =>
+            {
+                var label = b.ScheduledGameId is int gid && labels.TryGetValue(gid, out var l) ? l : null;
+                return b.Recipients.Select(r => new BroadcastRecipientDto(
+                    r.Id, r.Name, r.Phone, r.Email, r.Language, r.Status, r.StatusMessage, r.TwilioSid, r.TemplateUsed, r.ErrorCode, label));
+            })
             .ToList();
         return Ok(new BroadcastDetail(
             head.Id,
@@ -2262,7 +2268,10 @@ public class MessagingController : ControllerBase
             .Include(x => x.Recipients)
             .FirstOrDefaultAsync(x => x.Id == id, ct);
         if (b is null) return NotFound();
-        return Ok(ToDetail(b));
+        var labels = await LoadEventLabelsAsync(
+            b.ScheduledGameId.HasValue ? new[] { b.ScheduledGameId.Value } : Array.Empty<int>(), ct);
+        var label = b.ScheduledGameId is int gid && labels.TryGetValue(gid, out var l) ? l : null;
+        return Ok(ToDetail(b, label));
     }
 
     // --- Conversations (true group chat) ---
@@ -2800,10 +2809,32 @@ public class MessagingController : ControllerBase
                 .Select(r => new ResolvedRecipient(r.Phone.Trim(), r.Name?.Trim(), null))
                 .ToList());
 
-    private static BroadcastDetail ToDetail(Broadcast b) => new(
+    private static BroadcastDetail ToDetail(Broadcast b, string? eventLabel = null) => new(
         b.Id, b.Channel, b.BodyEn, b.BodyEs, b.SubjectEn, b.SubjectEs, b.TargetLabel, b.CreatedAt,
         b.Recipients.Select(r => new BroadcastRecipientDto(
-            r.Id, r.Name, r.Phone, r.Email, r.Language, r.Status, r.StatusMessage, r.TwilioSid, r.TemplateUsed, r.ErrorCode)).ToList());
+            r.Id, r.Name, r.Phone, r.Email, r.Language, r.Status, r.StatusMessage, r.TwilioSid, r.TemplateUsed, r.ErrorCode, eventLabel)).ToList());
+
+    /// <summary>Loads short display labels for the given event ids, e.g. "vs Albion · Jun 12, 2:00 PM"
+    /// (or "Practice · …"). Used to group History details by the event each message was about.</summary>
+    private async Task<Dictionary<int, string>> LoadEventLabelsAsync(IEnumerable<int> eventIds, CancellationToken ct)
+    {
+        var ids = eventIds.Distinct().ToList();
+        if (ids.Count == 0) return new Dictionary<int, string>();
+        var us = System.Globalization.CultureInfo.GetCultureInfo("en-US");
+        var pacific = TryGetPacific();
+        var games = await _db.ScheduledGames.AsNoTracking()
+            .Where(g => ids.Contains(g.Id))
+            .Select(g => new { g.Id, g.Summary, g.Kind, g.OpponentName, g.StartsAt })
+            .ToListAsync(ct);
+        return games.ToDictionary(g => g.Id, g =>
+        {
+            var local = pacific is null ? g.StartsAt : TimeZoneInfo.ConvertTimeFromUtc(g.StartsAt, pacific);
+            var name = !string.IsNullOrWhiteSpace(g.Summary) ? g.Summary!
+                : g.Kind == ScheduledEventKind.Game ? (string.IsNullOrWhiteSpace(g.OpponentName) ? "Game" : $"vs {g.OpponentName}")
+                : g.Kind == ScheduledEventKind.Practice ? "Practice" : "Event";
+            return $"{name} · {local.ToString("MMM d, h:mm tt", us)}";
+        });
+    }
 
     private static GroupConversationDetail ToDetail(GroupConversation c) => new(
         c.Id, c.Title, c.Channel, c.TwilioConversationSid, c.CreatedAt,
