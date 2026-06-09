@@ -386,11 +386,16 @@ function ComposeTab({
     return null
   }, [isEmailChannel, selectedTemplate, selectedEmailTemplate])
 
-  const eventOptions = useMemo(
-    () => (bodyMode === 'template' && templateKind !== null)
-      ? upcomingGames.filter(g => g.kind === templateKind)
-      : upcomingGames,
-    [upcomingGames, templateKind, bodyMode])
+  const eventOptions = useMemo(() => {
+    let list = upcomingGames
+    // Narrow to the template's event family (game vs practice) once a kind-specific template is picked.
+    if (bodyMode === 'template' && templateKind !== null) list = list.filter(g => g.kind === templateKind)
+    // When a specific team/group is the recipient, only show that team's events (matched by the
+    // team's linked message group). Other recipient modes aren't team-scoped, so show everything.
+    if (recipientMode === 'curated' && customGroupId !== '')
+      list = list.filter(g => g.messageGroupId === Number(customGroupId))
+    return list
+  }, [upcomingGames, templateKind, bodyMode, recipientMode, customGroupId])
 
   // True once the admin has put anything into the recipient picker. Used to suppress the game
   // picker's auto-flip to the linked group — if the admin already picked an individual/group/list,
