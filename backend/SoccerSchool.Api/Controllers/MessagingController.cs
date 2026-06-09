@@ -1848,10 +1848,15 @@ public class MessagingController : ControllerBase
                 props["event.dateShort"] = localStart.ToString("MM/dd", us);
                 props["event.dayOfWeek"] = localStart.ToString("dddd", us);
                 props["event.time"] = localStart.ToString("h:mm tt", us);
-                // Prefer the structured venue's name as the location; the free-text Location is the
-                // fallback (and what synced games carry). Address is exposed separately.
-                props["event.location"] = ev.Venue?.Name ?? ev.Location ?? string.Empty;
+                // event.location: when a venue is set, combine "Name, Address" (just the name if it
+                // has no address); otherwise fall back to the free-text Location (what synced games
+                // carry). event.address is the venue address alone; event.field is the free-text
+                // detail (e.g. "field 3").
+                props["event.location"] = ev.Venue is not null
+                    ? (string.IsNullOrWhiteSpace(ev.Venue.Address) ? ev.Venue.Name : $"{ev.Venue.Name}, {ev.Venue.Address}")
+                    : (ev.Location ?? string.Empty);
                 props["event.address"] = ev.Venue?.Address ?? string.Empty;
+                props["event.field"] = ev.Location ?? string.Empty;
                 props["event.description"] = ev.Description ?? string.Empty;
                 if (ev.Team is not null) props["team.name"] = ev.Team.Name;
                 // If the event is part of a tournament, promote that tournament too even when
