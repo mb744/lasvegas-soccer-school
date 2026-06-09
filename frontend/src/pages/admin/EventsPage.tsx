@@ -750,7 +750,9 @@ function TournamentTeamPanel({
         location: gLocation.trim() || null,
         tournamentId: tour.id,
       })
-      setShowAdd(false); setGStart(''); setGOpponent(''); setGHome('unknown'); setGLocation('')
+      // Keep the form open so multiple games can be added back-to-back; just reset the fields.
+      setGStart(''); setGOpponent(''); setGHome('unknown'); setGLocation('')
+      vGame.reset()
       await reloadAll()
       await onChanged()
       onNotice(t('admin.teamSaved'))
