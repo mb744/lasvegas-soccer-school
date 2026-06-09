@@ -24,6 +24,16 @@ function toDateTimeLocal(iso: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
+/** Default "Be There" time: 30 minutes before the given datetime-local start value. Returns a
+ *  datetime-local string, or '' when the start is empty/invalid. */
+const DEFAULT_ARRIVE_OFFSET_MIN = 30
+function defaultArriveFor(startLocal: string): string {
+  if (!startLocal) return ''
+  const d = new Date(startLocal)
+  if (isNaN(d.getTime())) return ''
+  return toDateTimeLocal(new Date(d.getTime() - DEFAULT_ARRIVE_OFFSET_MIN * 60_000).toISOString())
+}
+
 type Tab = 'practices' | 'games' | 'tournaments' | 'misc'
 
 export function AdminEventsPage() {
@@ -534,6 +544,8 @@ function TournamentTeamPanel({
   const [editId, setEditId] = useState<number | null>(null)
   const [gStart, setGStart] = useState('')
   const [gArrive, setGArrive] = useState('')
+  // Once the admin edits "Be There" by hand, stop auto-deriving it from the start time.
+  const [gArriveTouched, setGArriveTouched] = useState(false)
   const [gOpponent, setGOpponent] = useState('')
   const [gHome, setGHome] = useState<'home' | 'away' | 'unknown'>('unknown')
   const [gLocation, setGLocation] = useState('')
@@ -748,7 +760,8 @@ function TournamentTeamPanel({
   }
 
   const resetGameForm = () => {
-    setGStart(''); setGArrive(''); setGOpponent(''); setGHome('unknown'); setGLocation('')
+    setGStart(''); setGArrive(''); setGArriveTouched(false)
+    setGOpponent(''); setGHome('unknown'); setGLocation('')
     vGame.reset()
   }
 
@@ -759,7 +772,9 @@ function TournamentTeamPanel({
     onError(''); onNotice('')
     setEditId(g.id)
     setGStart(toDateTimeLocal(g.startsAt))
-    setGArrive(g.arriveAt ? toDateTimeLocal(g.arriveAt) : '')
+    // Preserve a saved arrival time; otherwise seed the 30-min default and leave it adjustable.
+    setGArrive(g.arriveAt ? toDateTimeLocal(g.arriveAt) : defaultArriveFor(toDateTimeLocal(g.startsAt)))
+    setGArriveTouched(g.arriveAt != null)
     setGOpponent(g.opponentName ?? '')
     setGHome(g.isHome === true ? 'home' : g.isHome === false ? 'away' : 'unknown')
     setGLocation(g.location ?? '')
@@ -969,13 +984,19 @@ function TournamentTeamPanel({
             <label className="block text-xs">
               <RequiredLabel className="text-slate-600">{t('admin.msgPracticeStart')}</RequiredLabel>
               <input ref={vGame.register('startsAt')} type="datetime-local" value={gStart}
-                onChange={e => setGStart(e.target.value)}
+                onChange={e => {
+                  const v = e.target.value
+                  setGStart(v)
+                  // Auto-fill "Be There" to 30 min before, until the admin overrides it.
+                  if (!gArriveTouched) setGArrive(defaultArriveFor(v))
+                }}
                 onBlur={e => vGame.onFieldBlur('startsAt', e.target.value)}
                 className={`mt-1 w-full border border-slate-300 rounded-md px-2 py-1 text-sm ${vGame.fieldCls('startsAt')}`} />
             </label>
             <label className="block text-xs">
               <span className="text-slate-600">{t('admin.evtGameBeThere')}</span>
-              <input type="datetime-local" value={gArrive} onChange={e => setGArrive(e.target.value)}
+              <input type="datetime-local" value={gArrive}
+                onChange={e => { setGArrive(e.target.value); setGArriveTouched(true) }}
                 className="mt-1 w-full border border-slate-300 rounded-md px-2 py-1 text-sm" />
             </label>
             <label className="block text-xs">
