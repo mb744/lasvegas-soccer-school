@@ -48,6 +48,8 @@ const WEAR_AWAY: Record<Language, string> = {
 }
 const GAME_VS_PREFIX: Record<Language, string> = { 0: 'Game vs', 1: 'Partido vs' }
 const PRACTICE_FALLBACK: Record<Language, string> = { 0: 'Practice', 1: 'Práctica' }
+// Shoe-type wording for the event.shoeType variable — kept in sync with the backend resolver.
+const SHOE_LABELS: Record<number, string> = { 1: 'Cleats', 2: 'Turf shoes', 3: 'Tennis court shoes' }
 
 /** Wear text for a game's "Uniform" variable. Priority: the game's explicit uniform, then the
  *  club-wide uniform whose designation matches its home/away (1 = Home, 2 = Away). Falls back to
@@ -470,8 +472,11 @@ function ComposeTab({
     const usingEmailTemplate = mode === 'broadcast' && isEmailChannel && bodyMode === 'template'
     if (usingWhatsAppTemplate) {
       if (!selectedTemplate) { onError('Pick a template.'); return }
+      // Variables mapped to a context property (propertyKey) are filled server-side at send time
+      // (event details from the picked game, app/month settings, or per-recipient player/parent
+      // fields). Only require manual entry for unmapped, free-text variables.
       const missing = selectedTemplate.variables
-        .filter(v => !templateValues[v.position.toString()]?.trim())
+        .filter(v => !v.propertyKey && !templateValues[v.position.toString()]?.trim())
         .map(v => v.label)
       if (missing.length) { onError(`Fill in: ${missing.join(', ')}.`); return }
       setTemplatePreviewOpen(true)
@@ -479,6 +484,7 @@ function ComposeTab({
     }
     if (usingEmailTemplate) {
       if (!selectedEmailTemplate) { onError('Pick an email template.'); return }
+      // Email templates don't support property mapping, so every variable needs a value.
       const missing = selectedEmailTemplate.variables
         .filter(v => !templateValues[v.position.toString()]?.trim())
         .map(v => v.label)
@@ -2642,6 +2648,10 @@ function applyGameToTemplate(
         const wear = uniformWearText(game, uniforms, lang)
         if (wear) next[key] = wear
         // No mapping (practice/training with no uniform): leave for admin to type.
+      } else if (v.propertyKey === 'event.shoeType' || label.includes('shoe')) {
+        // Match the backend's event.shoeType wording so preview and send agree.
+        const shoe = SHOE_LABELS[game.shoeType]
+        if (shoe) next[key] = shoe
       }
     }
     return next

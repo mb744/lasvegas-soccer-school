@@ -315,7 +315,18 @@ public class MessagingController : ControllerBase
                 }
             }
 
+            // Variables mapped to a context property are auto-filled above when the context can
+            // satisfy them; ones it can't (e.g. player.* on a group send, or an unset event field)
+            // are intentionally left blank rather than blocking the send. Give them an empty value
+            // so the rendered template shows nothing instead of a literal {{n}}.
+            foreach (var v in template.Variables)
+            {
+                if (string.IsNullOrEmpty(v.PropertyKey)) continue;
+                var key = v.Position.ToString(CultureInfo.InvariantCulture);
+                if (!templateVars.ContainsKey(key)) templateVars[key] = string.Empty;
+            }
             var missing = template.Variables
+                .Where(v => string.IsNullOrEmpty(v.PropertyKey)) // only unmapped vars are required
                 .Select(v => v.Position.ToString(CultureInfo.InvariantCulture))
                 .Where(key => !templateVars.ContainsKey(key) || string.IsNullOrWhiteSpace(templateVars[key]))
                 .ToList();
