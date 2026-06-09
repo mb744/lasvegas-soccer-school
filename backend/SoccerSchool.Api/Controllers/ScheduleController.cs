@@ -1169,7 +1169,9 @@ public class ScheduleController : ControllerBase
     {
         if (days < 1) days = 1;
         if (days > 180) days = 180;
-        var from = DateTime.UtcNow.AddHours(-2);
+        // Include a short past window so recently-started/just-finished events are still pickable
+        // (e.g. messaging about a game that kicked off earlier today, or a tournament in progress).
+        var from = DateTime.UtcNow.AddDays(-7);
         var to = DateTime.UtcNow.AddDays(days);
 
         var games = await _db.ScheduledGames

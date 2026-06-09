@@ -131,7 +131,7 @@ export function AdminMessagingPage() {
     catch (e: any) { setError(extractError(e)) }
   }
   const refreshUpcomingGames = async () => {
-    try { setUpcomingGames(await Api.listUpcomingGames(30)) }
+    try { setUpcomingGames(await Api.listUpcomingGames(180)) }
     catch (e: any) { setError(extractError(e)) }
   }
   const refreshUniforms = async () => {
