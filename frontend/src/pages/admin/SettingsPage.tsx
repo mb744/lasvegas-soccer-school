@@ -7,13 +7,14 @@ import { TemplatesTab, DictionaryTab, SettingsTab as AutoResponseSettingsTab } f
 import { AgeClassificationsSection } from './AgeClassificationsPage'
 import { UniformsSection } from './UniformsSection'
 import { VenuesSection } from './VenuesSection'
+import { MappedFieldsSection } from './MappedFieldsSection'
 import type { WhatsAppTemplate, EmailTemplate } from '../../api/types'
 
 function errMsg(e: any): string {
   return e?.response?.data?.title || e?.response?.data || e?.message || 'Error'
 }
 
-type Tab = 'templates' | 'dictionary' | 'autoResponse' | 'ageClassifications' | 'uniforms' | 'venues' | 'backfill'
+type Tab = 'templates' | 'dictionary' | 'autoResponse' | 'ageClassifications' | 'uniforms' | 'venues' | 'mappedFields' | 'backfill'
 
 /** Top-level admin settings hub. Tabs mirror the Messaging page so the layout is consistent
  *  across admin cards. Currently houses:
@@ -83,6 +84,7 @@ export function AdminSettingsPage() {
           {tabBtn('ageClassifications', t('admin.settingsTabAgeClassifications'))}
           {tabBtn('uniforms', t('admin.settingsTabUniforms'))}
           {tabBtn('venues', t('admin.settingsTabVenues'))}
+          {tabBtn('mappedFields', t('admin.settingsTabMappedFields'))}
           {tabBtn('backfill', t('admin.settingsTabBackfill'))}
         </div>
 
@@ -148,6 +150,15 @@ export function AdminSettingsPage() {
         {tab === 'venues' && (
           <section className="bg-white border border-slate-200 rounded-lg p-4">
             <VenuesSection
+              onError={(e) => { setError(e); if (e) setNotice(null) }}
+              onNotice={(n) => { setNotice(n); if (n) setError(null) }}
+            />
+          </section>
+        )}
+
+        {tab === 'mappedFields' && (
+          <section className="bg-white border border-slate-200 rounded-lg p-4">
+            <MappedFieldsSection
               onError={(e) => { setError(e); if (e) setNotice(null) }}
               onNotice={(n) => { setNotice(n); if (n) setError(null) }}
             />

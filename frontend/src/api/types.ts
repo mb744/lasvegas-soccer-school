@@ -552,6 +552,22 @@ export interface TemplateProperty {
   label: string
 }
 
+export interface MappedField {
+  id: number
+  name: string
+  /** Stable property key (starts with "custom.") used by mapped template variables. */
+  key: string
+  /** Composition with {base.key} placeholders, e.g. "{event.venue}, {event.address}". */
+  template: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface SaveMappedFieldRequest {
+  name: string
+  template: string
+}
+
 export interface TemplateContextOption {
   context: TemplateContext
   label: string

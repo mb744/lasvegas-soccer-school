@@ -42,6 +42,7 @@ public static class TemplatePropertyRegistry
         new TemplateProperty("event.dayOfWeek", "Day of week (Sunday)"),
         new TemplateProperty("event.time", "Time (2:00 PM)"),
         new TemplateProperty("event.location", "Location (venue \"Name, Address\" when set, else free text)"),
+        new TemplateProperty("event.venue", "Venue name only (when a venue is set)"),
         new TemplateProperty("event.address", "Venue street address (when a venue is set)"),
         new TemplateProperty("event.field", "Field / location detail (free text, e.g. \"field 3\")"),
         new TemplateProperty("event.description", "Description (admin notes)"),

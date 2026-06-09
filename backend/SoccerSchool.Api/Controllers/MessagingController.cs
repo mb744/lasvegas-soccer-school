@@ -1933,8 +1933,9 @@ public class MessagingController : ControllerBase
     /// <summary>Dispatches to the right context-specific resolver. Empty dict for FreeForm
     /// or contexts the caller's request can't satisfy.</summary>
     private async Task<IReadOnlyDictionary<string, string>> ResolveContextPropertiesAsync(
-        TemplateContext context, CreateBroadcastRequest request, CancellationToken ct) =>
-        context switch
+        TemplateContext context, CreateBroadcastRequest request, CancellationToken ct)
+    {
+        var baseProps = context switch
         {
             // Consolidated catalog: pulls whichever properties the broadcast can satisfy.
             // Legacy TournamentConfirmation/EventReminder/EventCancellation tags are aliased
@@ -1947,6 +1948,22 @@ public class MessagingController : ControllerBase
             TemplateContext.MonthlyFee => BuildMonthlyFeeProperties(),
             _ => new Dictionary<string, string>(),
         };
+        if (context == TemplateContext.FreeForm) return baseProps;
+
+        // Add admin-defined composite fields (Settings → Mapped fields): each renders its template
+        // by substituting {base.key} placeholders with the resolved base values above.
+        var all = new Dictionary<string, string>(baseProps, StringComparer.Ordinal);
+        var custom = await _db.MappedFields.AsNoTracking().ToListAsync(ct);
+        foreach (var m in custom)
+            all[m.Key] = RenderMappedField(m.Template, baseProps);
+        return all;
+    }
+
+    /// <summary>Renders a mapped-field template by replacing each <c>{base.key}</c> placeholder with
+    /// its resolved value (empty when the key isn't available in this context).</summary>
+    private static string RenderMappedField(string template, IReadOnlyDictionary<string, string> props) =>
+        System.Text.RegularExpressions.Regex.Replace(template, @"\{([A-Za-z0-9_.]+)\}",
+            mm => props.TryGetValue(mm.Groups[1].Value, out var v) ? v : string.Empty);
 
     /// <summary>Consolidated resolver for the EventDetails context (and its legacy aliases).
     /// Pulls whichever properties the broadcast can satisfy: event.* + team.* from the
@@ -2032,6 +2049,7 @@ public class MessagingController : ControllerBase
                 props["event.location"] = ev.Venue is not null
                     ? (string.IsNullOrWhiteSpace(ev.Venue.Address) ? ev.Venue.Name : $"{ev.Venue.Name}, {ev.Venue.Address}")
                     : (ev.Location ?? string.Empty);
+                props["event.venue"] = ev.Venue?.Name ?? string.Empty;
                 props["event.address"] = ev.Venue?.Address ?? string.Empty;
                 props["event.field"] = ev.Location ?? string.Empty;
                 props["event.description"] = ev.Description ?? string.Empty;
@@ -2524,11 +2542,22 @@ public class MessagingController : ControllerBase
     /// <summary>Lists the property registry for a given <see cref="TemplateContext"/>. Drives
     /// the admin's per-variable "Map to" dropdown so they don't have to memorize key strings.</summary>
     [HttpGet("template-properties/{context}")]
-    public ActionResult<IEnumerable<TemplatePropertyDto>> ListTemplateProperties(TemplateContext context)
+    public async Task<ActionResult<IEnumerable<TemplatePropertyDto>>> ListTemplateProperties(
+        TemplateContext context, CancellationToken ct)
     {
         var props = TemplatePropertyRegistry.ForContext(context)
             .Select(p => new TemplatePropertyDto(p.Key, p.Label))
             .ToList();
+        // Append admin-defined composite fields (Settings → Mapped fields) for non-FreeForm
+        // contexts so they're selectable in the "Map to" dropdown alongside the base catalog.
+        if (context != TemplateContext.FreeForm)
+        {
+            var custom = await _db.MappedFields.AsNoTracking()
+                .OrderBy(m => m.Name)
+                .Select(m => new TemplatePropertyDto(m.Key, m.Name))
+                .ToListAsync(ct);
+            props.AddRange(custom);
+        }
         return Ok(props);
     }
 

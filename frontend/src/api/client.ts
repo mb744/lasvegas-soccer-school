@@ -89,6 +89,8 @@ import type {
   TemplatePreviewResponse,
   TemplateProperty,
   TemplateContext,
+  MappedField,
+  SaveMappedFieldRequest,
   TemplateContextOption,
   Coach,
   CoachSummary,
@@ -823,6 +825,21 @@ export const Api = {
   async listTemplateProperties(context: TemplateContext) {
     const r = await api.get<TemplateProperty[]>(`/messaging/template-properties/${context}`)
     return r.data
+  },
+  async listMappedFields() {
+    const r = await api.get<MappedField[]>('/mapped-fields')
+    return r.data
+  },
+  async createMappedField(payload: SaveMappedFieldRequest) {
+    const r = await api.post<MappedField>('/mapped-fields', payload)
+    return r.data
+  },
+  async updateMappedField(id: number, payload: SaveMappedFieldRequest) {
+    const r = await api.put<MappedField>(`/mapped-fields/${id}`, payload)
+    return r.data
+  },
+  async deleteMappedField(id: number) {
+    await api.delete(`/mapped-fields/${id}`)
   },
   /** Hard-coded list of TemplateContext options for the Context dropdown on the Templates tab. */
   async listTemplateContexts() {

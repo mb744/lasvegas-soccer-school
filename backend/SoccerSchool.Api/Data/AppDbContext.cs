@@ -78,6 +78,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
     public DbSet<AgeClassification> AgeClassifications => Set<AgeClassification>();
     public DbSet<Uniform> Uniforms => Set<Uniform>();
     public DbSet<Venue> Venues => Set<Venue>();
+    public DbSet<MappedField> MappedFields => Set<MappedField>();
 
     /// <summary>Backing store for the ASP.NET Core data-protection key ring (cookie encryption
     /// keys). Persisting these in SQL keeps auth cookies valid across container restarts.</summary>
@@ -423,6 +424,12 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
         modelBuilder.Entity<Venue>(b =>
         {
             b.HasIndex(v => v.Name).IsUnique();
+        });
+
+        modelBuilder.Entity<MappedField>(b =>
+        {
+            b.HasIndex(m => m.Name).IsUnique();
+            b.HasIndex(m => m.Key).IsUnique();
         });
 
         modelBuilder.Entity<PhraseTranslation>(b =>
