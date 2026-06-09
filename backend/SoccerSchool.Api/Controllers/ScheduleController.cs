@@ -49,7 +49,8 @@ public class ScheduleController : ControllerBase
     }
 
     [HttpGet("teams/{id:int}")]
-    public async Task<ActionResult<TeamDetail>> GetTeam(int id, CancellationToken ct)
+    public async Task<ActionResult<TeamDetail>> GetTeam(
+        int id, CancellationToken ct, [FromQuery] bool includePast = false)
     {
         var team = await _db.Teams
             .Include(t => t.MessageGroup)
@@ -58,9 +59,12 @@ public class ScheduleController : ControllerBase
             .FirstOrDefaultAsync(t => t.Id == id, ct);
         if (team is null) return NotFound();
 
+        // Default to upcoming-only (the endpoint's historical contract). The tournament/league
+        // admin panel passes includePast=true because it manages a competition's full schedule,
+        // where games that already happened still need to be listed and editable.
         var now = DateTime.UtcNow;
         var games = team.Games
-            .Where(g => g.StartsAt >= now.AddDays(-1))
+            .Where(g => includePast || g.StartsAt >= now.AddDays(-1))
             .OrderBy(g => g.StartsAt)
             .Select(g => new ScheduledGameDto(
                 g.Id, team.Id, team.Name, team.MessageGroupId, team.MessageGroup?.Name,

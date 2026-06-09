@@ -467,8 +467,10 @@ export const Api = {
     const r = await api.get<TeamSummary[]>('/schedule/teams')
     return r.data
   },
-  async getTeam(id: number) {
-    const r = await api.get<TeamDetail>(`/schedule/teams/${id}`)
+  async getTeam(id: number, opts?: { includePast?: boolean }) {
+    const r = await api.get<TeamDetail>(`/schedule/teams/${id}`, {
+      params: opts?.includePast ? { includePast: true } : undefined,
+    })
     return r.data
   },
   async createTeam(payload: SaveTeamRequest) {

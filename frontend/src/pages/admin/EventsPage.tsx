@@ -534,7 +534,7 @@ function TournamentTeamPanel({
       const [av, att, td] = await Promise.all([
         Api.listAvailablePlayers(tt.teamId),
         Api.getTournamentTeamAttendance(tour.id, tt.teamId),
-        Api.getTeam(tt.teamId),
+        Api.getTeam(tt.teamId, { includePast: true }),
       ])
       setAvailable(av); setAttendance(att); setTeamDetail(td)
     } catch (e: any) { onError(errMsg(e)) }
