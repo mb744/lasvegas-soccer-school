@@ -59,6 +59,10 @@ public class ScheduledGame
     public int? VenueId { get; set; }
     public Venue? Venue { get; set; }
 
+    /// <summary>Footwear the event calls for (cleats / turf / tennis-court). Unspecified = not set.
+    /// Admin-entered; surfaces in messaging as event.shoeType.</summary>
+    public ShoeType ShoeType { get; set; } = ShoeType.Unspecified;
+
     /// <summary>SUMMARY field — typically "{team} vs {opponent}" or "Practice — {field}" depending
     /// on how the feed source formats it. Surfaced to the admin in the game picker.</summary>
     [MaxLength(512)]

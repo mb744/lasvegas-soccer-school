@@ -6,11 +6,12 @@ import { TeamScheduleSection } from '../../components/TeamScheduleSection'
 import { RequiredLabel, useRequiredValidation } from '../../components/RequiredField'
 import { TeamCoachEditor } from '../../components/TeamCoachEditor'
 import { VenuePicker } from '../../components/VenuePicker'
+import { SHOE_TYPES, shoeTypeKey } from '../../components/shoeType'
 import { Api } from '../../api/client'
 import type {
   RosterTeamSummary, RosterTeamDetail, TournamentSummary, TournamentTeam, TournamentKind,
   AttendanceStatus, TournamentAttendanceList, AvailablePlayer,
-  TeamDetail, ScheduledGame, TournamentSendPreview, Uniform, Venue,
+  TeamDetail, ScheduledGame, TournamentSendPreview, Uniform, Venue, ShoeType,
 } from '../../api/types'
 
 function errMsg(e: any): string {
@@ -555,6 +556,7 @@ function TournamentTeamPanel({
   // '' = use the home/away → designation mapping; otherwise the chosen uniform's id.
   const [gUniformId, setGUniformId] = useState('')
   const [gVenueId, setGVenueId] = useState<number | ''>('')
+  const [gShoeType, setGShoeType] = useState<ShoeType>(0)
   const vGame = useRequiredValidation(['startsAt'])
 
   const reloadAll = async () => {
@@ -772,7 +774,7 @@ function TournamentTeamPanel({
 
   const resetGameForm = () => {
     setGStart(''); setGArrive(''); setGArriveTouched(false)
-    setGOpponent(''); setGHome('unknown'); setGLocation(''); setGUniformId(''); setGVenueId('')
+    setGOpponent(''); setGHome('unknown'); setGLocation(''); setGUniformId(''); setGVenueId(''); setGShoeType(0)
     vGame.reset()
   }
 
@@ -791,6 +793,7 @@ function TournamentTeamPanel({
     setGLocation(g.location ?? '')
     setGUniformId(g.uniformId != null ? String(g.uniformId) : '')
     setGVenueId(g.venueId ?? '')
+    setGShoeType(g.shoeType)
     vGame.reset()
     setShowAdd(true)
   }
@@ -810,6 +813,7 @@ function TournamentTeamPanel({
         tournamentId: tour.id,
         uniformId: gUniformId ? Number(gUniformId) : null,
         venueId: gVenueId === '' ? null : gVenueId,
+        shoeType: gShoeType,
       }
       if (editId !== null) {
         await Api.updateGame(editId, payload)
@@ -1055,6 +1059,13 @@ function TournamentTeamPanel({
                 {uniforms.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
               </select>
             </label>
+            <label className="block text-xs">
+              <span className="text-slate-600">{t('admin.evtShoeType')}</span>
+              <select value={gShoeType} onChange={e => setGShoeType(Number(e.target.value) as ShoeType)}
+                className="mt-1 w-full border border-slate-300 rounded-md px-2 py-1 text-sm">
+                {SHOE_TYPES.map(s => <option key={s} value={s}>{t(shoeTypeKey(s))}</option>)}
+              </select>
+            </label>
             <div className="sm:col-span-2 flex gap-2">
               <button type="submit" disabled={busy}
                 className="text-xs bg-emerald-700 text-white px-3 py-1.5 rounded-md hover:bg-emerald-800 disabled:opacity-60">
@@ -1076,6 +1087,7 @@ function TournamentTeamPanel({
                 <th className="py-1 pr-2">{t('admin.evtVenue')}</th>
                 <th className="py-1 pr-2">{t('admin.evtField')}</th>
                 <th className="py-1 pr-2">{t('admin.evtGameUniform')}</th>
+                <th className="py-1 pr-2">{t('admin.evtShoeType')}</th>
                 <th className="py-1 pr-2 text-right"></th>
               </tr>
             </thead>
@@ -1088,6 +1100,7 @@ function TournamentTeamPanel({
                   <td className="py-1 pr-2">{venues.find(v => v.id === g.venueId)?.name ?? '—'}</td>
                   <td className="py-1 pr-2">{g.location ?? '—'}</td>
                   <td className="py-1 pr-2">{effectiveUniform(g)?.name ?? '—'}</td>
+                  <td className="py-1 pr-2">{g.shoeType ? t(shoeTypeKey(g.shoeType)) : '—'}</td>
                   <td className="py-1 pr-2 text-right whitespace-nowrap">
                     <button type="button" onClick={() => startEditGame(g)}
                       className="text-emerald-700 hover:underline">{t('admin.edit')}</button>

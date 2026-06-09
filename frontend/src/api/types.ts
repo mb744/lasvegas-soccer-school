@@ -665,7 +665,12 @@ export interface ScheduledGame {
   uniformId: number | null
   /** Structured venue/park; null = none (free-text location only). */
   venueId: number | null
+  /** Footwear: 0 = Unspecified, 1 = Cleats, 2 = Turf shoes, 3 = Tennis court shoes. */
+  shoeType: ShoeType
 }
+
+/** 0 = Unspecified, 1 = Cleats, 2 = Turf shoes, 3 = Tennis court shoes. */
+export type ShoeType = 0 | 1 | 2 | 3
 
 /** 0 = None, 1 = Home, 2 = Away, 3 = Practice. At most one uniform per non-None value. */
 export type UniformDesignation = 0 | 1 | 2 | 3
@@ -877,6 +882,7 @@ export interface SavePracticeRequest {
   location?: string | null
   summary?: string | null
   venueId?: number | null
+  shoeType?: ShoeType
 }
 
 export interface SaveGameRequest {
@@ -890,6 +896,7 @@ export interface SaveGameRequest {
   tournamentId?: number | null
   uniformId?: number | null  // explicit uniform override; null = use mapping
   venueId?: number | null    // structured venue/park; null = none
+  shoeType?: ShoeType        // 0 = Unspecified … 3 = Tennis court shoes
 }
 
 export interface SavePracticeSeriesRequest {
@@ -902,6 +909,7 @@ export interface SavePracticeSeriesRequest {
   location?: string | null
   summary?: string | null
   venueId?: number | null
+  shoeType?: ShoeType
 }
 
 export interface PracticeSeriesCreated {

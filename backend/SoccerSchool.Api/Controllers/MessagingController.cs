@@ -1842,6 +1842,13 @@ public class MessagingController : ControllerBase
                 props["event.opponent"] = ev.OpponentName ?? string.Empty;
                 props["event.isHome"] = ev.IsHome switch { true => "Home", false => "Away", _ => string.Empty };
                 props["event.uniform"] = await ResolveEventUniformTextAsync(ev, ct);
+                props["event.shoeType"] = ev.ShoeType switch
+                {
+                    ShoeType.Cleats => "Cleats",
+                    ShoeType.TurfShoes => "Turf shoes",
+                    ShoeType.TennisCourtShoes => "Tennis court shoes",
+                    _ => string.Empty,
+                };
                 props["event.dateTime"] = localStart.ToString("ddd, MMM d, yyyy — h:mm tt", us);
                 props["event.date"] = localStart.ToString("MMM d, yyyy", us);
                 props["event.dateLong"] = localStart.ToString("MMMM d, yyyy", us);

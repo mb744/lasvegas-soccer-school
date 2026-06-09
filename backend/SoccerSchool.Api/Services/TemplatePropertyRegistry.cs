@@ -34,6 +34,7 @@ public static class TemplatePropertyRegistry
         new TemplateProperty("event.opponent", "Opponent name (games only)"),
         new TemplateProperty("event.isHome", "Home / Away / blank (games only)"),
         new TemplateProperty("event.uniform", "Uniform / wear text (e.g. \"white jersey, blue shorts, blue socks\")"),
+        new TemplateProperty("event.shoeType", "Shoe type (\"Cleats\", \"Turf shoes\", \"Tennis court shoes\")"),
         new TemplateProperty("event.dateTime", "Date + time (Sun, Jun 5, 2026 — 2:00 PM)"),
         new TemplateProperty("event.date", "Date (Jun 5, 2026)"),
         new TemplateProperty("event.dateLong", "Date — long form (June 5, 2026)"),

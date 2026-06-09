@@ -73,7 +73,9 @@ public record ScheduledGameDto(
     /// <summary>Explicit uniform override (null = use the home/away → designation mapping).</summary>
     int? UniformId,
     /// <summary>Structured venue/park (null = none; the free-text Location is the only "where").</summary>
-    int? VenueId);
+    int? VenueId,
+    /// <summary>Footwear (0 = Unspecified, 1 = Cleats, 2 = Turf, 3 = Tennis-court).</summary>
+    ShoeType ShoeType);
 
 public record SavePracticeRequest
 {
@@ -89,6 +91,9 @@ public record SavePracticeRequest
 
     /// <summary>Optional structured venue (park/field). Null = none.</summary>
     public int? VenueId { get; init; }
+
+    /// <summary>Footwear (0 = Unspecified, 1 = Cleats, 2 = Turf, 3 = Tennis-court).</summary>
+    public ShoeType ShoeType { get; init; } = ShoeType.Unspecified;
 }
 
 /// <summary>Admin-entered game (manual; not scraped from GotSport). Lives in the same
@@ -124,6 +129,9 @@ public record SaveGameRequest
 
     /// <summary>Optional structured venue (park/field). Null = none.</summary>
     public int? VenueId { get; init; }
+
+    /// <summary>Footwear (0 = Unspecified, 1 = Cleats, 2 = Turf, 3 = Tennis-court).</summary>
+    public ShoeType ShoeType { get; init; } = ShoeType.Unspecified;
 }
 
 /// <summary>Create a recurring practice series. Each combination of (day-of-week × occurrence date
@@ -156,6 +164,9 @@ public record SavePracticeSeriesRequest
 
     /// <summary>Optional structured venue (park/field) applied to every occurrence. Null = none.</summary>
     public int? VenueId { get; init; }
+
+    /// <summary>Footwear applied to every occurrence (0 = Unspecified, 1 = Cleats, 2 = Turf, 3 = Tennis-court).</summary>
+    public ShoeType ShoeType { get; init; } = ShoeType.Unspecified;
 }
 
 public record PracticeSeriesCreatedDto(Guid SeriesId, int Count, IReadOnlyList<ScheduledGameDto> Occurrences);
