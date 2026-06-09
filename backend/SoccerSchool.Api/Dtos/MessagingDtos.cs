@@ -177,6 +177,11 @@ public record SendPerPlayerRequest
 
 public record SendPerPlayerResult(int Sent, int Skipped, int Total);
 
+/// <summary>One rendered per-player message for the pre-send preview.</summary>
+public record PerPlayerPreviewItem(string PlayerName, IReadOnlyList<string> Recipients, string Body);
+
+public record PerPlayerPreviewResult(IReadOnlyList<PerPlayerPreviewItem> Items, int Total);
+
 public record BroadcastSummary(
     int Id,
     MessageChannel Channel,

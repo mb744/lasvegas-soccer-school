@@ -6,6 +6,7 @@ import type {
   CreateBroadcastRequest,
   SendPerPlayerRequest,
   SendPerPlayerResult,
+  PerPlayerPreviewResult,
   CreateGroupConversationRequest,
   CreateOutreachRequest,
   GroupConversationDetail,
@@ -383,6 +384,10 @@ export const Api = {
   },
   async sendEventPerPlayer(payload: SendPerPlayerRequest) {
     const r = await api.post<SendPerPlayerResult>('/messaging/broadcasts/send-per-player', payload)
+    return r.data
+  },
+  async previewEventPerPlayer(payload: SendPerPlayerRequest) {
+    const r = await api.post<PerPlayerPreviewResult>('/messaging/broadcasts/preview-per-player', payload)
     return r.data
   },
   async listBroadcasts() {

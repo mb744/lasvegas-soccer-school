@@ -23,6 +23,7 @@ import type {
   SaveTemplateVariable,
   ScheduledGame,
   Uniform,
+  PerPlayerPreviewResult,
   TemplateContext,
   TemplateContextOption,
   TemplateProperty,
@@ -329,6 +330,8 @@ function ComposeTab({
   // Personalize per player: fan one message out per rostered player (each child's name resolved
   // individually), so a parent with multiple players on the team gets one message per child.
   const [perPlayer, setPerPlayer] = useState(false)
+  // Holds the rendered per-player preview while the confirm modal is open; null when closed.
+  const [perPlayerPreview, setPerPlayerPreview] = useState<PerPlayerPreviewResult | null>(null)
   const [previewStep, setPreviewStep] = useState<'edit' | 'confirm' | null>(null)
   const [templatePreviewOpen, setTemplatePreviewOpen] = useState(false)
   const [sending, setSending] = useState(false)
@@ -491,7 +494,7 @@ function ComposeTab({
         .filter(v => !v.propertyKey && !templateValues[v.position.toString()]?.trim())
         .map(v => v.label)
       if (missing.length) { onError(`Fill in: ${missing.join(', ')}.`); return }
-      if (perPlayer && canPerPlayer) { await sendPerPlayer(); return }
+      if (perPlayer && canPerPlayer) { await openPerPlayerPreview(); return }
       setTemplatePreviewOpen(true)
       return
     }
@@ -520,17 +523,30 @@ function ComposeTab({
     setPreviewStep('edit')
   }
 
+  const perPlayerPayload = () => ({
+    channel,
+    whatsAppTemplateId: selectedTemplate!.id,
+    defaultLanguage: defaultLang,
+    scheduledGameId: pickedEventId,
+    templateVariables: templateValues,
+    target: target(),
+  })
+
+  // Step 1: fetch the rendered per-player messages and open the confirm modal.
+  const openPerPlayerPreview = async () => {
+    setSending(true)
+    try {
+      setPerPlayerPreview(await Api.previewEventPerPlayer(perPlayerPayload()))
+    } catch (e: any) { onError(extractError(e)) }
+    finally { setSending(false) }
+  }
+
+  // Step 2: confirm — actually fan the messages out.
   const sendPerPlayer = async () => {
     setSending(true)
     try {
-      const r = await Api.sendEventPerPlayer({
-        channel,
-        whatsAppTemplateId: selectedTemplate!.id,
-        defaultLanguage: defaultLang,
-        scheduledGameId: pickedEventId,
-        templateVariables: templateValues,
-        target: target(),
-      })
+      const r = await Api.sendEventPerPlayer(perPlayerPayload())
+      setPerPlayerPreview(null)
       await onSent(t('admin.msgPerPlayerSent', { sent: r.sent, total: r.total }))
     } catch (e: any) { onError(extractError(e)) }
     finally { setSending(false) }
@@ -956,6 +972,14 @@ function ComposeTab({
         sending={sending}
         onCancel={() => setTemplatePreviewOpen(false)}
         onConfirm={() => sendNow({ usingTemplate: true })}
+      />
+    )}
+    {perPlayerPreview && (
+      <PerPlayerPreviewModal
+        preview={perPlayerPreview}
+        sending={sending}
+        onCancel={() => setPerPlayerPreview(null)}
+        onConfirm={sendPerPlayer}
       />
     )}
     </>
@@ -2997,6 +3021,56 @@ function TemplatePreviewModal({
           <button onClick={onConfirm} disabled={sending}
             className="bg-emerald-700 text-white text-sm font-semibold px-4 py-2 rounded-md hover:bg-emerald-800 disabled:opacity-60">
             {sending ? t('admin.sending') : t('admin.msgPreviewConfirmSend')}
+          </button>
+          <button onClick={onCancel} disabled={sending}
+            className="text-sm text-slate-600 hover:underline ml-auto">{t('admin.msgCancel')}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** Pre-send preview for a per-player fan-out: lists the rendered message each rostered player's
+ *  guardians will receive (one card per player), so the admin can confirm the personalized data
+ *  before committing the send. */
+function PerPlayerPreviewModal({
+  preview, sending, onCancel, onConfirm,
+}: {
+  preview: PerPlayerPreviewResult
+  sending: boolean
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-start justify-center p-4 overflow-y-auto">
+      <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full mt-10 p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-bold text-emerald-800">{t('admin.msgPerPlayerPreviewTitle')}</h2>
+          <button onClick={onCancel} className="text-sm text-slate-500 hover:text-slate-700">✕</button>
+        </div>
+        <p className="text-sm text-slate-600">{t('admin.msgPerPlayerPreviewHelp', { count: preview.total })}</p>
+
+        {preview.items.length === 0 ? (
+          <div className="text-sm text-slate-500">{t('admin.msgPerPlayerPreviewEmpty')}</div>
+        ) : (
+          <div className="space-y-3 max-h-[55vh] overflow-y-auto">
+            {preview.items.map((it, i) => (
+              <div key={i} className="border border-slate-200 rounded-md p-3">
+                <div className="flex items-baseline justify-between gap-2 mb-1">
+                  <span className="font-medium text-slate-800">{it.playerName}</span>
+                  <span className="text-xs text-slate-500 text-right">{it.recipients.join(', ') || '—'}</span>
+                </div>
+                <pre className="w-full border border-slate-200 bg-slate-50 rounded-md px-3 py-2 text-sm whitespace-pre-wrap">{it.body}</pre>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="flex items-center gap-3 pt-3 border-t border-slate-100">
+          <button onClick={onConfirm} disabled={sending || preview.items.length === 0}
+            className="bg-emerald-700 text-white text-sm font-semibold px-4 py-2 rounded-md hover:bg-emerald-800 disabled:opacity-60">
+            {sending ? t('admin.sending') : t('admin.msgPerPlayerPreviewConfirm', { count: preview.total })}
           </button>
           <button onClick={onCancel} disabled={sending}
             className="text-sm text-slate-600 hover:underline ml-auto">{t('admin.msgCancel')}</button>

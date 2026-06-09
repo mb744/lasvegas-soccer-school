@@ -430,6 +430,17 @@ export interface SendPerPlayerResult {
   total: number
 }
 
+export interface PerPlayerPreviewItem {
+  playerName: string
+  recipients: string[]
+  body: string
+}
+
+export interface PerPlayerPreviewResult {
+  items: PerPlayerPreviewItem[]
+  total: number
+}
+
 export interface BroadcastSummary {
   id: number
   channel: MessageChannel

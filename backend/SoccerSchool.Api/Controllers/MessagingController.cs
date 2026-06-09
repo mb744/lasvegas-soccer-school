@@ -494,37 +494,9 @@ public class MessagingController : ControllerBase
     public async Task<ActionResult<SendPerPlayerResult>> SendPerPlayer(
         [FromBody] SendPerPlayerRequest request, CancellationToken ct)
     {
-        if (request.Channel != MessageChannel.WhatsApp)
-            return BadRequest("Per-player personalization is available on WhatsApp templates.");
-        if (request.WhatsAppTemplateId <= 0)
-            return BadRequest("A WhatsApp template is required for a per-player send.");
-
-        var template = await _db.WhatsAppTemplates.Include(t => t.Variables)
-            .FirstOrDefaultAsync(t => t.Id == request.WhatsAppTemplateId, ct);
-        if (template is null) return BadRequest("Template not found.");
-
-        var teamId = await ResolveTeamIdFromTargetAsync(request.Target, ct);
-        if (teamId is null)
-            return BadRequest("Per-player send needs a team recipient — pick a \"Team: …\" group or a team's message group.");
-
-        var team = await _db.Teams
-            .Include(t => t.Roster).ThenInclude(tp => tp.Player)
-            .FirstOrDefaultAsync(t => t.Id == teamId, ct);
-        if (team is null) return NotFound();
-        if (team.Roster.Count == 0) return BadRequest("This team has no rostered players.");
-
-        // Shared values for every player, minus any position mapped to a per-player property —
-        // those are resolved per player inside CreateBroadcast so each child gets their own name.
-        var shared = (request.TemplateVariables ?? new())
-            .Where(kv => !string.IsNullOrEmpty(kv.Key))
-            .ToDictionary(kv => kv.Key, kv => kv.Value ?? string.Empty);
-        foreach (var v in template.Variables)
-        {
-            if (v.PropertyKey is not null
-                && (v.PropertyKey.StartsWith("player.", StringComparison.Ordinal)
-                    || v.PropertyKey.StartsWith("parent.", StringComparison.Ordinal)))
-                shared.Remove(v.Position.ToString(CultureInfo.InvariantCulture));
-        }
+        var prep = await PreparePerPlayerAsync(request, ct);
+        if (prep.Error is not null) return BadRequest(prep.Error);
+        var (team, template, shared) = (prep.Team!, prep.Template!, prep.Shared);
 
         var batchId = Guid.NewGuid();
         int sent = 0, skipped = 0;
@@ -552,6 +524,89 @@ public class MessagingController : ControllerBase
             else skipped++;
         }
         return Ok(new SendPerPlayerResult(sent, skipped, team.Roster.Count));
+    }
+
+    /// <summary>Pre-send preview for a per-player fan-out: renders the message each rostered player's
+    /// guardians would receive, with player.*/parent.* resolved per player — exactly what
+    /// <see cref="SendPerPlayer"/> will send. Lets the admin confirm the personalized data first.</summary>
+    [HttpPost("broadcasts/preview-per-player")]
+    public async Task<ActionResult<PerPlayerPreviewResult>> PreviewPerPlayer(
+        [FromBody] SendPerPlayerRequest request, CancellationToken ct)
+    {
+        var prep = await PreparePerPlayerAsync(request, ct);
+        if (prep.Error is not null) return BadRequest(prep.Error);
+        var (team, template, shared) = (prep.Team!, prep.Template!, prep.Shared);
+
+        var items = new List<PerPlayerPreviewItem>();
+        foreach (var tp in team.Roster)
+        {
+            var player = tp.Player;
+            if (player is null) continue;
+            // Resolve the same per-player values the send will use, then render the template body.
+            var props = await ResolveContextPropertiesAsync(template.Context,
+                new CreateBroadcastRequest { ScheduledGameId = request.ScheduledGameId, PlayerId = player.Id }, ct);
+            var values = new Dictionary<string, string>(shared);
+            foreach (var v in template.Variables)
+            {
+                var key = v.Position.ToString(CultureInfo.InvariantCulture);
+                if (values.TryGetValue(key, out var av) && !string.IsNullOrWhiteSpace(av)) continue;
+                if (!string.IsNullOrEmpty(v.PropertyKey) && props.TryGetValue(v.PropertyKey, out var mapped) && !string.IsNullOrEmpty(mapped))
+                    values[key] = mapped;
+            }
+            var body = RenderTemplatePreviewBody(template.PreviewText, template.Variables, values);
+            var recips = await _resolver.ResolveAsync(MapTarget(new BroadcastTargetDto
+            {
+                Kind = RecipientTargetKindDto.DynamicGroup,
+                DynamicGroupKey = $"{RecipientResolver.DynamicPlayerPrefix}{player.Id}",
+            }), ct);
+            var names = recips.Recipients
+                .Select(r => string.IsNullOrWhiteSpace(r.Name) ? r.Phone : r.Name)
+                .ToList();
+            items.Add(new PerPlayerPreviewItem($"{player.FirstName} {player.LastName}".Trim(), names, body));
+        }
+        return Ok(new PerPlayerPreviewResult(items, items.Count));
+    }
+
+    /// <summary>Shared setup for the per-player send + preview: validates the request, resolves the
+    /// target team + roster, and builds the values shared across all players (admin/auto-filled,
+    /// minus positions mapped to player.*/parent.* which resolve per player). Error is non-null on
+    /// any validation failure.</summary>
+    private async Task<(Domain.Team? Team, WhatsAppTemplate? Template, Dictionary<string, string> Shared, string? Error)>
+        PreparePerPlayerAsync(SendPerPlayerRequest request, CancellationToken ct)
+    {
+        var empty = new Dictionary<string, string>();
+        if (request.Channel != MessageChannel.WhatsApp)
+            return (null, null, empty, "Per-player personalization is available on WhatsApp templates.");
+        if (request.WhatsAppTemplateId <= 0)
+            return (null, null, empty, "A WhatsApp template is required for a per-player send.");
+
+        var template = await _db.WhatsAppTemplates.Include(t => t.Variables)
+            .FirstOrDefaultAsync(t => t.Id == request.WhatsAppTemplateId, ct);
+        if (template is null) return (null, null, empty, "Template not found.");
+
+        var teamId = await ResolveTeamIdFromTargetAsync(request.Target, ct);
+        if (teamId is null)
+            return (null, template, empty, "Per-player send needs a team recipient — pick a \"Team: …\" group or a team's message group.");
+
+        var team = await _db.Teams
+            .Include(t => t.Roster).ThenInclude(tp => tp.Player)
+            .FirstOrDefaultAsync(t => t.Id == teamId, ct);
+        if (team is null) return (null, template, empty, "Team not found.");
+        if (team.Roster.Count == 0) return (null, template, empty, "This team has no rostered players.");
+
+        // Shared values for every player, minus any position mapped to a per-player property —
+        // those resolve per player so each child gets their own name.
+        var shared = (request.TemplateVariables ?? new())
+            .Where(kv => !string.IsNullOrEmpty(kv.Key))
+            .ToDictionary(kv => kv.Key, kv => kv.Value ?? string.Empty);
+        foreach (var v in template.Variables)
+        {
+            if (v.PropertyKey is not null
+                && (v.PropertyKey.StartsWith("player.", StringComparison.Ordinal)
+                    || v.PropertyKey.StartsWith("parent.", StringComparison.Ordinal)))
+                shared.Remove(v.Position.ToString(CultureInfo.InvariantCulture));
+        }
+        return (team, template, shared, null);
     }
 
     /// <summary>Maps a broadcast target to the team it represents: a "team-{id}" dynamic group, or
