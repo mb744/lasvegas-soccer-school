@@ -66,7 +66,10 @@ public record ScheduledGameDto(
     bool IsCancelled,
     DateTime? CancelledAt,
     int? TournamentId,
-    string? TournamentName);
+    string? TournamentName,
+    /// <summary>"Be There" time — when players should arrive (typically 15–30 min before
+    /// StartsAt). Null when not set. Games only; practices leave it null.</summary>
+    DateTime? ArriveAt);
 
 public record SavePracticeRequest
 {
@@ -104,6 +107,10 @@ public record SaveGameRequest
 
     /// <summary>Optional tournament this game belongs to (set when added from the Tournaments tab).</summary>
     public int? TournamentId { get; init; }
+
+    /// <summary>"Be There" arrival time — when players should show up (typically 15–30 min
+    /// before StartsAt). Null = not set.</summary>
+    public DateTime? ArriveAt { get; init; }
 }
 
 /// <summary>Create a recurring practice series. Each combination of (day-of-week × occurrence date

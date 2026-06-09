@@ -533,6 +533,7 @@ function TournamentTeamPanel({
   const [showAdd, setShowAdd] = useState(false)
   const [editId, setEditId] = useState<number | null>(null)
   const [gStart, setGStart] = useState('')
+  const [gArrive, setGArrive] = useState('')
   const [gOpponent, setGOpponent] = useState('')
   const [gHome, setGHome] = useState<'home' | 'away' | 'unknown'>('unknown')
   const [gLocation, setGLocation] = useState('')
@@ -747,7 +748,7 @@ function TournamentTeamPanel({
   }
 
   const resetGameForm = () => {
-    setGStart(''); setGOpponent(''); setGHome('unknown'); setGLocation('')
+    setGStart(''); setGArrive(''); setGOpponent(''); setGHome('unknown'); setGLocation('')
     vGame.reset()
   }
 
@@ -758,6 +759,7 @@ function TournamentTeamPanel({
     onError(''); onNotice('')
     setEditId(g.id)
     setGStart(toDateTimeLocal(g.startsAt))
+    setGArrive(g.arriveAt ? toDateTimeLocal(g.arriveAt) : '')
     setGOpponent(g.opponentName ?? '')
     setGHome(g.isHome === true ? 'home' : g.isHome === false ? 'away' : 'unknown')
     setGLocation(g.location ?? '')
@@ -773,6 +775,7 @@ function TournamentTeamPanel({
     try {
       const payload = {
         startsAt: new Date(gStart).toISOString(),
+        arriveAt: gArrive ? new Date(gArrive).toISOString() : null,
         opponentName: gOpponent.trim() || null,
         isHome: gHome === 'home' ? true : gHome === 'away' ? false : null,
         location: gLocation.trim() || null,
@@ -971,6 +974,11 @@ function TournamentTeamPanel({
                 className={`mt-1 w-full border border-slate-300 rounded-md px-2 py-1 text-sm ${vGame.fieldCls('startsAt')}`} />
             </label>
             <label className="block text-xs">
+              <span className="text-slate-600">{t('admin.evtGameBeThere')}</span>
+              <input type="datetime-local" value={gArrive} onChange={e => setGArrive(e.target.value)}
+                className="mt-1 w-full border border-slate-300 rounded-md px-2 py-1 text-sm" />
+            </label>
+            <label className="block text-xs">
               <span className="text-slate-600">{t('admin.msgGameOpponent')}</span>
               <input type="text" value={gOpponent} onChange={e => setGOpponent(e.target.value)}
                 className="mt-1 w-full border border-slate-300 rounded-md px-2 py-1 text-sm" />
@@ -1005,6 +1013,7 @@ function TournamentTeamPanel({
             <thead>
               <tr className="text-left text-slate-500 border-b">
                 <th className="py-1 pr-2">{t('admin.msgWhen')}</th>
+                <th className="py-1 pr-2">{t('admin.evtGameBeThere')}</th>
                 <th className="py-1 pr-2">{t('admin.msgGameOpponent')}</th>
                 <th className="py-1 pr-2">{t('admin.msgLocation')}</th>
                 <th className="py-1 pr-2 text-right"></th>
@@ -1014,6 +1023,7 @@ function TournamentTeamPanel({
               {tournamentGames.map((g: ScheduledGame) => (
                 <tr key={g.id} className={`border-b last:border-0 ${g.isCancelled ? 'text-slate-400 line-through' : ''}`}>
                   <td className="py-1 pr-2 whitespace-nowrap">{new Date(g.startsAt).toLocaleString()}</td>
+                  <td className="py-1 pr-2 whitespace-nowrap">{g.arriveAt ? new Date(g.arriveAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '—'}</td>
                   <td className="py-1 pr-2">{g.opponentName ?? '—'}{g.isHome === true ? ' (H)' : g.isHome === false ? ' (A)' : ''}</td>
                   <td className="py-1 pr-2">{g.location ?? '—'}</td>
                   <td className="py-1 pr-2 text-right whitespace-nowrap">

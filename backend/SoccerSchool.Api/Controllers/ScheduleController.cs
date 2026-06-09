@@ -70,7 +70,7 @@ public class ScheduleController : ControllerBase
                 g.Id, team.Id, team.Name, team.MessageGroupId, team.MessageGroup?.Name,
                 g.Kind, g.StartsAt, g.EndsAt, g.Summary, g.Location, g.Description,
                 g.OpponentName, g.IsHome, g.SeriesId, g.IsCancelled, g.CancelledAt,
-                g.TournamentId, g.Tournament?.Name))
+                g.TournamentId, g.Tournament?.Name, g.ArriveAt))
             .ToList();
         var coaches = team.Coaches
             .OrderBy(c => c.CreatedAt)
@@ -752,6 +752,7 @@ public class ScheduleController : ControllerBase
             ExternalUid = $"manual-game-{Guid.NewGuid():N}",
             StartsAt = DateTime.SpecifyKind(request.StartsAt, DateTimeKind.Utc),
             EndsAt = request.EndsAt.HasValue ? DateTime.SpecifyKind(request.EndsAt.Value, DateTimeKind.Utc) : null,
+            ArriveAt = request.ArriveAt.HasValue ? DateTime.SpecifyKind(request.ArriveAt.Value, DateTimeKind.Utc) : null,
             OpponentName = string.IsNullOrWhiteSpace(request.OpponentName) ? null : request.OpponentName.Trim(),
             IsHome = request.IsHome,
             Location = string.IsNullOrWhiteSpace(request.Location) ? null : request.Location.Trim(),
@@ -778,6 +779,7 @@ public class ScheduleController : ControllerBase
 
         game.StartsAt = DateTime.SpecifyKind(request.StartsAt, DateTimeKind.Utc);
         game.EndsAt = request.EndsAt.HasValue ? DateTime.SpecifyKind(request.EndsAt.Value, DateTimeKind.Utc) : null;
+        game.ArriveAt = request.ArriveAt.HasValue ? DateTime.SpecifyKind(request.ArriveAt.Value, DateTimeKind.Utc) : null;
         game.OpponentName = string.IsNullOrWhiteSpace(request.OpponentName) ? null : request.OpponentName.Trim();
         game.IsHome = request.IsHome;
         game.Location = string.IsNullOrWhiteSpace(request.Location) ? null : request.Location.Trim();
@@ -1123,7 +1125,7 @@ public class ScheduleController : ControllerBase
         g.Id, team.Id, team.Name, team.MessageGroupId, team.MessageGroup?.Name,
         g.Kind, g.StartsAt, g.EndsAt, g.Summary, g.Location, g.Description,
         g.OpponentName, g.IsHome, g.SeriesId, g.IsCancelled, g.CancelledAt,
-        g.TournamentId, g.Tournament?.Name);
+        g.TournamentId, g.Tournament?.Name, g.ArriveAt);
 
     /// <summary>
     /// Upcoming games across all teams within the given window. Used by the Compose tab game
@@ -1146,7 +1148,7 @@ public class ScheduleController : ControllerBase
                 g.Id, g.TeamId, g.Team!.Name, g.Team.MessageGroupId, g.Team.MessageGroup != null ? g.Team.MessageGroup.Name : null,
                 g.Kind, g.StartsAt, g.EndsAt, g.Summary, g.Location, g.Description,
                 g.OpponentName, g.IsHome, g.SeriesId, g.IsCancelled, g.CancelledAt,
-                g.TournamentId, g.Tournament != null ? g.Tournament.Name : null))
+                g.TournamentId, g.Tournament != null ? g.Tournament.Name : null, g.ArriveAt))
             .ToListAsync(ct);
         return Ok(games);
     }

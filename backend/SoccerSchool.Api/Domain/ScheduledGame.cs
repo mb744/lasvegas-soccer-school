@@ -44,6 +44,10 @@ public class ScheduledGame
     public DateTime StartsAt { get; set; }
     public DateTime? EndsAt { get; set; }
 
+    /// <summary>"Be There" time — when the admin wants players to arrive (typically 15–30 min
+    /// before <see cref="StartsAt"/>). Admin-entered for games; null when unset.</summary>
+    public DateTime? ArriveAt { get; set; }
+
     /// <summary>SUMMARY field — typically "{team} vs {opponent}" or "Practice — {field}" depending
     /// on how the feed source formats it. Surfaced to the admin in the game picker.</summary>
     [MaxLength(512)]

@@ -132,7 +132,7 @@ public class TeamsController : ControllerBase
                 g.Id, team.Id, team.Name, team.MessageGroupId, team.MessageGroup?.Name,
                 g.Kind, g.StartsAt, g.EndsAt, g.Summary, g.Location, g.Description,
                 g.OpponentName, g.IsHome, g.SeriesId, g.IsCancelled, g.CancelledAt,
-                g.TournamentId, g.Tournament?.Name))
+                g.TournamentId, g.Tournament?.Name, g.ArriveAt))
             .ToList();
 
         var coaches = team.Coaches

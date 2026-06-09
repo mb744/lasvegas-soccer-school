@@ -413,6 +413,7 @@ const es: Translations = {
     evtTournNoGames: 'Aún sin partidos. Sincroniza desde GotSport o agrega uno manualmente.',
     evtGameDeleteConfirm: '¿Eliminar este partido? Esta acción no se puede deshacer.',
     evtEditGame: 'Editar partido',
+    evtGameBeThere: 'Estar presente',
     evtTournSendPreviewTitle: 'Enviar confirmaciones del torneo — vista previa',
     evtTournSendPreviewHelp: 'Se enviará un WhatsApp con plantilla por cada jugador del roster ({{count}} en total). Cada guardián recibe la versión en su idioma preferido. El ejemplo abajo usa el primer jugador del roster; los envíos reales completan el nombre de cada hijo/a.',
     evtTournSendPreviewSample: 'Ejemplo para {{name}}',

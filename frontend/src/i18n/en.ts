@@ -411,6 +411,7 @@ const en = {
     evtTournNoGames: 'No games yet. Sync from GotSport or add one manually.',
     evtGameDeleteConfirm: 'Delete this game? This cannot be undone.',
     evtEditGame: 'Edit game',
+    evtGameBeThere: 'Be There',
     evtTournSendPreviewTitle: 'Send tournament confirmations — preview',
     evtTournSendPreviewHelp: 'One templated WhatsApp will go out per rostered player ({{count}} total). Each guardian receives the version matching their language preference. Sample below uses the first roster player\'s name; the actual sends fill in each kid\'s.',
     evtTournSendPreviewSample: 'Sample for {{name}}',

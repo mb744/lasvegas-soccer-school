@@ -658,6 +658,9 @@ export interface ScheduledGame {
   cancelledAt: string | null
   tournamentId: number | null
   tournamentName: string | null
+  /** "Be There" arrival time (ISO, UTC) — when players should show up, typically 15–30 min
+   *  before startsAt. null when unset. */
+  arriveAt: string | null
 }
 
 export type TournamentKind = 0 | 1 // Tournament | League
@@ -834,6 +837,7 @@ export interface SavePracticeRequest {
 export interface SaveGameRequest {
   startsAt: string  // ISO 8601 in UTC
   endsAt?: string | null
+  arriveAt?: string | null  // "Be There" time, ISO 8601 in UTC
   opponentName?: string | null
   isHome?: boolean | null
   location?: string | null
