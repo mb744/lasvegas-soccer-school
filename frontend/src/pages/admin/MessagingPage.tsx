@@ -390,12 +390,18 @@ function ComposeTab({
     let list = upcomingGames
     // Narrow to the template's event family (game vs practice) once a kind-specific template is picked.
     if (bodyMode === 'template' && templateKind !== null) list = list.filter(g => g.kind === templateKind)
-    // When a specific team/group is the recipient, only show that team's events (matched by the
-    // team's linked message group). Other recipient modes aren't team-scoped, so show everything.
-    if (recipientMode === 'curated' && customGroupId !== '')
+    // When a specific team is the recipient, only show that team's events.
+    //  - Curated group: match the team's linked message group.
+    //  - Dynamic "Team: X" group (keyed "team-{id}"): match the team id.
+    // Other recipient modes aren't team-scoped, so they show everything.
+    if (recipientMode === 'curated' && customGroupId !== '') {
       list = list.filter(g => g.messageGroupId === Number(customGroupId))
+    } else if (recipientMode === 'dynamic') {
+      const m = /^team-(\d+)$/.exec(dynamicKey)
+      if (m) { const teamId = Number(m[1]); list = list.filter(g => g.teamId === teamId) }
+    }
     return list
-  }, [upcomingGames, templateKind, bodyMode, recipientMode, customGroupId])
+  }, [upcomingGames, templateKind, bodyMode, recipientMode, customGroupId, dynamicKey])
 
   // True once the admin has put anything into the recipient picker. Used to suppress the game
   // picker's auto-flip to the linked group — if the admin already picked an individual/group/list,
