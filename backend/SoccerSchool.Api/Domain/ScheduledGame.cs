@@ -54,6 +54,11 @@ public class ScheduledGame
     public int? UniformId { get; set; }
     public Uniform? Uniform { get; set; }
 
+    /// <summary>Structured venue (park/field) for this event. Null = no venue picked; the free-text
+    /// <see cref="Location"/> is then the only "where". Synced games leave this null.</summary>
+    public int? VenueId { get; set; }
+    public Venue? Venue { get; set; }
+
     /// <summary>SUMMARY field — typically "{team} vs {opponent}" or "Practice — {field}" depending
     /// on how the feed source formats it. Surfaced to the admin in the game picker.</summary>
     [MaxLength(512)]

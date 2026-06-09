@@ -40,7 +40,8 @@ public static class TemplatePropertyRegistry
         new TemplateProperty("event.dateShort", "Date — short (06/05)"),
         new TemplateProperty("event.dayOfWeek", "Day of week (Sunday)"),
         new TemplateProperty("event.time", "Time (2:00 PM)"),
-        new TemplateProperty("event.location", "Location / venue"),
+        new TemplateProperty("event.location", "Location / venue (venue name when set, else free text)"),
+        new TemplateProperty("event.address", "Venue street address (when a venue is set)"),
         new TemplateProperty("event.description", "Description (admin notes)"),
         // --- Tournament / League ---
         new TemplateProperty("tournament.name", "Tournament / League name"),

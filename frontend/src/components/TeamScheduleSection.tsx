@@ -3,7 +3,8 @@ import { useTranslation } from 'react-i18next'
 import { Api } from '../api/client'
 import { pickLatestTemplate } from '../api/templateNaming'
 import { RequiredLabel, useRequiredValidation } from './RequiredField'
-import type { ScheduledGame, EventAttendanceList, EventAttendanceSummary, AttendanceStatus, WhatsAppTemplate, TemplatePreviewResponse } from '../api/types'
+import { VenuePicker } from './VenuePicker'
+import type { ScheduledGame, EventAttendanceList, EventAttendanceSummary, AttendanceStatus, WhatsAppTemplate, TemplatePreviewResponse, Venue } from '../api/types'
 
 function extractError(e: any): string {
   return e?.response?.data?.title || e?.response?.data || e?.message || 'Error'
@@ -56,7 +57,15 @@ export function TeamScheduleSection({
   const [startsAt, setStartsAt] = useState('')      // datetime-local format (local time)
   const [endsAt, setEndsAt] = useState('')
   const [location, setLocation] = useState('')
+  const [venueId, setVenueId] = useState<number | ''>('')
   const [summary, setSummary] = useState('')
+
+  // Club-wide venues for the location picker; loaded once.
+  const [venues, setVenues] = useState<Venue[]>([])
+  const reloadVenues = async () => {
+    try { setVenues(await Api.listVenues()) } catch (e: any) { onError(extractError(e)) }
+  }
+  useEffect(() => { reloadVenues() }, [])
 
   // Recurring-series form state (only used when editingId === 'series'):
   const [seriesStartDate, setSeriesStartDate] = useState('')
@@ -71,24 +80,24 @@ export function TeamScheduleSection({
 
   const startNewPractice = () => {
     setEditingId('new-practice'); setEditingKind('practice')
-    setStartsAt(''); setEndsAt(''); setLocation(''); setSummary('')
+    setStartsAt(''); setEndsAt(''); setLocation(''); setVenueId(''); setSummary('')
     setOpponentName(''); setIsHome(null)
   }
   const startNewMisc = () => {
     setEditingId('new-misc'); setEditingKind('misc')
-    setStartsAt(''); setEndsAt(''); setLocation(''); setSummary('')
+    setStartsAt(''); setEndsAt(''); setLocation(''); setVenueId(''); setSummary('')
     setOpponentName(''); setIsHome(null)
   }
   const startNewGame = () => {
     setEditingId('new-game'); setEditingKind('game')
-    setStartsAt(''); setEndsAt(''); setLocation(''); setSummary('')
+    setStartsAt(''); setEndsAt(''); setLocation(''); setVenueId(''); setSummary('')
     setOpponentName(''); setIsHome(null)
   }
   const startSeries = () => {
     setEditingId('series'); setEditingKind('practice')
     setSeriesStartDate(''); setSeriesEndDate('')
     setSeriesStartTime('17:00'); setSeriesEndTime('')
-    setSeriesDays(new Set()); setLocation(''); setSummary('')
+    setSeriesDays(new Set()); setLocation(''); setVenueId(''); setSummary('')
   }
   const toggleDay = (d: number) => {
     setSeriesDays(prev => {
@@ -104,6 +113,7 @@ export function TeamScheduleSection({
     setStartsAt(toDateTimeLocal(ev.startsAt))
     setEndsAt(ev.endsAt ? toDateTimeLocal(ev.endsAt) : '')
     setLocation(ev.location ?? '')
+    setVenueId(ev.venueId ?? '')
     setSummary(ev.summary ?? '')
     setOpponentName(ev.opponentName ?? '')
     setIsHome(ev.isHome)
@@ -123,6 +133,7 @@ export function TeamScheduleSection({
           daysOfWeek: Array.from(seriesDays).sort(),
           location: location.trim() || null,
           summary: summary.trim() || null,
+          venueId: venueId === '' ? null : venueId,
         })
         setEditingId(null)
         await onChanged()
@@ -136,6 +147,7 @@ export function TeamScheduleSection({
       const endsAtIso = endsAt ? new Date(endsAt).toISOString() : null
       const trimmedLocation = location.trim() || null
       const trimmedSummary = summary.trim() || null
+      const venueIdValue = venueId === '' ? null : venueId
       if (editingKind === 'game') {
         const payload = {
           startsAt: startsAtIso,
@@ -144,6 +156,7 @@ export function TeamScheduleSection({
           isHome,
           location: trimmedLocation,
           summary: trimmedSummary,
+          venueId: venueIdValue,
         }
         if (editingId === 'new-game') await Api.createGame(teamId, payload)
         else if (typeof editingId === 'number') await Api.updateGame(editingId, payload)
@@ -154,6 +167,7 @@ export function TeamScheduleSection({
           endsAt: endsAtIso,
           location: trimmedLocation,
           summary: trimmedSummary,
+          venueId: venueIdValue,
         }
         if (editingId === 'new-misc') await Api.createMiscEvent(teamId, payload)
         else if (typeof editingId === 'number') await Api.updateMiscEvent(editingId, payload)
@@ -164,6 +178,7 @@ export function TeamScheduleSection({
           endsAt: endsAtIso,
           location: trimmedLocation,
           summary: trimmedSummary,
+          venueId: venueIdValue,
         }
         if (editingId === 'new-practice') await Api.createPractice(teamId, payload)
         else if (typeof editingId === 'number') await Api.updatePractice(editingId, payload)
@@ -420,6 +435,11 @@ export function TeamScheduleSection({
               </>
             )}
             <label className="block text-sm sm:col-span-2">
+              <span className="font-medium text-slate-700">{t('admin.evtVenue')}</span>
+              <VenuePicker venues={venues} value={venueId} onChange={setVenueId}
+                onVenuesChanged={reloadVenues} onError={onError} />
+            </label>
+            <label className="block text-sm sm:col-span-2">
               <span className="font-medium text-slate-700">{t('admin.msgLocation')}</span>
               <input type="text" value={location} onChange={e => setLocation(e.target.value)}
                 placeholder="Sunset Park, field 3"
@@ -490,6 +510,11 @@ export function TeamScheduleSection({
                 ))}
               </div>
             </div>
+            <label className="block text-sm sm:col-span-2">
+              <span className="font-medium text-slate-700">{t('admin.evtVenue')}</span>
+              <VenuePicker venues={venues} value={venueId} onChange={setVenueId}
+                onVenuesChanged={reloadVenues} onError={onError} />
+            </label>
             <label className="block text-sm sm:col-span-2">
               <span className="font-medium text-slate-700">{t('admin.msgLocation')}</span>
               <input type="text" value={location} onChange={e => setLocation(e.target.value)}

@@ -1824,6 +1824,7 @@ public class MessagingController : ControllerBase
                 .Include(g => g.Team)
                 .Include(g => g.Tournament)
                 .Include(g => g.Uniform)
+                .Include(g => g.Venue)
                 .AsNoTracking()
                 .FirstOrDefaultAsync(g => g.Id == eventId, ct);
             if (ev is not null)
@@ -1847,7 +1848,10 @@ public class MessagingController : ControllerBase
                 props["event.dateShort"] = localStart.ToString("MM/dd", us);
                 props["event.dayOfWeek"] = localStart.ToString("dddd", us);
                 props["event.time"] = localStart.ToString("h:mm tt", us);
-                props["event.location"] = ev.Location ?? string.Empty;
+                // Prefer the structured venue's name as the location; the free-text Location is the
+                // fallback (and what synced games carry). Address is exposed separately.
+                props["event.location"] = ev.Venue?.Name ?? ev.Location ?? string.Empty;
+                props["event.address"] = ev.Venue?.Address ?? string.Empty;
                 props["event.description"] = ev.Description ?? string.Empty;
                 if (ev.Team is not null) props["team.name"] = ev.Team.Name;
                 // If the event is part of a tournament, promote that tournament too even when

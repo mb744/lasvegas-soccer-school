@@ -77,6 +77,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
     public DbSet<MessagingSettings> MessagingSettings => Set<MessagingSettings>();
     public DbSet<AgeClassification> AgeClassifications => Set<AgeClassification>();
     public DbSet<Uniform> Uniforms => Set<Uniform>();
+    public DbSet<Venue> Venues => Set<Venue>();
 
     /// <summary>Backing store for the ASP.NET Core data-protection key ring (cookie encryption
     /// keys). Persisting these in SQL keeps auth cookies valid across container restarts.</summary>
@@ -403,6 +404,12 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
                 .WithMany()
                 .HasForeignKey(g => g.UniformId)
                 .OnDelete(DeleteBehavior.SetNull);
+            // Structured venue. SetNull so deleting a venue leaves the event with its free-text
+            // Location intact.
+            b.HasOne(g => g.Venue)
+                .WithMany()
+                .HasForeignKey(g => g.VenueId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<Uniform>(b =>
@@ -411,6 +418,11 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
             // At most one uniform per non-None designation (one Home, one Away, one Practice).
             // Filtered so multiple None rows remain allowed.
             b.HasIndex(u => u.Designation).IsUnique().HasFilter("[Designation] <> 0");
+        });
+
+        modelBuilder.Entity<Venue>(b =>
+        {
+            b.HasIndex(v => v.Name).IsUnique();
         });
 
         modelBuilder.Entity<PhraseTranslation>(b =>

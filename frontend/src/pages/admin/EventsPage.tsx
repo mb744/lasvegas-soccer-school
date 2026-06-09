@@ -5,11 +5,12 @@ import { Layout } from '../../components/Layout'
 import { TeamScheduleSection } from '../../components/TeamScheduleSection'
 import { RequiredLabel, useRequiredValidation } from '../../components/RequiredField'
 import { TeamCoachEditor } from '../../components/TeamCoachEditor'
+import { VenuePicker } from '../../components/VenuePicker'
 import { Api } from '../../api/client'
 import type {
   RosterTeamSummary, RosterTeamDetail, TournamentSummary, TournamentTeam, TournamentKind,
   AttendanceStatus, TournamentAttendanceList, AvailablePlayer,
-  TeamDetail, ScheduledGame, TournamentSendPreview, Uniform,
+  TeamDetail, ScheduledGame, TournamentSendPreview, Uniform, Venue,
 } from '../../api/types'
 
 function errMsg(e: any): string {
@@ -515,6 +516,7 @@ function TournamentTeamPanel({
   const [attendance, setAttendance] = useState<TournamentAttendanceList | null>(null)
   const [teamDetail, setTeamDetail] = useState<TeamDetail | null>(null)
   const [uniforms, setUniforms] = useState<Uniform[]>([])
+  const [venues, setVenues] = useState<Venue[]>([])
   const [sending, setSending] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -552,18 +554,23 @@ function TournamentTeamPanel({
   const [gLocation, setGLocation] = useState('')
   // '' = use the home/away → designation mapping; otherwise the chosen uniform's id.
   const [gUniformId, setGUniformId] = useState('')
+  const [gVenueId, setGVenueId] = useState<number | ''>('')
   const vGame = useRequiredValidation(['startsAt'])
 
   const reloadAll = async () => {
     try {
-      const [av, att, td, uni] = await Promise.all([
+      const [av, att, td, uni, ven] = await Promise.all([
         Api.listAvailablePlayers(tt.teamId),
         Api.getTournamentTeamAttendance(tour.id, tt.teamId),
         Api.getTeam(tt.teamId, { includePast: true }),
         Api.listUniforms(),
+        Api.listVenues(),
       ])
-      setAvailable(av); setAttendance(att); setTeamDetail(td); setUniforms(uni)
+      setAvailable(av); setAttendance(att); setTeamDetail(td); setUniforms(uni); setVenues(ven)
     } catch (e: any) { onError(errMsg(e)) }
+  }
+  const reloadVenues = async () => {
+    try { setVenues(await Api.listVenues()) } catch (e: any) { onError(errMsg(e)) }
   }
   useEffect(() => { reloadAll() }, [tt.id])
   // Keep the editable GotSport fields in sync when the underlying TT changes
@@ -765,7 +772,7 @@ function TournamentTeamPanel({
 
   const resetGameForm = () => {
     setGStart(''); setGArrive(''); setGArriveTouched(false)
-    setGOpponent(''); setGHome('unknown'); setGLocation(''); setGUniformId('')
+    setGOpponent(''); setGHome('unknown'); setGLocation(''); setGUniformId(''); setGVenueId('')
     vGame.reset()
   }
 
@@ -783,6 +790,7 @@ function TournamentTeamPanel({
     setGHome(g.isHome === true ? 'home' : g.isHome === false ? 'away' : 'unknown')
     setGLocation(g.location ?? '')
     setGUniformId(g.uniformId != null ? String(g.uniformId) : '')
+    setGVenueId(g.venueId ?? '')
     vGame.reset()
     setShowAdd(true)
   }
@@ -801,6 +809,7 @@ function TournamentTeamPanel({
         location: gLocation.trim() || null,
         tournamentId: tour.id,
         uniformId: gUniformId ? Number(gUniformId) : null,
+        venueId: gVenueId === '' ? null : gVenueId,
       }
       if (editId !== null) {
         await Api.updateGame(editId, payload)
@@ -1029,6 +1038,11 @@ function TournamentTeamPanel({
               </select>
             </label>
             <label className="block text-xs">
+              <span className="text-slate-600">{t('admin.evtVenue')}</span>
+              <VenuePicker venues={venues} value={gVenueId} onChange={setGVenueId}
+                onVenuesChanged={reloadVenues} onError={onError} />
+            </label>
+            <label className="block text-xs">
               <span className="text-slate-600">{t('admin.msgLocation')}</span>
               <input type="text" value={gLocation} onChange={e => setGLocation(e.target.value)}
                 className="mt-1 w-full border border-slate-300 rounded-md px-2 py-1 text-sm" />
@@ -1059,6 +1073,7 @@ function TournamentTeamPanel({
                 <th className="py-1 pr-2">{t('admin.msgWhen')}</th>
                 <th className="py-1 pr-2">{t('admin.evtGameBeThere')}</th>
                 <th className="py-1 pr-2">{t('admin.msgGameOpponent')}</th>
+                <th className="py-1 pr-2">{t('admin.evtVenue')}</th>
                 <th className="py-1 pr-2">{t('admin.msgLocation')}</th>
                 <th className="py-1 pr-2">{t('admin.evtGameUniform')}</th>
                 <th className="py-1 pr-2 text-right"></th>
@@ -1070,6 +1085,7 @@ function TournamentTeamPanel({
                   <td className="py-1 pr-2 whitespace-nowrap">{new Date(g.startsAt).toLocaleString()}</td>
                   <td className="py-1 pr-2 whitespace-nowrap">{g.arriveAt ? new Date(g.arriveAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '—'}</td>
                   <td className="py-1 pr-2">{g.opponentName ?? '—'}{g.isHome === true ? ' (H)' : g.isHome === false ? ' (A)' : ''}</td>
+                  <td className="py-1 pr-2">{venues.find(v => v.id === g.venueId)?.name ?? '—'}</td>
                   <td className="py-1 pr-2">{g.location ?? '—'}</td>
                   <td className="py-1 pr-2">{effectiveUniform(g)?.name ?? '—'}</td>
                   <td className="py-1 pr-2 text-right whitespace-nowrap">

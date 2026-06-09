@@ -68,6 +68,8 @@ import type {
   SaveAgeClassificationRequest,
   Uniform,
   SaveUniformRequest,
+  Venue,
+  SaveVenueRequest,
   MonthlyFeePreview,
   SendMonthlyFeeRequest,
   TeamDetail,
@@ -266,6 +268,21 @@ export const Api = {
   },
   async deleteUniform(id: number) {
     await api.delete(`/uniforms/${id}`)
+  },
+  async listVenues() {
+    const r = await api.get<Venue[]>('/venues')
+    return r.data
+  },
+  async createVenue(payload: SaveVenueRequest) {
+    const r = await api.post<Venue>('/venues', payload)
+    return r.data
+  },
+  async updateVenue(id: number, payload: SaveVenueRequest) {
+    const r = await api.put<Venue>(`/venues/${id}`, payload)
+    return r.data
+  },
+  async deleteVenue(id: number) {
+    await api.delete(`/venues/${id}`)
   },
   async deleteRegistration(id: number) {
     await api.delete(`/registrations/${id}`)

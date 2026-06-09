@@ -663,10 +663,30 @@ export interface ScheduledGame {
   arriveAt: string | null
   /** Explicit uniform override; null = use the home/away → designation mapping. */
   uniformId: number | null
+  /** Structured venue/park; null = none (free-text location only). */
+  venueId: number | null
 }
 
 /** 0 = None, 1 = Home, 2 = Away, 3 = Practice. At most one uniform per non-None value. */
 export type UniformDesignation = 0 | 1 | 2 | 3
+
+/** 0 = Unspecified, 1 = Grass, 2 = Turf, 3 = Hard surface. */
+export type SurfaceType = 0 | 1 | 2 | 3
+
+export interface Venue {
+  id: number
+  name: string
+  address: string | null
+  surface: SurfaceType
+  createdAt: string
+  updatedAt: string
+}
+
+export interface SaveVenueRequest {
+  name: string
+  address?: string | null
+  surface: SurfaceType
+}
 
 export interface Uniform {
   id: number
@@ -856,6 +876,7 @@ export interface SavePracticeRequest {
   endsAt?: string | null
   location?: string | null
   summary?: string | null
+  venueId?: number | null
 }
 
 export interface SaveGameRequest {
@@ -868,6 +889,7 @@ export interface SaveGameRequest {
   summary?: string | null
   tournamentId?: number | null
   uniformId?: number | null  // explicit uniform override; null = use mapping
+  venueId?: number | null    // structured venue/park; null = none
 }
 
 export interface SavePracticeSeriesRequest {
@@ -879,6 +901,7 @@ export interface SavePracticeSeriesRequest {
   daysOfWeek: number[]
   location?: string | null
   summary?: string | null
+  venueId?: number | null
 }
 
 export interface PracticeSeriesCreated {

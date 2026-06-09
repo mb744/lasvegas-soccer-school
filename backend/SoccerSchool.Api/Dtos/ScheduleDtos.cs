@@ -71,7 +71,9 @@ public record ScheduledGameDto(
     /// StartsAt). Null when not set. Games only; practices leave it null.</summary>
     DateTime? ArriveAt,
     /// <summary>Explicit uniform override (null = use the home/away → designation mapping).</summary>
-    int? UniformId);
+    int? UniformId,
+    /// <summary>Structured venue/park (null = none; the free-text Location is the only "where").</summary>
+    int? VenueId);
 
 public record SavePracticeRequest
 {
@@ -84,6 +86,9 @@ public record SavePracticeRequest
 
     [MaxLength(512)]
     public string? Summary { get; init; }
+
+    /// <summary>Optional structured venue (park/field). Null = none.</summary>
+    public int? VenueId { get; init; }
 }
 
 /// <summary>Admin-entered game (manual; not scraped from GotSport). Lives in the same
@@ -116,6 +121,9 @@ public record SaveGameRequest
 
     /// <summary>Explicit uniform override. Null = use the club-wide home/away → designation mapping.</summary>
     public int? UniformId { get; init; }
+
+    /// <summary>Optional structured venue (park/field). Null = none.</summary>
+    public int? VenueId { get; init; }
 }
 
 /// <summary>Create a recurring practice series. Each combination of (day-of-week × occurrence date
@@ -145,6 +153,9 @@ public record SavePracticeSeriesRequest
 
     [MaxLength(512)]
     public string? Summary { get; init; }
+
+    /// <summary>Optional structured venue (park/field) applied to every occurrence. Null = none.</summary>
+    public int? VenueId { get; init; }
 }
 
 public record PracticeSeriesCreatedDto(Guid SeriesId, int Count, IReadOnlyList<ScheduledGameDto> Occurrences);
