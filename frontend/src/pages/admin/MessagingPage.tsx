@@ -455,13 +455,16 @@ function ComposeTab({
     return { kind: 2 as const, dynamicGroupKey: dynamicKey }
   }
 
-  // Per-player personalization needs a team recipient + a WhatsApp template: a "Team: X" dynamic
-  // group, or a curated group (the backend maps it to its team). Then each rostered player's
-  // guardians get their own copy with player.*/parent.* resolved individually.
-  const isTeamTarget = (recipientMode === 'dynamic' && /^team-\d+$/.test(dynamicKey))
+  // Per-player personalization needs a WhatsApp template + a per-player-able audience: a "Team: X"
+  // dynamic group, a curated group (backend maps it to its team), or a whole-club audience
+  // (all parents / active-season parents). Then each player's guardians get their own copy with
+  // player.*/parent.* resolved individually.
+  const isPerPlayerTarget =
+    (recipientMode === 'dynamic'
+      && (/^team-\d+$/.test(dynamicKey) || dynamicKey === 'all-parents' || dynamicKey === 'active-season-parents'))
     || (recipientMode === 'curated' && customGroupId !== '')
   const canPerPlayer = isWhatsAppChannel && mode === 'broadcast' && bodyMode === 'template'
-    && !!selectedTemplate && isTeamTarget
+    && !!selectedTemplate && isPerPlayerTarget
 
   /** Final validation that's shared between the "send straight" paths and the bilingual modal. */
   const validate = (): string | null => {

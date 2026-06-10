@@ -715,7 +715,7 @@ const es: Translations = {
     msgPickGameHint: 'Elegir de los próximos eventos',
     msgPickGameHelp: 'Al elegir un evento se completan Qué / Cuándo / Dónde con la información sincronizada. Si el equipo tiene un grupo enlazado, se selecciona como destinatario.',
     msgPerPlayer: 'Personalizar por jugador',
-    msgPerPlayerHelp: 'Envía un mensaje por cada jugador del roster en lugar de uno al grupo. Las variables de jugador / padre se completan por jugador, así un padre con más de un jugador recibe un mensaje por cada hijo.',
+    msgPerPlayerHelp: 'Envía un mensaje por jugador del público seleccionado (un equipo, o todos / los de la temporada actual) en lugar de uno al grupo. Las variables de jugador / padre se completan por jugador, así un padre con más de un jugador recibe un mensaje por cada hijo.',
     msgPerPlayerSent: 'Envío personalizado: se envió a {{sent}} de {{total}} jugadores.',
     msgPerPlayerPreviewTitle: 'Revisar mensajes personalizados',
     msgPerPlayerPreviewHelp: 'Un mensaje por jugador ({{count}} en total). Confirma que los nombres y los datos sean correctos antes de enviar.',

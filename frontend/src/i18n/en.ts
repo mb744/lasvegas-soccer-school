@@ -713,7 +713,7 @@ const en = {
     msgPickGameHint: 'Pick from upcoming events',
     msgPickGameHelp: 'Picking an event fills What / When / Where from the synced schedule and, if the team has a linked message group, sets that group as the recipient.',
     msgPerPlayer: 'Personalize per player',
-    msgPerPlayerHelp: 'Send one message per rostered player instead of one to the group. Player / parent variables are filled per player, so a parent with more than one player gets a separate message for each child.',
+    msgPerPlayerHelp: 'Send one message per player in the selected audience (a team, or all / active-season players) instead of one to the group. Player / parent variables are filled per player, so a parent with more than one player gets a separate message for each child.',
     msgPerPlayerSent: 'Personalized send: messaged {{sent}} of {{total}} players.',
     msgPerPlayerPreviewTitle: 'Review personalized messages',
     msgPerPlayerPreviewHelp: 'One message per player ({{count}} total). Confirm the names and details are correct before sending.',

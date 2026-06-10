@@ -496,14 +496,12 @@ public class MessagingController : ControllerBase
     {
         var prep = await PreparePerPlayerAsync(request, ct);
         if (prep.Error is not null) return BadRequest(prep.Error);
-        var (team, template, shared) = (prep.Team!, prep.Template!, prep.Shared);
+        var (players, template, shared) = (prep.Players!, prep.Template!, prep.Shared);
 
         var batchId = Guid.NewGuid();
         int sent = 0, skipped = 0;
-        foreach (var tp in team.Roster)
+        foreach (var player in players)
         {
-            var player = tp.Player;
-            if (player is null) { skipped++; continue; }
             var req = new CreateBroadcastRequest
             {
                 Channel = MessageChannel.WhatsApp,
@@ -523,7 +521,7 @@ public class MessagingController : ControllerBase
             if (result.Result is ObjectResult ok && ok.StatusCode == 200) sent++;
             else skipped++;
         }
-        return Ok(new SendPerPlayerResult(sent, skipped, team.Roster.Count));
+        return Ok(new SendPerPlayerResult(sent, skipped, players.Count));
     }
 
     /// <summary>Pre-send preview for a per-player fan-out: renders the message each rostered player's
@@ -535,13 +533,11 @@ public class MessagingController : ControllerBase
     {
         var prep = await PreparePerPlayerAsync(request, ct);
         if (prep.Error is not null) return BadRequest(prep.Error);
-        var (team, template, shared) = (prep.Team!, prep.Template!, prep.Shared);
+        var (players, template, shared) = (prep.Players!, prep.Template!, prep.Shared);
 
         var items = new List<PerPlayerPreviewItem>();
-        foreach (var tp in team.Roster)
+        foreach (var player in players)
         {
-            var player = tp.Player;
-            if (player is null) continue;
             // Resolve the same per-player values the send will use, then render the template body.
             var props = await ResolveContextPropertiesAsync(template.Context,
                 new CreateBroadcastRequest { ScheduledGameId = request.ScheduledGameId, PlayerId = player.Id }, ct);
@@ -568,10 +564,10 @@ public class MessagingController : ControllerBase
     }
 
     /// <summary>Shared setup for the per-player send + preview: validates the request, resolves the
-    /// target team + roster, and builds the values shared across all players (admin/auto-filled,
-    /// minus positions mapped to player.*/parent.* which resolve per player). Error is non-null on
-    /// any validation failure.</summary>
-    private async Task<(Domain.Team? Team, WhatsAppTemplate? Template, Dictionary<string, string> Shared, string? Error)>
+    /// set of players to fan out to (a team roster, or the whole active-season / all-players audience),
+    /// and builds the values shared across all players (admin/auto-filled, minus positions mapped to
+    /// player.*/parent.* which resolve per player). Error is non-null on any validation failure.</summary>
+    private async Task<(List<Domain.Player>? Players, WhatsAppTemplate? Template, Dictionary<string, string> Shared, string? Error)>
         PreparePerPlayerAsync(SendPerPlayerRequest request, CancellationToken ct)
     {
         var empty = new Dictionary<string, string>();
@@ -584,15 +580,11 @@ public class MessagingController : ControllerBase
             .FirstOrDefaultAsync(t => t.Id == request.WhatsAppTemplateId, ct);
         if (template is null) return (null, null, empty, "Template not found.");
 
-        var teamId = await ResolveTeamIdFromTargetAsync(request.Target, ct);
-        if (teamId is null)
-            return (null, template, empty, "Per-player send needs a team recipient — pick a \"Team: …\" group or a team's message group.");
-
-        var team = await _db.Teams
-            .Include(t => t.Roster).ThenInclude(tp => tp.Player)
-            .FirstOrDefaultAsync(t => t.Id == teamId, ct);
-        if (team is null) return (null, template, empty, "Team not found.");
-        if (team.Roster.Count == 0) return (null, template, empty, "This team has no rostered players.");
+        var players = await ResolvePerPlayerPlayersAsync(request.Target, ct);
+        if (players is null)
+            return (null, template, empty, "Per-player send needs a team or a whole-club audience — pick a \"Team: …\" group, a team's message group, or an \"all / active-season parents\" group.");
+        if (players.Count == 0)
+            return (null, template, empty, "No players matched this audience.");
 
         // Shared values for every player, minus any position mapped to a per-player property —
         // those resolve per player so each child gets their own name.
@@ -606,7 +598,37 @@ public class MessagingController : ControllerBase
                     || v.PropertyKey.StartsWith("parent.", StringComparison.Ordinal)))
                 shared.Remove(v.Position.ToString(CultureInfo.InvariantCulture));
         }
-        return (team, template, shared, null);
+        return (players, template, shared, null);
+    }
+
+    /// <summary>Resolves the players a per-player fan-out targets: a team's roster, OR the whole-club
+    /// audiences — every player in the active season ("active-season-parents"), every player on file
+    /// ("all-parents"), or a single player ("player-{id}"). Null when the target isn't per-player-able
+    /// (individual phone, ad-hoc list, non-team curated group).</summary>
+    private async Task<List<Domain.Player>?> ResolvePerPlayerPlayersAsync(BroadcastTargetDto target, CancellationToken ct)
+    {
+        var teamId = await ResolveTeamIdFromTargetAsync(target, ct);
+        if (teamId is not null)
+            return await _db.TeamPlayers.Where(tp => tp.TeamId == teamId)
+                .Select(tp => tp.Player!).ToListAsync(ct);
+
+        if (target.Kind == RecipientTargetKindDto.DynamicGroup && target.DynamicGroupKey is string key)
+        {
+            if (key == RecipientResolver.DynamicAllParents)
+                return await _db.Players.ToListAsync(ct);
+            if (key == RecipientResolver.DynamicActiveSeasonParents)
+            {
+                var season = _app.ActiveSeason;
+                var ids = await _db.RegistrationPlayers
+                    .Where(rp => rp.Registration!.Season == season)
+                    .Select(rp => rp.PlayerId).Distinct().ToListAsync(ct);
+                return await _db.Players.Where(p => ids.Contains(p.Id)).ToListAsync(ct);
+            }
+            if (key.StartsWith(RecipientResolver.DynamicPlayerPrefix, StringComparison.Ordinal)
+                && int.TryParse(key.AsSpan(RecipientResolver.DynamicPlayerPrefix.Length), out var pid))
+                return await _db.Players.Where(p => p.Id == pid).ToListAsync(ct);
+        }
+        return null;
     }
 
     /// <summary>Maps a broadcast target to the team it represents: a "team-{id}" dynamic group, or
