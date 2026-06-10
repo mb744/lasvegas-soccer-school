@@ -2834,6 +2834,23 @@ public class MessagingController : ControllerBase
 
         var values = request.Values ?? new();
 
+        // Resolve event.* / tournament.* / custom mapped fields from the picked event and fill any
+        // mapped variable the admin didn't type — so the preview shows the same values the send
+        // will (e.g. a custom "{event.time} at {event.venue}" field), not blanks. player.*/parent.*
+        // stay empty here (no single recipient on a group preview), matching the group send.
+        if (template.Context != TemplateContext.FreeForm)
+        {
+            var props = await ResolveContextPropertiesAsync(template.Context,
+                new CreateBroadcastRequest { ScheduledGameId = request.ScheduledGameId, TournamentId = request.TournamentId }, ct);
+            foreach (var v in template.Variables)
+            {
+                var key = v.Position.ToString(CultureInfo.InvariantCulture);
+                if (values.TryGetValue(key, out var av) && !string.IsNullOrWhiteSpace(av)) continue;
+                if (!string.IsNullOrEmpty(v.PropertyKey) && props.TryGetValue(v.PropertyKey, out var mapped) && !string.IsNullOrEmpty(mapped))
+                    values[key] = mapped;
+            }
+        }
+
         async Task<TemplatePreviewSide> BuildSideAsync(Language target)
         {
             // Pick which approved template's body to use for this side.

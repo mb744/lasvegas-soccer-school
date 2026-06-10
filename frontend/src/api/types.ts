@@ -1176,6 +1176,9 @@ export interface TemplatePreviewResponse {
 export interface TemplatePreviewRequest {
   templateId: number
   values: Record<string, string>
+  /** Picked event, so the preview resolves event.* and custom mapped fields server-side. */
+  scheduledGameId?: number | null
+  tournamentId?: number | null
 }
 
 // --- Messaging settings (auto-reply text + toggle) ---

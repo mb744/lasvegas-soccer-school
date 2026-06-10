@@ -429,6 +429,13 @@ public record TemplatePreviewRequest
 {
     public int TemplateId { get; init; }
     public Dictionary<string, string> Values { get; init; } = new();
+
+    /// <summary>The event picked in Compose, so the preview can resolve event.* and custom mapped
+    /// fields server-side (matching what the send fills) instead of showing them blank.</summary>
+    public int? ScheduledGameId { get; init; }
+
+    /// <summary>Optional tournament context for the same reason.</summary>
+    public int? TournamentId { get; init; }
 }
 
 public enum TemplatePreviewSource

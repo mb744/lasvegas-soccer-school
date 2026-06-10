@@ -972,6 +972,7 @@ function ComposeTab({
         template={selectedTemplate}
         values={templateValues}
         recipientLabel={recipientPreview}
+        scheduledGameId={pickedEventId}
         sending={sending}
         onCancel={() => setTemplatePreviewOpen(false)}
         onConfirm={() => sendNow({ usingTemplate: true })}
@@ -2915,11 +2916,12 @@ function BilingualPreviewModal({
 // --- Template preview modal ----------------------------------------------
 
 function TemplatePreviewModal({
-  template, values, recipientLabel, sending, onCancel, onConfirm,
+  template, values, recipientLabel, scheduledGameId, sending, onCancel, onConfirm,
 }: {
   template: WhatsAppTemplate
   values: Record<string, string>
   recipientLabel: string
+  scheduledGameId: number | null
   sending: boolean
   onCancel: () => void
   onConfirm: () => void
@@ -2929,15 +2931,15 @@ function TemplatePreviewModal({
   const [previewError, setPreviewError] = useState<string | null>(null)
 
   // Backend renders both sides so the "Spanish recipient gets English template with translated
-  // values" fallback shows what will actually deliver. Single source of truth for what the
-  // recipient sees — no client-side guessing.
+  // values" fallback shows what will actually deliver. It also resolves event.* / custom mapped
+  // fields from the picked event, so the preview matches the send instead of showing blanks.
   useEffect(() => {
     let cancelled = false
-    Api.templatePreview({ templateId: template.id, values })
+    Api.templatePreview({ templateId: template.id, values, scheduledGameId })
       .then(r => { if (!cancelled) setPreview(r) })
       .catch(e => { if (!cancelled) setPreviewError(extractError(e)) })
     return () => { cancelled = true }
-  }, [template.id, values])
+  }, [template.id, values, scheduledGameId])
 
   const langLabel = (lang: Language) => lang === 1 ? 'Español' : 'English'
 
