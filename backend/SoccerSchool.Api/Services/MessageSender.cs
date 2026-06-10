@@ -119,12 +119,20 @@ public class MessageSender : IMessageSender
             var from = new PhoneNumber($"whatsapp:{_twilio.WhatsAppFromNumber}");
             var to = new PhoneNumber($"whatsapp:{toPhone}");
 
+            // Twilio rejects empty ContentVariable values (error 21656 "Content Variables parameter
+            // is invalid"). A variable can legitimately resolve to empty (e.g. an unset event field,
+            // or a per-recipient player.* value on a group send), so substitute a single space so the
+            // send still goes through and the placeholder just renders blank.
+            var safeVariables = variables.ToDictionary(
+                kv => kv.Key,
+                kv => string.IsNullOrWhiteSpace(kv.Value) ? " " : kv.Value);
+
             var options = new CreateMessageOptions(to)
             {
                 From = from,
                 ContentSid = contentSid,
                 // Twilio expects ContentVariables as a JSON-encoded string of {"1":"foo","2":"bar"}.
-                ContentVariables = JsonSerializer.Serialize(variables)
+                ContentVariables = JsonSerializer.Serialize(safeVariables)
             };
             var callback = BuildCallbackUrl();
             if (callback is not null) options.StatusCallback = callback;
