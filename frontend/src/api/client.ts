@@ -3,6 +3,7 @@ import type {
   AddMessageGroupMemberRequest,
   BroadcastDetail,
   BroadcastSummary,
+  FailedMessage,
   CreateBroadcastRequest,
   SendPerPlayerRequest,
   SendPerPlayerResult,
@@ -394,6 +395,10 @@ export const Api = {
   },
   async listBroadcasts() {
     const r = await api.get<BroadcastSummary[]>('/messaging/broadcasts')
+    return r.data
+  },
+  async listFailedMessages() {
+    const r = await api.get<FailedMessage[]>('/messaging/failed-messages')
     return r.data
   },
   async listInboundMessages() {

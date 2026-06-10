@@ -182,6 +182,18 @@ public record PerPlayerPreviewItem(string PlayerName, IReadOnlyList<string> Reci
 
 public record PerPlayerPreviewResult(IReadOnlyList<PerPlayerPreviewItem> Items, int Total);
 
+/// <summary>A single failed/undelivered recipient row for the Settings → Failed messages view.</summary>
+public record FailedMessageDto(
+    int RecipientId,
+    int BroadcastId,
+    MessageChannel Channel,
+    DateTime CreatedAt,
+    string? Name,
+    string Phone,
+    string? TargetLabel,
+    string? StatusMessage,
+    string? ErrorCode);
+
 public record BroadcastSummary(
     int Id,
     MessageChannel Channel,

@@ -719,6 +719,22 @@ public class MessagingController : ControllerBase
             varsToSend = translated;
         }
 
+        // Don't send a message with blank personalization — Twilio rejects empty ContentVariables
+        // (error 21656), and a half-filled message (e.g. an empty player name) shouldn't go out.
+        // Log it as failed instead so it surfaces in Settings → Failed messages.
+        var blankLabels = sendTemplate.Variables
+            .Where(v => !varsToSend.TryGetValue(v.Position.ToString(CultureInfo.InvariantCulture), out var val) || string.IsNullOrWhiteSpace(val))
+            .OrderBy(v => v.Position)
+            .Select(v => v.Label)
+            .ToList();
+        if (blankLabels.Count > 0)
+        {
+            recipient.TemplateUsed = sendTemplate.Name;
+            recipient.Status = MessageDeliveryStatus.Failed;
+            recipient.StatusMessage = $"Not sent — blank value for: {string.Join(", ", blankLabels)}";
+            return;
+        }
+
         var send = await _sender.SendTemplateAsync(recipient.Phone, sendTemplate.ContentSid, varsToSend, ct);
         if (sendTemplate.Language != recipient.Language)
             send = send with { Message = $"[No {recipient.Language} template; sent {sendTemplate.Language} body] {send.Message}" };
@@ -2254,6 +2270,22 @@ public class MessagingController : ControllerBase
         if (startDt.Year == endDt.Year)
             return $"{startDt.ToString("MMM d", us)} – {endDt.ToString("MMM d, yyyy", us)}";
         return $"{startDt.ToString("MMM d, yyyy", us)} – {endDt.ToString("MMM d, yyyy", us)}";
+    }
+
+    /// <summary>Failed/undelivered recipients across recent broadcasts, for Settings → Failed
+    /// messages. Includes both carrier failures and sends we blocked for blank personalization.</summary>
+    [HttpGet("failed-messages")]
+    public async Task<ActionResult<IEnumerable<FailedMessageDto>>> ListFailedMessages(CancellationToken ct)
+    {
+        var rows = await _db.BroadcastRecipients
+            .Where(r => r.Status == MessageDeliveryStatus.Failed || r.Status == MessageDeliveryStatus.Undelivered)
+            .OrderByDescending(r => r.Broadcast!.CreatedAt)
+            .Take(200)
+            .Select(r => new FailedMessageDto(
+                r.Id, r.BroadcastId, r.Broadcast!.Channel, r.Broadcast.CreatedAt,
+                r.Name, r.Phone, r.Broadcast.TargetLabel, r.StatusMessage, r.ErrorCode))
+            .ToListAsync(ct);
+        return Ok(rows);
     }
 
     [HttpGet("broadcasts")]

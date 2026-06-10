@@ -441,6 +441,18 @@ export interface PerPlayerPreviewResult {
   total: number
 }
 
+export interface FailedMessage {
+  recipientId: number
+  broadcastId: number
+  channel: MessageChannel
+  createdAt: string
+  name: string | null
+  phone: string
+  targetLabel: string | null
+  statusMessage: string | null
+  errorCode: string | null
+}
+
 export interface BroadcastSummary {
   id: number
   channel: MessageChannel
