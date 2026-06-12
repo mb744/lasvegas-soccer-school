@@ -582,6 +582,36 @@ public class MessagingController : ControllerBase
                 .ToList();
             items.Add(new PerPlayerPreviewItem($"{player.FirstName} {player.LastName}".Trim(), names, body));
         }
+
+        // The team's coaches get one non-personalized copy (player.*/parent.* blank), mirroring the
+        // send. Show it as a preview card so the admin sees exactly what coaches will receive.
+        var previewCoachTeamId = await ResolveTeamIdFromTargetAsync(request.Target, ct);
+        if (previewCoachTeamId is int pctid)
+        {
+            var coachRecips = await _resolver.ResolveAsync(MapTarget(new BroadcastTargetDto
+            {
+                Kind = RecipientTargetKindDto.DynamicGroup,
+                DynamicGroupKey = $"{RecipientResolver.DynamicTeamCoachesPrefix}{pctid}",
+            }), ct);
+            if (coachRecips.Recipients.Count > 0)
+            {
+                var props = await ResolveContextPropertiesAsync(template.Context,
+                    new CreateBroadcastRequest { ScheduledGameId = request.ScheduledGameId }, ct);
+                var values = new Dictionary<string, string>(shared);
+                foreach (var v in template.Variables)
+                {
+                    var key = v.Position.ToString(CultureInfo.InvariantCulture);
+                    if (values.TryGetValue(key, out var av) && !string.IsNullOrWhiteSpace(av)) continue;
+                    if (!string.IsNullOrEmpty(v.PropertyKey) && props.TryGetValue(v.PropertyKey, out var mapped) && !string.IsNullOrEmpty(mapped))
+                        values[key] = mapped;
+                }
+                var body = RenderTemplatePreviewBody(template.PreviewText, template.Variables, values);
+                var names = coachRecips.Recipients
+                    .Select(r => string.IsNullOrWhiteSpace(r.Name) ? r.Phone : r.Name)
+                    .ToList();
+                items.Add(new PerPlayerPreviewItem("Coaches", names, body));
+            }
+        }
         return Ok(new PerPlayerPreviewResult(items, items.Count));
     }
 
