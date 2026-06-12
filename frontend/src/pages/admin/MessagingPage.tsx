@@ -2734,6 +2734,11 @@ function applyGameToTemplate(
       const label = v.label.toLowerCase()
       // Twilio expects positional keys ("1", "2", ...) so the values dict is keyed by Position.
       const key = v.position.toString()
+      // Variables with an explicit "Map to" property (event.*, tournament.*, or a custom mapped
+      // field) are resolved server-side at preview + send time. Skip the legacy label-based
+      // autofill for them — otherwise it would stuff e.g. the free-text location into a "Where"
+      // variable and override the mapped field the admin chose.
+      if (v.propertyKey) continue
       if (label.includes('opponent')) {
         next[key] = game.opponentName ?? ''
       } else if (label.includes('what')) {
