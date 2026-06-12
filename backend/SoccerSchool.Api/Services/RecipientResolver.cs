@@ -66,6 +66,11 @@ public class RecipientResolver : IRecipientResolver
     /// broadcast pipeline, with the audience always reflecting the current roster.</summary>
     public const string DynamicTeamPrefix = "team-";
 
+    /// <summary>A team's coaches only (no parents). Used by the per-player fan-out to also reach
+    /// the coaches assigned to the team. Must be checked before <see cref="DynamicTeamPrefix"/>
+    /// since "team-coaches-{id}" also starts with "team-".</summary>
+    public const string DynamicTeamCoachesPrefix = "team-coaches-";
+
     /// <summary>Internal target for the event re-send flow: key <c>event-pending-{eventId}</c>
     /// resolves to the guardians of that event's rostered players who haven't confirmed yet (no
     /// attendance row or status Pending). Not listed as a pickable group.</summary>
@@ -169,6 +174,13 @@ public class RecipientResolver : IRecipientResolver
                 return new RecipientList($"Group: {group.Name}", members);
 
             case RecipientTargetKind.DynamicGroup:
+                // Check team-coaches-{id} before team-{id} ("team-coaches-5" also starts with "team-").
+                if (target.DynamicGroupKey is string coachKey
+                    && coachKey.StartsWith(DynamicTeamCoachesPrefix, StringComparison.Ordinal)
+                    && int.TryParse(coachKey.AsSpan(DynamicTeamCoachesPrefix.Length), out var coachTeamId))
+                {
+                    return await LoadTeamCoachesAsync(coachTeamId, ct);
+                }
                 if (target.DynamicGroupKey is string teamKey
                     && teamKey.StartsWith(DynamicTeamPrefix, StringComparison.Ordinal)
                     && int.TryParse(teamKey.AsSpan(DynamicTeamPrefix.Length), out var teamId))
@@ -352,17 +364,32 @@ public class RecipientResolver : IRecipientResolver
         // Coaches: included with every team-{id} send. ParentAccountId is null (they aren't
         // tied to a parent account); dedup falls back to phone/email so a coach who shares a
         // number with a parent won't get a double-send.
+        var coachRecipients = await LoadTeamCoachRecipientsAsync(teamId, ct);
+
+        return new RecipientList($"Team: {team.Name}", DedupeByReachability(parents.Concat(contacts).Concat(coachRecipients)));
+    }
+
+    /// <summary>Just the coaches assigned to a team (no parents). Used by the per-player fan-out so
+    /// the team's coaches still get the message even though they aren't rostered players.</summary>
+    private async Task<RecipientList> LoadTeamCoachesAsync(int teamId, CancellationToken ct)
+    {
+        var name = await _db.Teams.Where(t => t.Id == teamId).Select(t => t.Name).FirstOrDefaultAsync(ct);
+        if (name is null) return new RecipientList("Unknown team", Array.Empty<ResolvedRecipient>());
+        var coaches = await LoadTeamCoachRecipientsAsync(teamId, ct);
+        return new RecipientList($"Team coaches: {name}", DedupeByReachability(coaches));
+    }
+
+    private async Task<List<ResolvedRecipient>> LoadTeamCoachRecipientsAsync(int teamId, CancellationToken ct)
+    {
         var coaches = await _db.TeamCoaches
             .Where(c => c.TeamId == teamId
                 && ((c.Phone != null && c.Phone != "") || (c.Email != null && c.Email != "")))
             .Select(c => new { c.Name, c.Phone, c.Email, c.Language, c.HasWhatsApp })
             .ToListAsync(ct);
-        var coachRecipients = coaches
+        return coaches
             .Select(c => new ResolvedRecipient(
                 c.Phone ?? string.Empty, c.Name, null, c.Language, c.Email, c.HasWhatsApp))
             .ToList();
-
-        return new RecipientList($"Team: {team.Name}", DedupeByReachability(parents.Concat(contacts).Concat(coachRecipients)));
     }
 
     /// <summary>Guardians of an event's rostered players who haven't confirmed (no attendance row

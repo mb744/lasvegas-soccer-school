@@ -521,6 +521,28 @@ public class MessagingController : ControllerBase
             if (result.Result is ObjectResult ok && ok.StatusCode == 200) sent++;
             else skipped++;
         }
+
+        // Also reach the team's coaches (they aren't rostered players, so the per-player loop
+        // skips them). One non-personalized copy — player.*/parent.* resolve empty for coaches.
+        var coachTeamId = await ResolveTeamIdFromTargetAsync(request.Target, ct);
+        if (coachTeamId is int ctid)
+        {
+            var coachReq = new CreateBroadcastRequest
+            {
+                Channel = MessageChannel.WhatsApp,
+                WhatsAppTemplateId = template.Id,
+                TemplateVariables = new Dictionary<string, string>(shared),
+                DefaultLanguage = request.DefaultLanguage,
+                ScheduledGameId = request.ScheduledGameId,
+                BatchId = batchId,
+                Target = new BroadcastTargetDto
+                {
+                    Kind = RecipientTargetKindDto.DynamicGroup,
+                    DynamicGroupKey = $"{RecipientResolver.DynamicTeamCoachesPrefix}{ctid}",
+                },
+            };
+            await CreateBroadcast(coachReq, ct);
+        }
         return Ok(new SendPerPlayerResult(sent, skipped, players.Count));
     }
 
