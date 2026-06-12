@@ -152,6 +152,11 @@ public record CreateBroadcastRequest
     /// send/re-send flow; null for individual sends.</summary>
     public Guid? BatchId { get; init; }
 
+    /// <summary>Internal: the per-player fan-out's coach copy sets this to the team name so the
+    /// per-recipient player/parent name fields render with the team name (instead of resolving
+    /// blank and getting blocked). Not meant to be set by external callers.</summary>
+    public string? CoachTeamNameFallback { get; init; }
+
     public BroadcastTargetDto Target { get; init; } = new();
 }
 

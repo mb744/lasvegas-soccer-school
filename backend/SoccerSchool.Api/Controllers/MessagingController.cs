@@ -527,6 +527,7 @@ public class MessagingController : ControllerBase
         var coachTeamId = await ResolveTeamIdFromTargetAsync(request.Target, ct);
         if (coachTeamId is int ctid)
         {
+            var teamName = await _db.Teams.Where(t => t.Id == ctid).Select(t => t.Name).FirstOrDefaultAsync(ct) ?? string.Empty;
             var coachReq = new CreateBroadcastRequest
             {
                 Channel = MessageChannel.WhatsApp,
@@ -535,6 +536,7 @@ public class MessagingController : ControllerBase
                 DefaultLanguage = request.DefaultLanguage,
                 ScheduledGameId = request.ScheduledGameId,
                 BatchId = batchId,
+                CoachTeamNameFallback = teamName,
                 Target = new BroadcastTargetDto
                 {
                     Kind = RecipientTargetKindDto.DynamicGroup,
@@ -595,8 +597,9 @@ public class MessagingController : ControllerBase
             }), ct);
             if (coachRecips.Recipients.Count > 0)
             {
+                var teamName = await _db.Teams.Where(t => t.Id == pctid).Select(t => t.Name).FirstOrDefaultAsync(ct) ?? string.Empty;
                 var props = await ResolveContextPropertiesAsync(template.Context,
-                    new CreateBroadcastRequest { ScheduledGameId = request.ScheduledGameId }, ct);
+                    new CreateBroadcastRequest { ScheduledGameId = request.ScheduledGameId, CoachTeamNameFallback = teamName }, ct);
                 var values = new Dictionary<string, string>(shared);
                 foreach (var v in template.Variables)
                 {
@@ -2040,12 +2043,24 @@ public class MessagingController : ControllerBase
         };
         if (context == TemplateContext.FreeForm) return baseProps;
 
-        // Add admin-defined composite fields (Settings → Mapped fields): each renders its template
-        // by substituting {base.key} placeholders with the resolved base values above.
         var all = new Dictionary<string, string>(baseProps, StringComparer.Ordinal);
+
+        // Coach copy of a per-player send: there's no single player, so stand in the team name for
+        // the per-recipient name fields. This fills both direct player.*/parent.* mappings and any
+        // custom field that references them (rendered below), so the coach message sends cleanly
+        // instead of being blocked for blank personalization.
+        if (!string.IsNullOrWhiteSpace(request.CoachTeamNameFallback))
+        {
+            var fb = request.CoachTeamNameFallback!;
+            all["player.firstName"] = fb; all["player.lastName"] = fb; all["player.fullName"] = fb;
+            all["parent.firstName"] = fb; all["parent.lastName"] = fb; all["parent.fullName"] = fb;
+        }
+
+        // Add admin-defined composite fields (Settings → Mapped fields): each renders its template
+        // by substituting {base.key} placeholders with the resolved base values (incl. any fallback).
         var custom = await _db.MappedFields.AsNoTracking().ToListAsync(ct);
         foreach (var m in custom)
-            all[m.Key] = RenderMappedField(m.Template, baseProps);
+            all[m.Key] = RenderMappedField(m.Template, all);
         return all;
     }
 
