@@ -46,7 +46,7 @@ const en = {
     firstName: 'First name',
     lastName: 'Last name',
     phone: 'Cell phone (optional)',
-    smsConsent: 'By checking this box you consent to receive a one-time SMS containing your registration link from Las Vegas Soccer School. Msg & data rates may apply. Reply STOP to opt out, HELP for help.',
+    smsConsent: 'By checking this box, you agree to receive messages from Las Vegas Soccer School. Message frequency varies. Reply STOP to unsubscribe. Message and data rates may apply.',
     smsConsentCheckbox: 'I agree to receive SMS messages',
     smsConsentRequired: 'SMS consent is required if you provide a phone number.',
     smsTermsLink: 'See SMS terms.',

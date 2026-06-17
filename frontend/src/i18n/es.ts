@@ -48,7 +48,7 @@ const es: Translations = {
     firstName: 'Nombre',
     lastName: 'Apellido',
     phone: 'Teléfono celular (opcional)',
-    smsConsent: 'Al marcar esta casilla, usted consiente recibir un SMS único con su enlace de inscripción de Las Vegas Soccer School. Pueden aplicar tarifas de mensajes y datos. Responda STOP para cancelar, HELP para ayuda.',
+    smsConsent: 'Al marcar esta casilla, acepta recibir mensajes de Las Vegas Soccer School. La frecuencia de mensajes varía. Responda STOP para cancelar la suscripción. Pueden aplicar tarifas de mensajes y datos.',
     smsConsentCheckbox: 'Acepto recibir mensajes SMS',
     smsConsentRequired: 'El consentimiento SMS es obligatorio si proporciona un teléfono.',
     smsTermsLink: 'Ver términos de SMS.',
