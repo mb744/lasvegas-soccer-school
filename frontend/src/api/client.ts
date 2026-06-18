@@ -59,6 +59,13 @@ import type {
   MessagingSettings,
   SaveMessagingSettingsRequest,
   ThreadSummary,
+  AdminPlayerSummary,
+  PlayerUniformAssignment,
+  CreatePlayerUniformAssignmentRequest,
+  UpdatePlayerUniformAssignmentRequest,
+  AdminCreatePlayerRequest,
+  SendRegistrationInviteRequest,
+  SendRegistrationInviteResult,
   InboxParent,
   ThreadDetail,
   ThreadMessage,
@@ -101,6 +108,9 @@ import type {
   TranslateResponse,
   UserSummary,
   WhatsAppTemplate,
+  ChatGroupAdmin,
+  SaveChatGroupRequest,
+  AddChatGroupMemberRequest,
 } from './types'
 
 const api = axios.create({
@@ -474,6 +484,36 @@ export const Api = {
     const r = await api.put<MessagingSettings>('/messaging/settings', payload)
     return r.data
   },
+  // --- Admin Players ---
+  async listAdminPlayers(q?: string) {
+    const params = q?.trim() ? `?q=${encodeURIComponent(q.trim())}` : ''
+    const r = await api.get<AdminPlayerSummary[]>(`/admin/players${params}`)
+    return r.data
+  },
+  async listPlayerUniforms(playerId: number) {
+    const r = await api.get<PlayerUniformAssignment[]>(`/admin/players/${playerId}/uniforms`)
+    return r.data
+  },
+  async createPlayerUniform(playerId: number, payload: CreatePlayerUniformAssignmentRequest) {
+    const r = await api.post<PlayerUniformAssignment>(`/admin/players/${playerId}/uniforms`, payload)
+    return r.data
+  },
+  async updatePlayerUniform(playerId: number, assignmentId: number, payload: UpdatePlayerUniformAssignmentRequest) {
+    const r = await api.put<PlayerUniformAssignment>(`/admin/players/${playerId}/uniforms/${assignmentId}`, payload)
+    return r.data
+  },
+  async deletePlayerUniform(playerId: number, assignmentId: number) {
+    await api.delete(`/admin/players/${playerId}/uniforms/${assignmentId}`)
+  },
+  async createAdminPlayer(payload: AdminCreatePlayerRequest) {
+    const r = await api.post<AdminPlayerSummary>('/admin/players', payload)
+    return r.data
+  },
+  async sendRegistrationInvite(payload: SendRegistrationInviteRequest) {
+    const r = await api.post<SendRegistrationInviteResult>('/admin/players/send-registration-invite', payload)
+    return r.data
+  },
+
   async listThreads() {
     const r = await api.get<ThreadSummary[]>('/messaging/threads')
     return r.data
@@ -883,6 +923,34 @@ export const Api = {
   async removeCoachCertification(id: number, certId: number) {
     const r = await api.delete<Coach>(`/coaches/${id}/certifications/${certId}`)
     return r.data
+  },
+
+  // --- Mobile app chat groups (native in-app chat the mobile app's parents use) ---
+  async listChatGroups() {
+    const r = await api.get<ChatGroupAdmin[]>('/admin/chat-groups')
+    return r.data
+  },
+  async createChatGroup(payload: SaveChatGroupRequest) {
+    const r = await api.post<ChatGroupAdmin>('/admin/chat-groups', payload)
+    return r.data
+  },
+  async renameChatGroup(id: number, payload: SaveChatGroupRequest) {
+    const r = await api.put<ChatGroupAdmin>(`/admin/chat-groups/${id}`, payload)
+    return r.data
+  },
+  async deleteChatGroup(id: number) {
+    await api.delete(`/admin/chat-groups/${id}`)
+  },
+  async addChatGroupMember(id: number, payload: AddChatGroupMemberRequest) {
+    const r = await api.post<ChatGroupAdmin>(`/admin/chat-groups/${id}/members`, payload)
+    return r.data
+  },
+  async removeChatGroupMember(id: number, memberId: number) {
+    const r = await api.delete<ChatGroupAdmin>(`/admin/chat-groups/${id}/members/${memberId}`)
+    return r.data
+  },
+  async postChatGroupMessage(id: number, body: string) {
+    await api.post(`/admin/chat-groups/${id}/messages`, { body })
   },
 }
 

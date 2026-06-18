@@ -1212,6 +1212,74 @@ export interface ThreadMessage {
   broadcastId: number | null
 }
 
+/** Admin /admin/players row — durable player + parent contact + current team + current-season
+ *  registration status + a glance at uniform assignments. */
+export interface AdminPlayerSummary {
+  id: number
+  firstName: string
+  lastName: string
+  dateOfBirth: string
+  ageBracket: string | null
+  parentAccountId: number | null
+  parentName: string | null
+  parentCellPhone: string | null
+  parentEmail: string | null
+  currentTeamId: number | null
+  currentTeamName: string | null
+  waiverSigned: boolean
+  registeredThisSeason: boolean
+  uniformCount: number
+  /** Comma-joined jersey numbers of active (non-returned) uniform assignments. */
+  activeJerseyNumbers: string
+}
+
+export interface PlayerUniformAssignment {
+  id: number
+  uniformId: number
+  uniformName: string
+  uniformDesignation: string | null
+  jerseyNumber: string
+  assignedAt: string
+  returnedAt: string | null
+  notes: string | null
+  createdAt: string
+}
+
+export interface CreatePlayerUniformAssignmentRequest {
+  uniformId: number
+  jerseyNumber: string
+  assignedAt: string
+  notes?: string | null
+}
+
+export interface UpdatePlayerUniformAssignmentRequest {
+  jerseyNumber: string
+  assignedAt: string
+  returnedAt?: string | null
+  notes?: string | null
+}
+
+export interface AdminCreatePlayerRequest {
+  firstName: string
+  lastName: string
+  dateOfBirth: string
+  parentAccountId?: number | null
+  newParentFirstName?: string | null
+  newParentLastName?: string | null
+  newParentEmail?: string | null
+  newParentCellPhone?: string | null
+}
+
+export interface SendRegistrationInviteRequest {
+  parentAccountId: number
+  additionalNote?: string | null
+}
+
+export interface SendRegistrationInviteResult {
+  success: boolean
+  message: string
+}
+
 export interface ThreadSummary {
   phone: string
   name: string | null
@@ -1348,4 +1416,38 @@ export interface SaveCoachCertificationRequest {
   expiresOn?: string | null
   certificateNumber?: string | null
   notes?: string | null
+}
+
+// --- Mobile app chat groups (native in-app chat; admin-managed here, used by parents on mobile) ---
+
+/** 0 = parent member, 1 = admin/staff member. */
+export type ChatMemberRole = 0 | 1
+
+export interface ChatGroupMemberAdmin {
+  id: number
+  parentAccountId: number | null
+  displayName: string
+  role: ChatMemberRole
+  addedAt: string
+}
+
+export interface ChatGroupAdmin {
+  id: number
+  title: string
+  teamId: number | null
+  teamName: string | null
+  memberCount: number
+  messageCount: number
+  createdAt: string
+  members: ChatGroupMemberAdmin[]
+}
+
+export interface SaveChatGroupRequest {
+  title: string
+  /** When set, the new group is seeded with every parent on that team's roster. */
+  seedFromTeamId?: number | null
+}
+
+export interface AddChatGroupMemberRequest {
+  parentAccountId: number
 }
