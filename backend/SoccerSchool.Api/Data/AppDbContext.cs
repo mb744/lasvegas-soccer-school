@@ -81,13 +81,6 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
     public DbSet<Venue> Venues => Set<Venue>();
     public DbSet<MappedField> MappedFields => Set<MappedField>();
 
-    // --- Mobile app (native) ---
-    public DbSet<MobileRefreshToken> MobileRefreshTokens => Set<MobileRefreshToken>();
-    public DbSet<DeviceToken> DeviceTokens => Set<DeviceToken>();
-    public DbSet<ChatGroup> ChatGroups => Set<ChatGroup>();
-    public DbSet<ChatGroupMember> ChatGroupMembers => Set<ChatGroupMember>();
-    public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
-
     /// <summary>Backing store for the ASP.NET Core data-protection key ring (cookie encryption
     /// keys). Persisting these in SQL keeps auth cookies valid across container restarts.</summary>
     public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
@@ -474,68 +467,6 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
                 .WithMany()
                 .HasForeignKey(m => m.BroadcastId)
                 .OnDelete(DeleteBehavior.SetNull);
-        });
-
-        // --- Mobile app (native) ---
-
-        modelBuilder.Entity<MobileRefreshToken>(b =>
-        {
-            b.HasOne(t => t.User)
-                .WithMany()
-                .HasForeignKey(t => t.UserId)
-                .OnDelete(DeleteBehavior.Cascade);
-            // Lookup on refresh is by hash; index it. Unique so a rotated token can't be re-minted.
-            b.HasIndex(t => t.TokenHash).IsUnique();
-            b.HasIndex(t => t.UserId);
-        });
-
-        modelBuilder.Entity<DeviceToken>(b =>
-        {
-            b.HasOne(t => t.User)
-                .WithMany()
-                .HasForeignKey(t => t.UserId)
-                .OnDelete(DeleteBehavior.Cascade);
-            // One row per physical device; we upsert on the token.
-            b.HasIndex(t => t.ExpoPushToken).IsUnique();
-            b.HasIndex(t => t.UserId);
-        });
-
-        modelBuilder.Entity<ChatGroup>(b =>
-        {
-            // Informational team link; deleting a team leaves the group (and its history) intact.
-            b.HasOne(g => g.Team)
-                .WithMany()
-                .HasForeignKey(g => g.TeamId)
-                .OnDelete(DeleteBehavior.SetNull);
-        });
-
-        modelBuilder.Entity<ChatGroupMember>(b =>
-        {
-            b.HasOne(m => m.ChatGroup)
-                .WithMany(g => g.Members)
-                .HasForeignKey(m => m.ChatGroupId)
-                .OnDelete(DeleteBehavior.Cascade);
-            // Parent membership cascades when the family is deleted. Admin members (UserId set,
-            // ParentAccountId null) carry no FK — UserId is a plain column, not a navigation.
-            b.HasOne(m => m.ParentAccount)
-                .WithMany()
-                .HasForeignKey(m => m.ParentAccountId)
-                .OnDelete(DeleteBehavior.Cascade);
-            // A family appears at most once per group. Filtered so admin rows (null account) don't collide.
-            b.HasIndex(m => new { m.ChatGroupId, m.ParentAccountId })
-                .IsUnique()
-                .HasFilter("[ParentAccountId] IS NOT NULL");
-            b.HasIndex(m => m.UserId);
-        });
-
-        modelBuilder.Entity<ChatMessage>(b =>
-        {
-            b.HasOne(m => m.ChatGroup)
-                .WithMany(g => g.Messages)
-                .HasForeignKey(m => m.ChatGroupId)
-                .OnDelete(DeleteBehavior.Cascade);
-            // History + pagination scan by (group, id) and unread counts by (group, id).
-            b.HasIndex(m => new { m.ChatGroupId, m.Id });
         });
     }
 }
