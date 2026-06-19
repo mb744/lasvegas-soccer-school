@@ -22,6 +22,7 @@ const designationLabel = (d: number): string | null => {
   }
 }
 
+// (Deploy-trigger no-op: 2026-06-19 — bundle was stale at index-Q1tF2s2D.js / Jun 17.)
 /** Admin Players hub. Lists every player in the system with parent/team/registration context,
  *  an at-a-glance jersey-number column, and per-row actions for:
  *    - Uniform tracking (assign a uniform from the catalog + jersey number + date; players can
