@@ -5,7 +5,7 @@ import { pickLatestTemplate } from '../api/templateNaming'
 import { RequiredLabel, useRequiredValidation } from './RequiredField'
 import { VenuePicker } from './VenuePicker'
 import { SHOE_TYPES, shoeTypeKey } from './shoeType'
-import type { ScheduledGame, EventAttendanceList, EventAttendanceSummary, AttendanceStatus, WhatsAppTemplate, TemplatePreviewResponse, Venue, ShoeType } from '../api/types'
+import type { ScheduledGame, EventAttendanceList, EventAttendanceSummary, AttendanceStatus, WhatsAppTemplate, TemplatePreviewResponse, Venue, ShoeType, TournamentSendPreview } from '../api/types'
 
 function extractError(e: any): string {
   return e?.response?.data?.title || e?.response?.data || e?.message || 'Error'
@@ -330,6 +330,12 @@ export function TeamScheduleSection({
   // Per-event confirmation counts (eventId → summary), for the row badge + re-send enablement.
   const [attnSummary, setAttnSummary] = useState<Record<number, EventAttendanceSummary>>({})
   const [resendingId, setResendingId] = useState<number | null>(null)
+  // Resend preview modal — opened by the per-event Re-send button instead of the old
+  // confirm() dialog. Carries which event we're previewing so the modal can fire the
+  // matching send (with edited overrides) when the admin confirms.
+  const [resendPreviewEventId, setResendPreviewEventId] = useState<number | null>(null)
+  const [resendPreview, setResendPreview] = useState<TournamentSendPreview | null>(null)
+  const [resendPreviewLoading, setResendPreviewLoading] = useState(false)
 
   const loadSummary = async () => {
     try {
@@ -358,18 +364,34 @@ export function TeamScheduleSection({
     if (!confirm(t('admin.attnResendConfirm'))) return
     onError(''); onNotice('')
     try {
-      const b = await Api.resendEventToPlayer(eventId, playerId)
-      onNotice(t('admin.evtResendSent', { count: b.recipients.length }))
+      const r = await Api.resendEventToPlayer(eventId, playerId)
+      onNotice(t('admin.evtResendDone', { sent: r.sent, total: r.total }))
     } catch (e: any) { onError(extractError(e)) }
   }
 
-  const resend = async (eventId: number) => {
-    if (!confirm(t('admin.evtResendConfirm'))) return
+  /** Open the resend preview modal: fetches the bilingual preview of what the first pending
+   *  player would receive, then renders the editable EventResendPreviewModal. Replaces the
+   *  old confirm()-and-fire flow so admins can see (and edit) the personalized body. */
+  const openResendPreview = async (eventId: number) => {
+    onError(''); onNotice('')
+    setResendPreviewEventId(eventId); setResendPreviewLoading(true); setResendPreview(null)
+    try {
+      setResendPreview(await Api.getEventResendPreview(eventId))
+    } catch (e: any) {
+      onError(extractError(e))
+      setResendPreviewEventId(null)
+    } finally {
+      setResendPreviewLoading(false)
+    }
+  }
+
+  const confirmResend = async (eventId: number, overrides: Record<number, string>) => {
     setResendingId(eventId); onError(''); onNotice('')
     try {
-      const b = await Api.resendEventMessage(eventId)
-      onNotice(t('admin.evtResendSent', { count: b.recipients.length }))
+      const r = await Api.resendEventMessage(eventId, Object.keys(overrides).length > 0 ? overrides : null)
+      onNotice(t('admin.evtResendDone', { sent: r.sent, total: r.total }))
       await loadSummary()
+      setResendPreviewEventId(null); setResendPreview(null)
     } catch (e: any) { onError(extractError(e)) }
     finally { setResendingId(null) }
   }
@@ -608,9 +630,14 @@ export function TeamScheduleSection({
                         <button onClick={() => toggleAttendance(ev.id)}
                           className="text-emerald-700 hover:underline">{t('admin.attnConfirm')}</button>
                         <span className="mx-2 text-slate-300">|</span>
-                        <button onClick={() => resend(ev.id)} disabled={resendingId === ev.id || !s || s.pending === 0}
+                        <button onClick={() => openResendPreview(ev.id)}
+                          disabled={resendingId === ev.id || resendPreviewLoading || !s || s.pending === 0}
                           className="text-emerald-700 hover:underline disabled:opacity-40 disabled:no-underline">
-                          {resendingId === ev.id ? t('admin.evtSyncing') : t('admin.evtResend')}
+                          {resendingId === ev.id
+                            ? t('admin.sending')
+                            : resendPreviewLoading && resendPreviewEventId === ev.id
+                              ? t('admin.evtCancelLoading')
+                              : t('admin.evtResend')}
                         </button>
                         <span className="mx-2 text-slate-300">|</span>
                         <button onClick={() => startEdit(ev)}
@@ -714,6 +741,114 @@ export function TeamScheduleSection({
             </div>
           </div>
         )}
+
+        {resendPreview && resendPreviewEventId !== null && (
+          <EventResendPreviewModal
+            preview={resendPreview}
+            sending={resendingId === resendPreviewEventId}
+            onConfirm={(overrides) => confirmResend(resendPreviewEventId, overrides)}
+            onCancel={() => { setResendPreviewEventId(null); setResendPreview(null) }} />
+        )}
+      </div>
+    </div>
+  )
+}
+
+/** Resend-to-no-shows preview + edit modal. Mirrors TournamentSendPreviewModal but with
+ *  i18n keys for the event resend flow and a fallback empty-state for free-form (non-template)
+ *  original sends where there's nothing to edit. */
+function EventResendPreviewModal({
+  preview, sending, onConfirm, onCancel,
+}: {
+  preview: TournamentSendPreview
+  sending: boolean
+  onConfirm: (overrides: Record<number, string>) => void
+  onCancel: () => void
+}) {
+  const { t } = useTranslation()
+  const initialValues = Object.fromEntries(preview.variables.map(v => [String(v.position), v.value]))
+  const [values, setValues] = useState<Record<string, string>>(initialValues)
+  const [en, setEn] = useState<{ name: string; rendered: string | null }>({
+    name: preview.englishTemplateName, rendered: preview.englishRendered,
+  })
+  const [es, setEs] = useState<{ name: string; rendered: string | null }>({
+    name: preview.spanishTemplateName, rendered: preview.spanishRendered,
+  })
+
+  useEffect(() => {
+    if (preview.templateId === 0) return
+    const dirty = preview.variables.some(v => values[String(v.position)] !== v.value)
+    if (!dirty) return
+    const id = setTimeout(async () => {
+      try {
+        const r = await Api.templatePreview({ templateId: preview.templateId, values })
+        setEn({ name: r.english.templateName, rendered: r.english.rendered })
+        setEs({ name: r.spanish.templateName, rendered: r.spanish.rendered })
+      } catch { /* leave previous render in place */ }
+    }, 400)
+    return () => clearTimeout(id)
+  }, [values, preview.templateId, preview.variables])
+
+  const fireSend = () => {
+    const overrides: Record<number, string> = {}
+    for (const v of preview.variables) {
+      const edited = values[String(v.position)] ?? ''
+      if (edited !== v.value) overrides[v.position] = edited
+    }
+    onConfirm(overrides)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
+      <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full p-5 space-y-3 my-8">
+        <div className="flex items-start justify-between">
+          <h4 className="text-base font-semibold text-slate-800">{t('admin.evtResendPreviewTitle')}</h4>
+          <button onClick={onCancel} className="text-slate-400 hover:text-slate-700 text-xl leading-none">×</button>
+        </div>
+        <div className="text-xs text-slate-500">
+          <div>{t('admin.evtResendPreviewHelp', { count: preview.rosterCount })}</div>
+          <div className="mt-1 text-slate-700">
+            {t('admin.evtResendPreviewSample', { name: preview.samplePlayerName })}
+          </div>
+        </div>
+        {preview.variables.length > 0 ? (
+          <div className="border border-slate-200 rounded p-3 bg-slate-50 space-y-2">
+            <div className="text-[10px] uppercase tracking-wide text-slate-500">{t('admin.evtPreviewEditParams')}</div>
+            {preview.variables.map(v => (
+              <label key={v.position} className="grid grid-cols-[6rem_1fr] items-center gap-2 text-xs">
+                <span className="text-slate-600">
+                  {`{{${v.position}}}`} {v.label}
+                  {v.propertyKey && <span className="block text-[10px] text-slate-400">{v.propertyKey}</span>}
+                </span>
+                <input type="text" value={values[String(v.position)] ?? ''}
+                  onChange={e => setValues(prev => ({ ...prev, [String(v.position)]: e.target.value }))}
+                  className="border border-slate-300 rounded-md px-2 py-1 text-sm bg-white" />
+              </label>
+            ))}
+          </div>
+        ) : (
+          <div className="border border-amber-200 rounded p-3 bg-amber-50 text-xs text-amber-800">
+            {t('admin.evtResendPreviewFreeForm')}
+          </div>
+        )}
+        <div className="grid md:grid-cols-2 gap-3">
+          <div className="border border-slate-200 rounded p-3 bg-slate-50 text-sm whitespace-pre-wrap">
+            <div className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">English · {en.name}</div>
+            {en.rendered ?? '—'}
+          </div>
+          <div className="border border-slate-200 rounded p-3 bg-slate-50 text-sm whitespace-pre-wrap">
+            <div className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Español · {es.name}</div>
+            {es.rendered ?? '—'}
+          </div>
+        </div>
+        <div className="flex items-center gap-3 pt-1">
+          <button onClick={fireSend} disabled={sending}
+            className="bg-emerald-700 text-white text-sm font-semibold px-4 py-2 rounded-md hover:bg-emerald-800 disabled:opacity-60">
+            {sending ? t('admin.sending') : t('admin.evtResendSend')}
+          </button>
+          <button onClick={onCancel} disabled={sending}
+            className="text-sm text-slate-600 hover:underline">{t('admin.cancel')}</button>
+        </div>
       </div>
     </div>
   )

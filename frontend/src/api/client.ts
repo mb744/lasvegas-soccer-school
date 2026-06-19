@@ -776,12 +776,26 @@ export const Api = {
     const r = await api.get<EventAttendanceSummary[]>(`/schedule/teams/${teamId}/attendance-summary`)
     return r.data
   },
-  async resendEventMessage(eventId: number) {
-    const r = await api.post<BroadcastDetail>(`/messaging/events/${eventId}/resend`, {})
+  /** Re-sends the event's most recent message to every pending family. Fans out per-player on
+   *  the backend so each parent gets a message personalized to THEIR kid (player.* / parent.*
+   *  variables re-resolve per recipient). `overrides` carries inline edits from the preview
+   *  modal — same skip-player.* rule as the tournament send. */
+  async resendEventMessage(eventId: number, overrides?: Record<number, string> | null) {
+    const r = await api.post<SendTournamentConfirmationsResult>(
+      `/messaging/events/${eventId}/resend`,
+      { overrides: overrides ?? null })
     return r.data
   },
-  async resendEventToPlayer(eventId: number, playerId: number) {
-    const r = await api.post<BroadcastDetail>(`/messaging/events/${eventId}/resend/${playerId}`, {})
+  async resendEventToPlayer(eventId: number, playerId: number, overrides?: Record<number, string> | null) {
+    const r = await api.post<SendTournamentConfirmationsResult>(
+      `/messaging/events/${eventId}/resend/${playerId}`,
+      { overrides: overrides ?? null })
+    return r.data
+  },
+  /** Pre-send EN/ES preview for the event resend modal. Samples the first pending player so
+   *  the rendered body shows the per-player personalized form. */
+  async getEventResendPreview(eventId: number) {
+    const r = await api.get<TournamentSendPreview>(`/messaging/events/${eventId}/resend-preview`)
     return r.data
   },
   async setEventAttendance(eventId: number, playerId: number, status: AttendanceStatus) {

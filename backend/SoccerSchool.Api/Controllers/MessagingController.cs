@@ -700,51 +700,266 @@ public class MessagingController : ControllerBase
         return null;
     }
 
-    /// <summary>Re-sends the most recent message for an event to the rostered players' guardians who
-    /// haven't confirmed yet ("no response"). Clones the original's channel + template/body and runs
-    /// the normal broadcast pipeline against the <c>event-pending-{id}</c> audience.</summary>
+    /// <summary>Re-sends the event's most recent message to every rostered player's guardian
+    /// family who hasn't confirmed yet ("no response"). Fans out one Broadcast per player and
+    /// re-resolves any <c>player.*</c> / <c>parent.*</c> mapped template variables against that
+    /// player's data, so each family sees a message personalized to their own kid instead of
+    /// whatever sample name was baked into the original group send. Optional Overrides body
+    /// carries inline edits from the preview modal — same skip-player.* rule as the tournament
+    /// confirmation send so each recipient still gets their own name.</summary>
     [HttpPost("events/{eventId:int}/resend")]
-    public Task<ActionResult<BroadcastDetail>> ResendEventMessage(int eventId, CancellationToken ct) =>
-        ResendEventToTargetAsync(eventId, $"{RecipientResolver.DynamicEventPendingPrefix}{eventId}", ct);
+    public Task<ActionResult<SendTournamentConfirmationsResult>> ResendEventMessage(
+        int eventId, [FromBody] SendTournamentConfirmationsRequest? request, CancellationToken ct) =>
+        ResendEventFanOutAsync(eventId, includePlayerIds: null, request?.Overrides, ct);
 
-    /// <summary>Re-sends the event's most recent message to a single rostered player's guardians.</summary>
+    /// <summary>Re-sends the event's most recent message to one specific player's guardian family,
+    /// with the same per-player personalization the group resend uses.</summary>
     [HttpPost("events/{eventId:int}/resend/{playerId:int}")]
-    public Task<ActionResult<BroadcastDetail>> ResendEventToPlayer(int eventId, int playerId, CancellationToken ct) =>
-        ResendEventToTargetAsync(eventId, $"{RecipientResolver.DynamicPlayerPrefix}{playerId}", ct);
+    public Task<ActionResult<SendTournamentConfirmationsResult>> ResendEventToPlayer(
+        int eventId, int playerId,
+        [FromBody] SendTournamentConfirmationsRequest? request, CancellationToken ct) =>
+        ResendEventFanOutAsync(eventId, new HashSet<int> { playerId }, request?.Overrides, ct);
 
-    private async Task<ActionResult<BroadcastDetail>> ResendEventToTargetAsync(int eventId, string dynamicGroupKey, CancellationToken ct)
+    private async Task<ActionResult<SendTournamentConfirmationsResult>> ResendEventFanOutAsync(
+        int eventId, IReadOnlySet<int>? includePlayerIds,
+        IReadOnlyDictionary<int, string>? overrides, CancellationToken ct)
     {
         var latest = await _db.Broadcasts
             .Where(b => b.ScheduledGameId == eventId)
+            .Include(b => b.WhatsAppTemplate).ThenInclude(t => t!.Variables)
             .OrderByDescending(b => b.CreatedAt)
             .FirstOrDefaultAsync(ct);
         if (latest is null)
             return BadRequest("No message has been sent for this event yet.");
 
-        Dictionary<string, string>? vars = null;
+        var ev = await _db.ScheduledGames
+            .AsNoTracking()
+            .FirstOrDefaultAsync(g => g.Id == eventId, ct);
+        if (ev is null) return NotFound();
+
+        // Resolve target player ids. When the caller didn't pin a specific player, the no-show
+        // set is the roster minus everyone who already answered (Confirmed / Declined / Maybe).
+        var rosterPlayerIds = await _db.TeamPlayers
+            .Where(tp => tp.TeamId == ev.TeamId)
+            .Select(tp => tp.PlayerId)
+            .ToListAsync(ct);
+        IReadOnlySet<int> targetIds;
+        if (includePlayerIds is not null)
+        {
+            targetIds = rosterPlayerIds.Where(includePlayerIds.Contains).ToHashSet();
+        }
+        else
+        {
+            var answeredIds = await _db.EventAttendances
+                .Where(a => a.ScheduledGameId == eventId && a.Status != AttendanceStatus.Pending)
+                .Select(a => a.PlayerId)
+                .ToListAsync(ct);
+            targetIds = rosterPlayerIds.Except(answeredIds).ToHashSet();
+        }
+        if (targetIds.Count == 0)
+            return Ok(new SendTournamentConfirmationsResult(0, 0, 0, "No targets — every rostered family already replied."));
+
+        // Parse the original admin-typed variable values from the cloned send. These stay as
+        // the baseline for non-personalizable fields (event details, team name, etc.); only
+        // player.* and parent.* variables get re-resolved per recipient below.
+        Dictionary<string, string> originalVars = new();
         if (!string.IsNullOrWhiteSpace(latest.TemplateVariablesJson))
         {
-            try { vars = JsonSerializer.Deserialize<Dictionary<string, string>>(latest.TemplateVariablesJson); }
-            catch { vars = null; }
+            try
+            {
+                originalVars = JsonSerializer.Deserialize<Dictionary<string, string>>(latest.TemplateVariablesJson)
+                    ?? new Dictionary<string, string>();
+            }
+            catch { originalVars = new Dictionary<string, string>(); }
         }
 
-        var request = new CreateBroadcastRequest
+        var batchId = Guid.NewGuid();
+        int sent = 0, skipped = 0;
+
+        foreach (var playerId in targetIds)
         {
-            Channel = latest.Channel,
-            BodyEn = latest.BodyEn,
-            BodyEs = latest.BodyEs,
-            SubjectEn = latest.SubjectEn,
-            SubjectEs = latest.SubjectEs,
-            WhatsAppTemplateId = latest.WhatsAppTemplateId,
-            TemplateVariables = vars,
-            ScheduledGameId = eventId,
-            Target = new BroadcastTargetDto
+            if (ct.IsCancellationRequested) break;
+
+            Dictionary<string, string>? perPlayerVars = null;
+            if (latest.WhatsAppTemplateId is not null && latest.WhatsAppTemplate is not null)
             {
-                Kind = RecipientTargetKindDto.DynamicGroup,
-                DynamicGroupKey = dynamicGroupKey,
-            },
-        };
-        return await CreateBroadcast(request, ct);
+                perPlayerVars = new Dictionary<string, string>(originalVars);
+                var props = await BuildEventDetailsPropertiesAsync(eventId, ev.TournamentId, playerId, ct);
+                foreach (var v in latest.WhatsAppTemplate.Variables)
+                {
+                    var key = v.Position.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                    if (string.IsNullOrEmpty(v.PropertyKey)) continue;
+                    // Re-resolve player.* and parent.* per recipient — this is exactly the field
+                    // set that should personalize per family. The original send baked in one
+                    // sample player's name; without this overwrite every family would see that
+                    // sample again. Other mapped fields (event.*, team.*, app.*) keep the
+                    // original group value since they don't vary by recipient.
+                    var isPerPlayer = v.PropertyKey.StartsWith("player.", StringComparison.Ordinal)
+                        || v.PropertyKey.StartsWith("parent.", StringComparison.Ordinal);
+                    if (isPerPlayer
+                        && props.TryGetValue(v.PropertyKey, out var perPlayerValue)
+                        && !string.IsNullOrEmpty(perPlayerValue))
+                    {
+                        perPlayerVars[key] = perPlayerValue;
+                    }
+                }
+                // Apply admin overrides from the preview modal. Skip player.* / parent.* so the
+                // per-player resolver wins for those (admin shouldn't be editing them anyway).
+                if (overrides is not null && overrides.Count > 0)
+                {
+                    foreach (var v in latest.WhatsAppTemplate.Variables)
+                    {
+                        if (!overrides.TryGetValue(v.Position, out var edited)) continue;
+                        if (v.PropertyKey is not null
+                            && (v.PropertyKey.StartsWith("player.", StringComparison.Ordinal)
+                                || v.PropertyKey.StartsWith("parent.", StringComparison.Ordinal)))
+                            continue;
+                        perPlayerVars[v.Position.ToString(System.Globalization.CultureInfo.InvariantCulture)] = edited;
+                    }
+                }
+            }
+
+            var req = new CreateBroadcastRequest
+            {
+                Channel = latest.Channel,
+                BodyEn = latest.BodyEn,
+                BodyEs = latest.BodyEs,
+                SubjectEn = latest.SubjectEn,
+                SubjectEs = latest.SubjectEs,
+                WhatsAppTemplateId = latest.WhatsAppTemplateId,
+                TemplateVariables = perPlayerVars,
+                ScheduledGameId = eventId,
+                PlayerId = playerId,
+                BatchId = batchId,
+                Target = new BroadcastTargetDto
+                {
+                    Kind = RecipientTargetKindDto.DynamicGroup,
+                    DynamicGroupKey = $"{RecipientResolver.DynamicPlayerPrefix}{playerId}",
+                },
+            };
+            var result = await CreateBroadcast(req, ct);
+            if (result.Result is ObjectResult ok && ok.StatusCode == 200) sent++;
+            else skipped++;
+        }
+
+        return Ok(new SendTournamentConfirmationsResult(sent, skipped, targetIds.Count, null));
+    }
+
+    /// <summary>Bilingual EN/ES preview for the event resend modal. Samples the first pending
+    /// (no-response) player so the modal shows what *that* family would receive byte-for-byte.
+    /// Free-form (non-templated) original sends still preview, but with no editable variables
+    /// because there are none to resolve.</summary>
+    [HttpGet("events/{eventId:int}/resend-preview")]
+    public async Task<ActionResult<TournamentSendPreviewDto>> GetEventResendPreview(
+        int eventId, CancellationToken ct)
+    {
+        var latest = await _db.Broadcasts
+            .Where(b => b.ScheduledGameId == eventId)
+            .Include(b => b.WhatsAppTemplate).ThenInclude(t => t!.Variables)
+            .OrderByDescending(b => b.CreatedAt)
+            .FirstOrDefaultAsync(ct);
+        if (latest is null) return BadRequest("No message has been sent for this event yet.");
+
+        var ev = await _db.ScheduledGames
+            .AsNoTracking()
+            .FirstOrDefaultAsync(g => g.Id == eventId, ct);
+        if (ev is null) return NotFound();
+
+        var rosterPlayerIds = await _db.TeamPlayers
+            .Where(tp => tp.TeamId == ev.TeamId)
+            .Select(tp => tp.PlayerId)
+            .ToListAsync(ct);
+        var answeredIds = await _db.EventAttendances
+            .Where(a => a.ScheduledGameId == eventId && a.Status != AttendanceStatus.Pending)
+            .Select(a => a.PlayerId)
+            .ToListAsync(ct);
+        var pendingIds = rosterPlayerIds.Except(answeredIds).ToList();
+        if (pendingIds.Count == 0)
+            return BadRequest("Everyone already replied — nothing to preview.");
+
+        var samplePlayer = await _db.Players
+            .Where(p => pendingIds.Contains(p.Id))
+            .OrderBy(p => p.LastName).ThenBy(p => p.FirstName)
+            .AsNoTracking()
+            .FirstOrDefaultAsync(ct);
+        if (samplePlayer is null) return BadRequest("No sample pending player found.");
+        var sampleName = $"{samplePlayer.FirstName} {samplePlayer.LastName}".Trim();
+
+        // Free-form (non-template) send: just render the cloned body for the preview pane.
+        // No editable variables; the admin re-sends the same text to every pending family.
+        if (latest.WhatsAppTemplateId is null || latest.WhatsAppTemplate is null)
+        {
+            return Ok(new TournamentSendPreviewDto(
+                SamplePlayerName: sampleName,
+                DatesValue: string.Empty,
+                CostValue: string.Empty,
+                RosterCount: pendingIds.Count,
+                TemplateId: 0,
+                Variables: new List<TournamentSendPreviewVariableDto>(),
+                EnglishTemplateName: "Free-form",
+                EnglishRendered: latest.BodyEn,
+                SpanishTemplateName: "Free-form",
+                SpanishRendered: latest.BodyEs));
+        }
+
+        var template = latest.WhatsAppTemplate;
+        Dictionary<string, string> originalVars = new();
+        if (!string.IsNullOrWhiteSpace(latest.TemplateVariablesJson))
+        {
+            try
+            {
+                originalVars = JsonSerializer.Deserialize<Dictionary<string, string>>(latest.TemplateVariablesJson)
+                    ?? new Dictionary<string, string>();
+            }
+            catch { originalVars = new Dictionary<string, string>(); }
+        }
+
+        // Sample values: start from the original admin-typed values, override player.* and
+        // parent.* with the sample player's data so the preview shows the personalized form.
+        var props = await BuildEventDetailsPropertiesAsync(eventId, ev.TournamentId, samplePlayer.Id, ct);
+        var sampleValues = new Dictionary<string, string>(originalVars);
+        foreach (var v in template.Variables)
+        {
+            var key = v.Position.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            if (string.IsNullOrEmpty(v.PropertyKey)) continue;
+            var isPerPlayer = v.PropertyKey.StartsWith("player.", StringComparison.Ordinal)
+                || v.PropertyKey.StartsWith("parent.", StringComparison.Ordinal);
+            if (isPerPlayer
+                && props.TryGetValue(v.PropertyKey, out var perPlayer)
+                && !string.IsNullOrEmpty(perPlayer))
+            {
+                sampleValues[key] = perPlayer;
+            }
+        }
+
+        var previewResult = await TemplatePreview(new TemplatePreviewRequest
+        {
+            TemplateId = template.Id,
+            Values = sampleValues,
+        }, ct);
+        if (previewResult.Result is not OkObjectResult ok || ok.Value is not TemplatePreviewResponse p)
+            return BadRequest("Could not build the preview. Check the template configuration.");
+
+        var variableDtos = template.Variables
+            .OrderBy(v => v.Position)
+            .Select(v => new TournamentSendPreviewVariableDto(
+                v.Position,
+                v.Label,
+                v.PropertyKey,
+                sampleValues.TryGetValue(v.Position.ToString(System.Globalization.CultureInfo.InvariantCulture), out var val) ? val : ""))
+            .ToList();
+
+        return Ok(new TournamentSendPreviewDto(
+            SamplePlayerName: sampleName,
+            DatesValue: string.Empty,
+            CostValue: string.Empty,
+            RosterCount: pendingIds.Count,
+            TemplateId: template.Id,
+            Variables: variableDtos,
+            EnglishTemplateName: p.English.TemplateName,
+            EnglishRendered: p.English.Rendered,
+            SpanishTemplateName: p.Spanish.TemplateName,
+            SpanishRendered: p.Spanish.Rendered));
     }
 
     private async Task SendWhatsAppTemplateRecipientAsync(
