@@ -1,17 +1,13 @@
-using System.Text;
 using Microsoft.AspNetCore.Authentication.Cookies;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.IdentityModel.Tokens;
 using QuestPDF.Infrastructure;
 using SoccerSchool.Api;
 using SoccerSchool.Api.Data;
 using SoccerSchool.Api.Domain;
-using SoccerSchool.Api.Hubs;
 using SoccerSchool.Api.Options;
 using SoccerSchool.Api.Services;
 
@@ -47,11 +43,10 @@ builder.Services.AddDbContext<AppDbContext>(opts =>
     opts.UseSqlServer(cs);
 
     // EF Core 9+ throws on Migrate() when the runtime model disagrees with the compiled
-    // ModelSnapshot. Right now the snapshot carries mobile-app entity references that were
-    // committed by accident in 836a2b0; the runtime DbContext is correct without them, so
-    // the diff is harmless but the warning-as-error blocks every Migrate() call and prevents
-    // the new revision from booting. Suppress just this one event so migrations can run while
-    // the snapshot is sorted out separately.
+    // ModelSnapshot. The snapshot carries stale entity references that were committed by
+    // accident in 836a2b0; the runtime DbContext is correct without them, so the diff is
+    // harmless but the warning-as-error blocks every Migrate() call and prevents the new
+    // revision from booting. Suppress just this one event so migrations can run.
     opts.ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
 });
 
@@ -130,43 +125,6 @@ if (oauth.Facebook.IsConfigured)
     });
 }
 
-// Mobile (native app) bearer auth — registered alongside the default Identity cookie scheme so the
-// web app is unaffected. Only added when a signing key is configured; without it the /api/mobile
-// surface returns 401. Mobile endpoints opt in via [Authorize(AuthenticationSchemes = MobileJwt)].
-var jwt = builder.Configuration.GetSection($"{AppOptions.SectionName}:Jwt").Get<AppOptions.JwtOptions>() ?? new();
-if (jwt.IsConfigured)
-{
-    authBuilder.AddJwtBearer(AuthSchemes.MobileJwt, opts =>
-    {
-        opts.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuer = true,
-            ValidIssuer = jwt.Issuer,
-            ValidateAudience = true,
-            ValidAudience = jwt.Audience,
-            ValidateIssuerSigningKey = true,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt.SigningKey)),
-            ValidateLifetime = true,
-            ClockSkew = TimeSpan.FromMinutes(1),
-        };
-        // Browsers/native websockets can't set the Authorization header on the SignalR handshake,
-        // so the access token rides in the query string for /hubs/* — lift it onto ctx.Token here.
-        opts.Events = new JwtBearerEvents
-        {
-            OnMessageReceived = ctx =>
-            {
-                var accessToken = ctx.Request.Query["access_token"];
-                if (!string.IsNullOrEmpty(accessToken) &&
-                    ctx.HttpContext.Request.Path.StartsWithSegments("/hubs"))
-                {
-                    ctx.Token = accessToken;
-                }
-                return Task.CompletedTask;
-            }
-        };
-    });
-}
-
 builder.Services.AddAuthorization();
 
 builder.Services.AddScoped<IOutreachSender, OutreachSender>();
@@ -190,17 +148,6 @@ builder.Services.AddHostedService<TwilioStatusReconciler>();
 // so there's no captive-scope issue when the BackgroundService wrapper consumes it.
 builder.Services.AddSingleton<ITwilioMessageReconciler, TwilioMessageReconciler>();
 builder.Services.AddHostedService<TwilioMessageReconcilerBackground>();
-
-// --- Mobile app (native) services ---
-builder.Services.AddScoped<IParentAccountResolver, ParentAccountResolver>();
-builder.Services.AddScoped<IMobileTokenService, MobileTokenService>();
-builder.Services.AddScoped<IChatService, ChatService>();
-// Singleton-safe: creates its own DbContext scope per send (like the Twilio reconcilers).
-builder.Services.AddSingleton<IPushSender, ExpoPushSender>();
-// Pushes "confirm attendance" reminders for upcoming events.
-builder.Services.AddHostedService<AttendanceReminderJob>();
-// Real-time group chat for the mobile app.
-builder.Services.AddSignalR();
 
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
@@ -248,7 +195,6 @@ app.UseDefaultFiles();
 app.UseStaticFiles();
 
 app.MapControllers();
-app.MapHub<ChatHub>("/hubs/chat");
 app.MapGet("/health", () => Results.Ok(new { status = "ok", time = DateTime.UtcNow }));
 
 // SPA fallback: any non-API request that isn't a static file returns index.html
