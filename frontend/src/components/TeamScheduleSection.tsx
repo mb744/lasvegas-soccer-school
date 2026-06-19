@@ -330,10 +330,12 @@ export function TeamScheduleSection({
   // Per-event confirmation counts (eventId → summary), for the row badge + re-send enablement.
   const [attnSummary, setAttnSummary] = useState<Record<number, EventAttendanceSummary>>({})
   const [resendingId, setResendingId] = useState<number | null>(null)
-  // Resend preview modal — opened by the per-event Re-send button instead of the old
-  // confirm() dialog. Carries which event we're previewing so the modal can fire the
-  // matching send (with edited overrides) when the admin confirms.
+  // Resend preview modal — opened by either the per-event Re-send button (group fan-out to
+  // all pending) OR the per-player Re-send button in the attendance panel. When
+  // resendPreviewPlayerId is null the modal is for the whole no-response group; when set
+  // it's for that single family. confirmResend dispatches accordingly.
   const [resendPreviewEventId, setResendPreviewEventId] = useState<number | null>(null)
+  const [resendPreviewPlayerId, setResendPreviewPlayerId] = useState<number | null>(null)
   const [resendPreview, setResendPreview] = useState<TournamentSendPreview | null>(null)
   const [resendPreviewLoading, setResendPreviewLoading] = useState(false)
 
@@ -360,38 +362,42 @@ export function TeamScheduleSection({
     catch (e: any) { onError(extractError(e)) }
   }
 
-  const resendToPlayer = async (eventId: number, playerId: number) => {
-    if (!confirm(t('admin.attnResendConfirm'))) return
+  /** Open the resend preview modal. Without a playerId the preview samples the first pending
+   *  player and the confirm action fans out to the whole no-response group. With a playerId
+   *  the preview samples THAT family and confirm fans out only to them. Replaces the old
+   *  confirm()-and-fire flow on both the per-row Re-send button and the per-player Re-send
+   *  button in the attendance panel. */
+  const openResendPreview = async (eventId: number, playerId?: number) => {
     onError(''); onNotice('')
+    setResendPreviewEventId(eventId)
+    setResendPreviewPlayerId(playerId ?? null)
+    setResendPreviewLoading(true); setResendPreview(null)
     try {
-      const r = await Api.resendEventToPlayer(eventId, playerId)
-      onNotice(t('admin.evtResendDone', { sent: r.sent, total: r.total }))
-    } catch (e: any) { onError(extractError(e)) }
-  }
-
-  /** Open the resend preview modal: fetches the bilingual preview of what the first pending
-   *  player would receive, then renders the editable EventResendPreviewModal. Replaces the
-   *  old confirm()-and-fire flow so admins can see (and edit) the personalized body. */
-  const openResendPreview = async (eventId: number) => {
-    onError(''); onNotice('')
-    setResendPreviewEventId(eventId); setResendPreviewLoading(true); setResendPreview(null)
-    try {
-      setResendPreview(await Api.getEventResendPreview(eventId))
+      setResendPreview(await Api.getEventResendPreview(eventId, playerId))
     } catch (e: any) {
       onError(extractError(e))
-      setResendPreviewEventId(null)
+      setResendPreviewEventId(null); setResendPreviewPlayerId(null)
     } finally {
       setResendPreviewLoading(false)
     }
   }
 
-  const confirmResend = async (eventId: number, overrides: Record<number, string>) => {
+  const closeResendPreview = () => {
+    setResendPreviewEventId(null); setResendPreviewPlayerId(null); setResendPreview(null)
+  }
+
+  const confirmResend = async (
+    eventId: number, playerId: number | null, overrides: Record<number, string>,
+  ) => {
     setResendingId(eventId); onError(''); onNotice('')
     try {
-      const r = await Api.resendEventMessage(eventId, Object.keys(overrides).length > 0 ? overrides : null)
+      const body = Object.keys(overrides).length > 0 ? overrides : null
+      const r = playerId !== null
+        ? await Api.resendEventToPlayer(eventId, playerId, body)
+        : await Api.resendEventMessage(eventId, body)
       onNotice(t('admin.evtResendDone', { sent: r.sent, total: r.total }))
       await loadSummary()
-      setResendPreviewEventId(null); setResendPreview(null)
+      closeResendPreview()
     } catch (e: any) { onError(extractError(e)) }
     finally { setResendingId(null) }
   }
@@ -666,7 +672,7 @@ export function TeamScheduleSection({
                       <AttendancePanel
                         data={attendance}
                         onSet={(playerId, status) => setStatus(ev.id, playerId, status)}
-                        onResend={(playerId) => resendToPlayer(ev.id, playerId)}
+                        onResend={(playerId) => openResendPreview(ev.id, playerId)}
                       />
                     </td>
                   </tr>
@@ -746,8 +752,9 @@ export function TeamScheduleSection({
           <EventResendPreviewModal
             preview={resendPreview}
             sending={resendingId === resendPreviewEventId}
-            onConfirm={(overrides) => confirmResend(resendPreviewEventId, overrides)}
-            onCancel={() => { setResendPreviewEventId(null); setResendPreview(null) }} />
+            isSinglePlayer={resendPreviewPlayerId !== null}
+            onConfirm={(overrides) => confirmResend(resendPreviewEventId, resendPreviewPlayerId, overrides)}
+            onCancel={closeResendPreview} />
         )}
       </div>
     </div>
@@ -758,10 +765,14 @@ export function TeamScheduleSection({
  *  i18n keys for the event resend flow and a fallback empty-state for free-form (non-template)
  *  original sends where there's nothing to edit. */
 function EventResendPreviewModal({
-  preview, sending, onConfirm, onCancel,
+  preview, sending, isSinglePlayer, onConfirm, onCancel,
 }: {
   preview: TournamentSendPreview
   sending: boolean
+  /** True when this preview is for a single player (per-player Re-send button in the
+   *  attendance panel). False when it's the group fan-out to every pending family. Drives
+   *  the help-text and submit-button copy. */
+  isSinglePlayer: boolean
   onConfirm: (overrides: Record<number, string>) => void
   onCancel: () => void
 }) {
@@ -802,14 +813,20 @@ function EventResendPreviewModal({
     <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full p-5 space-y-3 my-8">
         <div className="flex items-start justify-between">
-          <h4 className="text-base font-semibold text-slate-800">{t('admin.evtResendPreviewTitle')}</h4>
+          <h4 className="text-base font-semibold text-slate-800">
+            {isSinglePlayer ? t('admin.evtResendPreviewTitleSingle') : t('admin.evtResendPreviewTitle')}
+          </h4>
           <button onClick={onCancel} className="text-slate-400 hover:text-slate-700 text-xl leading-none">×</button>
         </div>
         <div className="text-xs text-slate-500">
-          <div>{t('admin.evtResendPreviewHelp', { count: preview.rosterCount })}</div>
-          <div className="mt-1 text-slate-700">
-            {t('admin.evtResendPreviewSample', { name: preview.samplePlayerName })}
-          </div>
+          <div>{isSinglePlayer
+            ? t('admin.evtResendPreviewHelpSingle', { name: preview.samplePlayerName })
+            : t('admin.evtResendPreviewHelp', { count: preview.rosterCount })}</div>
+          {!isSinglePlayer && (
+            <div className="mt-1 text-slate-700">
+              {t('admin.evtResendPreviewSample', { name: preview.samplePlayerName })}
+            </div>
+          )}
         </div>
         {preview.variables.length > 0 ? (
           <div className="border border-slate-200 rounded p-3 bg-slate-50 space-y-2">
@@ -844,7 +861,9 @@ function EventResendPreviewModal({
         <div className="flex items-center gap-3 pt-1">
           <button onClick={fireSend} disabled={sending}
             className="bg-emerald-700 text-white text-sm font-semibold px-4 py-2 rounded-md hover:bg-emerald-800 disabled:opacity-60">
-            {sending ? t('admin.sending') : t('admin.evtResendSend')}
+            {sending
+              ? t('admin.sending')
+              : (isSinglePlayer ? t('admin.evtResendSendSingle') : t('admin.evtResendSend'))}
           </button>
           <button onClick={onCancel} disabled={sending}
             className="text-sm text-slate-600 hover:underline">{t('admin.cancel')}</button>

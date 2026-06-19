@@ -794,8 +794,13 @@ export const Api = {
   },
   /** Pre-send EN/ES preview for the event resend modal. Samples the first pending player so
    *  the rendered body shows the per-player personalized form. */
-  async getEventResendPreview(eventId: number) {
-    const r = await api.get<TournamentSendPreview>(`/messaging/events/${eventId}/resend-preview`)
+  /** Bilingual preview for the event resend modal. When `playerId` is omitted, samples the
+   *  first pending player (used by the per-event "Re-send to no-shows" button). When set,
+   *  samples THAT specific player — used by the per-player Re-send button in the attendance
+   *  panel so the admin sees the exact body for the family they're about to nudge. */
+  async getEventResendPreview(eventId: number, playerId?: number) {
+    const qs = playerId === undefined ? '' : `?playerId=${playerId}`
+    const r = await api.get<TournamentSendPreview>(`/messaging/events/${eventId}/resend-preview${qs}`)
     return r.data
   },
   async setEventAttendance(eventId: number, playerId: number, status: AttendanceStatus) {

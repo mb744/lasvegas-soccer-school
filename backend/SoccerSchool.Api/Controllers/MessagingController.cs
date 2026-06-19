@@ -845,13 +845,16 @@ public class MessagingController : ControllerBase
         return Ok(new SendTournamentConfirmationsResult(sent, skipped, targetIds.Count, null));
     }
 
-    /// <summary>Bilingual EN/ES preview for the event resend modal. Samples the first pending
-    /// (no-response) player so the modal shows what *that* family would receive byte-for-byte.
-    /// Free-form (non-templated) original sends still preview, but with no editable variables
-    /// because there are none to resolve.</summary>
+    /// <summary>Bilingual EN/ES preview for the event resend modal. When <paramref name="playerId"/>
+    /// is null, samples the first pending (no-response) player — what the group resend would send
+    /// to that family. When set, samples THAT specific player instead — used by the per-player
+    /// Re-send button in the attendance panel so the admin sees the exact body for the family
+    /// they're about to nudge. RosterCount reflects which mode: 1 for the single-player preview,
+    /// total pending for the group preview. Free-form (non-templated) original sends still preview,
+    /// but with no editable variables because there are none to resolve.</summary>
     [HttpGet("events/{eventId:int}/resend-preview")]
     public async Task<ActionResult<TournamentSendPreviewDto>> GetEventResendPreview(
-        int eventId, CancellationToken ct)
+        int eventId, [FromQuery] int? playerId, CancellationToken ct)
     {
         var latest = await _db.Broadcasts
             .Where(b => b.ScheduledGameId == eventId)
@@ -865,23 +868,43 @@ public class MessagingController : ControllerBase
             .FirstOrDefaultAsync(g => g.Id == eventId, ct);
         if (ev is null) return NotFound();
 
-        var rosterPlayerIds = await _db.TeamPlayers
-            .Where(tp => tp.TeamId == ev.TeamId)
-            .Select(tp => tp.PlayerId)
-            .ToListAsync(ct);
-        var answeredIds = await _db.EventAttendances
-            .Where(a => a.ScheduledGameId == eventId && a.Status != AttendanceStatus.Pending)
-            .Select(a => a.PlayerId)
-            .ToListAsync(ct);
-        var pendingIds = rosterPlayerIds.Except(answeredIds).ToList();
-        if (pendingIds.Count == 0)
-            return BadRequest("Everyone already replied — nothing to preview.");
-
-        var samplePlayer = await _db.Players
-            .Where(p => pendingIds.Contains(p.Id))
-            .OrderBy(p => p.LastName).ThenBy(p => p.FirstName)
-            .AsNoTracking()
-            .FirstOrDefaultAsync(ct);
+        Domain.Player? samplePlayer;
+        int previewTargetCount;
+        if (playerId is int pid)
+        {
+            // Per-player preview: require that the player is actually on this event's team roster.
+            // Don't enforce "is pending" — the per-player Re-send button in the attendance panel
+            // gates that itself, and if the admin somehow opens the modal for an answered player
+            // the preview is still informative.
+            var onRoster = await _db.TeamPlayers
+                .AnyAsync(tp => tp.TeamId == ev.TeamId && tp.PlayerId == pid, ct);
+            if (!onRoster) return BadRequest("Player is not on this event's team roster.");
+            samplePlayer = await _db.Players
+                .Where(p => p.Id == pid)
+                .AsNoTracking()
+                .FirstOrDefaultAsync(ct);
+            previewTargetCount = 1;
+        }
+        else
+        {
+            var rosterPlayerIds = await _db.TeamPlayers
+                .Where(tp => tp.TeamId == ev.TeamId)
+                .Select(tp => tp.PlayerId)
+                .ToListAsync(ct);
+            var answeredIds = await _db.EventAttendances
+                .Where(a => a.ScheduledGameId == eventId && a.Status != AttendanceStatus.Pending)
+                .Select(a => a.PlayerId)
+                .ToListAsync(ct);
+            var pendingIds = rosterPlayerIds.Except(answeredIds).ToList();
+            if (pendingIds.Count == 0)
+                return BadRequest("Everyone already replied — nothing to preview.");
+            samplePlayer = await _db.Players
+                .Where(p => pendingIds.Contains(p.Id))
+                .OrderBy(p => p.LastName).ThenBy(p => p.FirstName)
+                .AsNoTracking()
+                .FirstOrDefaultAsync(ct);
+            previewTargetCount = pendingIds.Count;
+        }
         if (samplePlayer is null) return BadRequest("No sample pending player found.");
         var sampleName = $"{samplePlayer.FirstName} {samplePlayer.LastName}".Trim();
 
@@ -893,7 +916,7 @@ public class MessagingController : ControllerBase
                 SamplePlayerName: sampleName,
                 DatesValue: string.Empty,
                 CostValue: string.Empty,
-                RosterCount: pendingIds.Count,
+                RosterCount: previewTargetCount,
                 TemplateId: 0,
                 Variables: new List<TournamentSendPreviewVariableDto>(),
                 EnglishTemplateName: "Free-form",
@@ -953,7 +976,7 @@ public class MessagingController : ControllerBase
             SamplePlayerName: sampleName,
             DatesValue: string.Empty,
             CostValue: string.Empty,
-            RosterCount: pendingIds.Count,
+            RosterCount: previewTargetCount,
             TemplateId: template.Id,
             Variables: variableDtos,
             EnglishTemplateName: p.English.TemplateName,
