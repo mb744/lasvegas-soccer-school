@@ -13,7 +13,6 @@ import { AdminEventsPage } from './pages/admin/EventsPage'
 import { AdminSettingsPage } from './pages/admin/SettingsPage'
 import { AdminCoachesPage } from './pages/admin/CoachesPage'
 import { AdminPlayersPage } from './pages/admin/PlayersPage'
-import { AdminChatGroupsPage } from './pages/admin/ChatGroupsPage'
 import { LoginPage } from './pages/LoginPage'
 import { SignupPage } from './pages/SignupPage'
 import { PrivacyPage } from './pages/PrivacyPage'
@@ -88,10 +87,6 @@ export default function App() {
           <Route
             path="/admin/players"
             element={<RequireAuth adminOnly><AdminPlayersPage /></RequireAuth>}
-          />
-          <Route
-            path="/admin/chat-groups"
-            element={<RequireAuth adminOnly><AdminChatGroupsPage /></RequireAuth>}
           />
           <Route path="*" element={<LandingPage />} />
         </Routes>
