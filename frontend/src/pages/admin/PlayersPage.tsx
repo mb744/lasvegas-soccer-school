@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Layout } from '../../components/Layout'
@@ -38,6 +38,9 @@ export function AdminPlayersPage() {
   const [notice, setNotice] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [showAdd, setShowAdd] = useState(false)
+  // Which row is currently being edited inline. Mutually exclusive with the uniforms drawer
+  // so the row doesn't try to render both at once.
+  const [editingId, setEditingId] = useState<number | null>(null)
 
   const refresh = async (q: string) => {
     try {
@@ -110,47 +113,65 @@ export function AdminPlayersPage() {
             </thead>
             <tbody>
               {players.map(p => (
-                <tr key={p.id} className="border-b last:border-0 align-top">
-                  <td className="py-2 px-3">
-                    <div className="font-medium text-slate-800">{p.firstName} {p.lastName}</div>
-                    <div className="text-[10px] text-slate-400">#{p.id}</div>
-                  </td>
-                  <td className="py-2 px-3 whitespace-nowrap">{p.dateOfBirth}</td>
-                  <td className="py-2 px-3">{p.ageBracket ?? <span className="text-slate-400">—</span>}</td>
-                  <td className="py-2 px-3">
-                    <div>{p.parentName ?? <span className="text-slate-400">—</span>}</div>
-                    <div className="text-[11px] text-slate-500">{p.parentCellPhone ?? ''}</div>
-                    <div className="text-[11px] text-slate-500">{p.parentEmail ?? ''}</div>
-                  </td>
-                  <td className="py-2 px-3">{p.currentTeamName ?? <span className="text-slate-400">—</span>}</td>
-                  <td className="py-2 px-3 whitespace-nowrap text-xs">
-                    {p.waiverSigned
-                      ? <span className="text-emerald-700">✓ {t('admin.playersRegSigned')}</span>
-                      : p.registeredThisSeason
-                        ? <span className="text-amber-700">… {t('admin.playersRegPending')}</span>
-                        : <span className="text-slate-400">— {t('admin.playersRegNone')}</span>}
-                  </td>
-                  <td className="py-2 px-3 text-xs">
-                    {p.activeJerseyNumbers
-                      ? <span className="font-mono">{p.activeJerseyNumbers}</span>
-                      : <span className="text-slate-400">—</span>}
-                    {p.uniformCount > 0 && (
-                      <span className="ml-1 text-[10px] text-slate-400">({p.uniformCount})</span>
-                    )}
-                  </td>
-                  <td className="py-2 px-3 whitespace-nowrap text-right text-xs space-x-2">
-                    <button onClick={() => setSelectedId(p.id === selectedId ? null : p.id)}
-                      className="text-emerald-700 hover:underline">
-                      {selectedId === p.id ? t('admin.hide') : t('admin.playersManageUniforms')}
-                    </button>
-                    {p.parentEmail && p.parentAccountId !== null && (
-                      <button onClick={() => sendInvite(p, setError, setNotice, t)}
+                <Fragment key={p.id}>
+                  <tr className="border-b last:border-0 align-top">
+                    <td className="py-2 px-3">
+                      <div className="font-medium text-slate-800">{p.firstName} {p.lastName}</div>
+                      <div className="text-[10px] text-slate-400">#{p.id}</div>
+                    </td>
+                    <td className="py-2 px-3 whitespace-nowrap">{p.dateOfBirth}</td>
+                    <td className="py-2 px-3">{p.ageBracket ?? <span className="text-slate-400">—</span>}</td>
+                    <td className="py-2 px-3">
+                      <div>{p.parentName ?? <span className="text-slate-400">—</span>}</div>
+                      <div className="text-[11px] text-slate-500">{p.parentCellPhone ?? ''}</div>
+                      <div className="text-[11px] text-slate-500">{p.parentEmail ?? ''}</div>
+                    </td>
+                    <td className="py-2 px-3">{p.currentTeamName ?? <span className="text-slate-400">—</span>}</td>
+                    <td className="py-2 px-3 whitespace-nowrap text-xs">
+                      {p.waiverSigned
+                        ? <span className="text-emerald-700">✓ {t('admin.playersRegSigned')}</span>
+                        : p.registeredThisSeason
+                          ? <span className="text-amber-700">… {t('admin.playersRegPending')}</span>
+                          : <span className="text-slate-400">— {t('admin.playersRegNone')}</span>}
+                    </td>
+                    <td className="py-2 px-3 text-xs">
+                      {p.activeJerseyNumbers
+                        ? <span className="font-mono">{p.activeJerseyNumbers}</span>
+                        : <span className="text-slate-400">—</span>}
+                      {p.uniformCount > 0 && (
+                        <span className="ml-1 text-[10px] text-slate-400">({p.uniformCount})</span>
+                      )}
+                    </td>
+                    <td className="py-2 px-3 whitespace-nowrap text-right text-xs space-x-2">
+                      <button onClick={() => { setEditingId(editingId === p.id ? null : p.id); setSelectedId(null) }}
                         className="text-emerald-700 hover:underline">
-                        {t('admin.playersSendInvite')}
+                        {editingId === p.id ? t('admin.cancel') : t('admin.edit')}
                       </button>
-                    )}
-                  </td>
-                </tr>
+                      <button onClick={() => { setSelectedId(p.id === selectedId ? null : p.id); setEditingId(null) }}
+                        className="text-emerald-700 hover:underline">
+                        {selectedId === p.id ? t('admin.hide') : t('admin.playersManageUniforms')}
+                      </button>
+                      {p.parentEmail && p.parentAccountId !== null && (
+                        <button onClick={() => sendInvite(p, setError, setNotice, t)}
+                          className="text-emerald-700 hover:underline">
+                          {t('admin.playersSendInvite')}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                  {editingId === p.id && (
+                    <tr><td colSpan={8} className="py-2 px-3 bg-emerald-50">
+                      <EditPlayerForm player={p}
+                        onSaved={async (updated) => {
+                          setPlayers(prev => prev.map(x => x.id === updated.id ? updated : x))
+                          setEditingId(null)
+                          setNotice(t('admin.playersEditedNotice'))
+                        }}
+                        onError={(e) => { setError(e); setNotice(null) }}
+                        onCancel={() => setEditingId(null)} />
+                    </td></tr>
+                  )}
+                </Fragment>
               ))}
               {players.length === 0 && (
                 <tr><td colSpan={8} className="py-6 text-center text-sm text-slate-400">{t('admin.playersEmpty')}</td></tr>
@@ -276,6 +297,63 @@ function AddPlayerForm({ onCreated, onError, onCancel }: {
         <button type="button" onClick={onCancel} disabled={busy} className="text-sm text-slate-600 hover:underline">
           {t('admin.cancel')}
         </button>
+      </div>
+    </form>
+  )
+}
+
+/** Inline edit row for one player: first/last name + date of birth. Per-season fields (grade,
+ *  uniform/shoe size, waiver signature) live on RegistrationPlayer and are edited from the
+ *  Registrations admin card, not here. */
+function EditPlayerForm({ player, onSaved, onError, onCancel }: {
+  player: AdminPlayerSummary
+  onSaved: (updated: AdminPlayerSummary) => void | Promise<void>
+  onError: (e: string) => void
+  onCancel: () => void
+}) {
+  const { t } = useTranslation()
+  const [firstName, setFirstName] = useState(player.firstName)
+  const [lastName, setLastName] = useState(player.lastName)
+  const [dob, setDob] = useState(player.dateOfBirth)
+  const [busy, setBusy] = useState(false)
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!firstName.trim() || !lastName.trim() || !dob) { onError(t('admin.playersAddRequired')); return }
+    setBusy(true)
+    try {
+      const updated = await Api.updateAdminPlayer(player.id, {
+        firstName: firstName.trim(), lastName: lastName.trim(), dateOfBirth: dob,
+      })
+      await onSaved(updated)
+    } catch (e: any) { onError(errMsg(e)) }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <form onSubmit={submit} className="grid sm:grid-cols-[1fr_1fr_1fr_auto] gap-2 items-end">
+      <label className="text-xs">
+        <span className="text-slate-700">{t('admin.playersAddFirstName')}</span>
+        <input type="text" value={firstName} onChange={e => setFirstName(e.target.value)}
+          className="mt-1 w-full border border-slate-300 rounded-md px-2 py-1 text-sm" />
+      </label>
+      <label className="text-xs">
+        <span className="text-slate-700">{t('admin.playersAddLastName')}</span>
+        <input type="text" value={lastName} onChange={e => setLastName(e.target.value)}
+          className="mt-1 w-full border border-slate-300 rounded-md px-2 py-1 text-sm" />
+      </label>
+      <label className="text-xs">
+        <span className="text-slate-700">{t('admin.playersAddDob')}</span>
+        <input type="date" value={dob} onChange={e => setDob(e.target.value)}
+          className="mt-1 w-full border border-slate-300 rounded-md px-2 py-1 text-sm" />
+      </label>
+      <div className="flex gap-2">
+        <button type="submit" disabled={busy}
+          className="bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded-md hover:bg-emerald-800 disabled:opacity-60">
+          {busy ? t('admin.sending') : t('admin.save')}
+        </button>
+        <button type="button" onClick={onCancel} disabled={busy}
+          className="text-xs text-slate-600 hover:underline">{t('admin.cancel')}</button>
       </div>
     </form>
   )

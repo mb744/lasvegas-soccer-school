@@ -64,6 +64,7 @@ import type {
   CreatePlayerUniformAssignmentRequest,
   UpdatePlayerUniformAssignmentRequest,
   AdminCreatePlayerRequest,
+  AdminUpdatePlayerRequest,
   SendRegistrationInviteRequest,
   SendRegistrationInviteResult,
   InboxParent,
@@ -507,6 +508,10 @@ export const Api = {
   },
   async createAdminPlayer(payload: AdminCreatePlayerRequest) {
     const r = await api.post<AdminPlayerSummary>('/admin/players', payload)
+    return r.data
+  },
+  async updateAdminPlayer(playerId: number, payload: AdminUpdatePlayerRequest) {
+    const r = await api.put<AdminPlayerSummary>(`/admin/players/${playerId}`, payload)
     return r.data
   },
   async sendRegistrationInvite(payload: SendRegistrationInviteRequest) {

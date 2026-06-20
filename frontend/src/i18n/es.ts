@@ -190,6 +190,7 @@ const es: Translations = {
     playersAddParentLastName: 'Apellido del padre',
     playersAddSubmit: 'Agregar jugador',
     playersAddedNotice: 'Jugador agregado.',
+    playersEditedNotice: 'Jugador actualizado.',
     playersSearchPlaceholder: 'Buscar por nombre, padre, teléfono o equipo…',
     playersCount: '{{count}} jugador(es)',
     playersColName: 'Jugador',

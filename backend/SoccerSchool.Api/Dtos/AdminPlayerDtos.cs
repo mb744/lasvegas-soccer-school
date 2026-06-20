@@ -56,6 +56,16 @@ public record UpdatePlayerUniformAssignmentRequest
     [MaxLength(500)] public string? Notes { get; init; }
 }
 
+/// <summary>Admin edits a player's durable name + date of birth. Per-season fields (grade,
+/// uniform/shoe size, waiver signature) live on RegistrationPlayer and are edited from the
+/// Registrations admin card.</summary>
+public record AdminUpdatePlayerRequest
+{
+    [Required, MaxLength(80)] public string FirstName { get; init; } = string.Empty;
+    [Required, MaxLength(80)] public string LastName { get; init; } = string.Empty;
+    [Required] public DateOnly DateOfBirth { get; init; }
+}
+
 /// <summary>Admin creates a player and binds it to a parent account. Either picks an existing
 /// parent by id or supplies enough info to spin up a new ParentAccount with a placeholder user
 /// (no password — they redeem via the registration invite link).</summary>

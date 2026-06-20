@@ -188,6 +188,7 @@ const en = {
     playersAddParentLastName: 'Parent last name',
     playersAddSubmit: 'Add player',
     playersAddedNotice: 'Player added.',
+    playersEditedNotice: 'Player updated.',
     playersSearchPlaceholder: 'Search by name, parent, phone, or team…',
     playersCount: '{{count}} player(s)',
     playersColName: 'Player',

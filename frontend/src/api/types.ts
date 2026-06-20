@@ -1259,6 +1259,12 @@ export interface UpdatePlayerUniformAssignmentRequest {
   notes?: string | null
 }
 
+export interface AdminUpdatePlayerRequest {
+  firstName: string
+  lastName: string
+  dateOfBirth: string
+}
+
 export interface AdminCreatePlayerRequest {
   firstName: string
   lastName: string

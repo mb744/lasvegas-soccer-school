@@ -315,6 +315,76 @@ public class AdminPlayersController : ControllerBase
             UniformCount: 0, ActiveJerseyNumbers: string.Empty));
     }
 
+    /// <summary>Admin updates a player's durable info — first/last name + DOB. Per-season
+    /// fields (grade, uniform/shoe size, waiver) live on RegistrationPlayer and are edited
+    /// from the Registrations admin card. The response is the refreshed summary row so the
+    /// table can update in place without a full re-fetch.</summary>
+    [HttpPut("{playerId:int}")]
+    public async Task<ActionResult<AdminPlayerSummaryDto>> UpdatePlayer(
+        int playerId, [FromBody] AdminUpdatePlayerRequest req, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(req.FirstName) || string.IsNullOrWhiteSpace(req.LastName))
+            return BadRequest("First and last name are required.");
+
+        var player = await _db.Players.FirstOrDefaultAsync(p => p.Id == playerId, ct);
+        if (player is null) return NotFound();
+
+        player.FirstName = req.FirstName.Trim();
+        player.LastName = req.LastName.Trim();
+        player.DateOfBirth = req.DateOfBirth;
+        await _db.SaveChangesAsync(ct);
+
+        // Build the same shape List returns so the frontend can swap a row in place. Joins
+        // are duplicated locally rather than refactored into a shared resolver to keep this
+        // endpoint independent.
+        var season = _app.ActiveSeason;
+        var summary = await _db.Players
+            .AsNoTracking()
+            .Where(p => p.Id == playerId)
+            .Select(p => new
+            {
+                p.Id, p.FirstName, p.LastName, p.DateOfBirth,
+                ParentAccountId = (int?)p.ParentAccountId,
+                ParentFirstName = p.ParentAccount != null ? p.ParentAccount.FirstName : null,
+                ParentLastName = p.ParentAccount != null ? p.ParentAccount.LastName : null,
+                ParentCellPhone = p.ParentAccount != null ? p.ParentAccount.CellPhone : null,
+                ParentEmail = p.ParentAccount != null && p.ParentAccount.User != null ? p.ParentAccount.User.Email : null,
+                CurrentTeamId = _db.TeamPlayers
+                    .Where(tp => tp.PlayerId == p.Id)
+                    .OrderByDescending(tp => tp.AddedAt)
+                    .Select(tp => (int?)tp.TeamId)
+                    .FirstOrDefault(),
+                CurrentTeamName = _db.TeamPlayers
+                    .Where(tp => tp.PlayerId == p.Id)
+                    .OrderByDescending(tp => tp.AddedAt)
+                    .Select(tp => tp.Team!.Name)
+                    .FirstOrDefault(),
+                ActiveReg = _db.RegistrationPlayers
+                    .Where(rp => rp.PlayerId == p.Id && rp.Registration!.Season == season)
+                    .Select(rp => new { rp.SignedAt, BracketName = rp.AgeClassification != null ? rp.AgeClassification.Name : null })
+                    .FirstOrDefault(),
+                UniformCount = _db.PlayerUniformAssignments.Count(a => a.PlayerId == p.Id),
+                ActiveJerseyNumbers = _db.PlayerUniformAssignments
+                    .Where(a => a.PlayerId == p.Id && a.ReturnedAt == null)
+                    .OrderBy(a => a.AssignedAt)
+                    .Select(a => a.JerseyNumber)
+                    .ToList(),
+            })
+            .FirstAsync(ct);
+
+        return Ok(new AdminPlayerSummaryDto(
+            summary.Id, summary.FirstName, summary.LastName, summary.DateOfBirth,
+            summary.ActiveReg?.BracketName,
+            summary.ParentAccountId,
+            ComposeName(summary.ParentFirstName, summary.ParentLastName),
+            summary.ParentCellPhone, summary.ParentEmail,
+            summary.CurrentTeamId, summary.CurrentTeamName,
+            summary.ActiveReg?.SignedAt != null,
+            summary.ActiveReg != null,
+            summary.UniformCount,
+            string.Join(", ", summary.ActiveJerseyNumbers)));
+    }
+
     /// <summary>Emails the parent a link to /register so they can sign the waiver + complete
     /// player info for the active season. The link points at the public registration page; the
     /// parent signs in (or resets their password) and the existing registration flow takes over
