@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Layout } from '../../components/Layout'
@@ -53,10 +53,6 @@ export function AdminPlayersPage() {
     const id = setTimeout(() => refresh(query), 200)
     return () => clearTimeout(id)
   }, [query])
-
-  const selected = useMemo(
-    () => players.find(p => p.id === selectedId) ?? null,
-    [players, selectedId])
 
   return (
     <Layout>
@@ -171,6 +167,15 @@ export function AdminPlayersPage() {
                         onCancel={() => setEditingId(null)} />
                     </td></tr>
                   )}
+                  {selectedId === p.id && (
+                    <tr><td colSpan={8} className="py-2 px-3 bg-emerald-50/40">
+                      <PlayerUniformPanel player={p}
+                        onClose={() => setSelectedId(null)}
+                        onChanged={() => refresh(query)}
+                        onError={(e) => { setError(e); setNotice(null) }}
+                        onNotice={(n) => { setNotice(n); setError(null) }} />
+                    </td></tr>
+                  )}
                 </Fragment>
               ))}
               {players.length === 0 && (
@@ -179,14 +184,6 @@ export function AdminPlayersPage() {
             </tbody>
           </table>
         </div>
-
-        {selected && (
-          <PlayerUniformPanel player={selected}
-            onClose={() => setSelectedId(null)}
-            onChanged={() => refresh(query)}
-            onError={(e) => { setError(e); setNotice(null) }}
-            onNotice={(n) => { setNotice(n); setError(null) }} />
-        )}
       </div>
     </Layout>
   )
