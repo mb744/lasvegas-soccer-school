@@ -443,6 +443,44 @@ function PlayerUniformPanel({
     } catch (e: any) { onError(errMsg(e)) }
   }
 
+  // Inline edit for an existing assignment. editingId points at the row currently in
+  // edit mode; the edit* fields hold its draft values. Save calls updatePlayerUniform with
+  // the new values and refreshes; cancel discards.
+  const [editingAssignmentId, setEditingAssignmentId] = useState<number | null>(null)
+  const [editJersey, setEditJersey] = useState('')
+  const [editAssignedAt, setEditAssignedAt] = useState('')
+  const [editReturnedAt, setEditReturnedAt] = useState('')
+  const [editNotes, setEditNotes] = useState('')
+  const [editBusy, setEditBusy] = useState(false)
+
+  const startEdit = (r: PlayerUniformAssignment) => {
+    setEditingAssignmentId(r.id)
+    setEditJersey(r.jerseyNumber)
+    setEditAssignedAt(r.assignedAt)
+    setEditReturnedAt(r.returnedAt ?? '')
+    setEditNotes(r.notes ?? '')
+  }
+  const cancelEdit = () => setEditingAssignmentId(null)
+  const saveEdit = async (r: PlayerUniformAssignment) => {
+    if (!editJersey.trim() || !editAssignedAt) {
+      onError(t('admin.playersUniformAddRequired'))
+      return
+    }
+    setEditBusy(true)
+    try {
+      await Api.updatePlayerUniform(player.id, r.id, {
+        jerseyNumber: editJersey.trim(),
+        assignedAt: editAssignedAt,
+        returnedAt: editReturnedAt || null,
+        notes: editNotes.trim() || null,
+      })
+      setEditingAssignmentId(null)
+      await refresh()
+      await onChanged()
+    } catch (e: any) { onError(errMsg(e)) }
+    finally { setEditBusy(false) }
+  }
+
   const remove = async (r: PlayerUniformAssignment) => {
     if (!confirm(t('admin.playersUniformDeleteConfirm', { jersey: r.jerseyNumber }))) return
     try {
@@ -541,27 +579,70 @@ function PlayerUniformPanel({
           </tr>
         </thead>
         <tbody>
-          {rows.map(r => (
-            <tr key={r.id} className={`border-b last:border-0 ${r.returnedAt ? 'text-slate-400 line-through' : ''}`}>
-              <td className="py-1 px-2">
-                {r.uniformName}{r.uniformDesignation ? ` (${r.uniformDesignation})` : ''}
-              </td>
-              <td className="py-1 px-2 font-mono">{r.jerseyNumber}</td>
-              <td className="py-1 px-2 whitespace-nowrap">{r.assignedAt}</td>
-              <td className="py-1 px-2 whitespace-nowrap">{r.returnedAt ?? '—'}</td>
-              <td className="py-1 px-2">{r.notes ?? ''}</td>
-              <td className="py-1 px-2 whitespace-nowrap text-right">
-                {!r.returnedAt && (
-                  <button onClick={() => markReturned(r)} className="text-amber-700 hover:underline">
-                    {t('admin.playersUniformMarkReturned')}
-                  </button>
-                )}
-                <button onClick={() => remove(r)} className="text-rose-700 hover:underline ml-2">
-                  {t('admin.delete')}
-                </button>
-              </td>
-            </tr>
-          ))}
+          {rows.map(r => {
+            const isEditing = editingAssignmentId === r.id
+            return (
+              <tr key={r.id} className={`border-b last:border-0 ${!isEditing && r.returnedAt ? 'text-slate-400 line-through' : ''}`}>
+                <td className="py-1 px-2">
+                  {/* Uniform kit isn't editable post-create — would mean swapping the FK, which
+                      is cleaner as a delete + recreate. Surface the existing name read-only. */}
+                  {r.uniformName}{r.uniformDesignation ? ` (${r.uniformDesignation})` : ''}
+                </td>
+                <td className="py-1 px-2 font-mono">
+                  {isEditing
+                    ? <input type="text" value={editJersey} onChange={e => setEditJersey(e.target.value)}
+                        maxLength={16}
+                        className="w-20 border border-slate-300 rounded px-1 py-0.5 text-xs font-mono" />
+                    : r.jerseyNumber}
+                </td>
+                <td className="py-1 px-2 whitespace-nowrap">
+                  {isEditing
+                    ? <input type="date" value={editAssignedAt} onChange={e => setEditAssignedAt(e.target.value)}
+                        className="border border-slate-300 rounded px-1 py-0.5 text-xs" />
+                    : r.assignedAt}
+                </td>
+                <td className="py-1 px-2 whitespace-nowrap">
+                  {isEditing
+                    ? <input type="date" value={editReturnedAt} onChange={e => setEditReturnedAt(e.target.value)}
+                        className="border border-slate-300 rounded px-1 py-0.5 text-xs" />
+                    : (r.returnedAt ?? '—')}
+                </td>
+                <td className="py-1 px-2">
+                  {isEditing
+                    ? <input type="text" value={editNotes} onChange={e => setEditNotes(e.target.value)}
+                        maxLength={500}
+                        className="w-full border border-slate-300 rounded px-1 py-0.5 text-xs" />
+                    : (r.notes ?? '')}
+                </td>
+                <td className="py-1 px-2 whitespace-nowrap text-right">
+                  {isEditing ? (
+                    <>
+                      <button onClick={() => saveEdit(r)} disabled={editBusy}
+                        className="text-emerald-700 hover:underline disabled:opacity-60">
+                        {editBusy ? t('admin.sending') : t('admin.save')}
+                      </button>
+                      <button onClick={cancelEdit} disabled={editBusy}
+                        className="text-slate-600 hover:underline ml-2">{t('admin.cancel')}</button>
+                    </>
+                  ) : (
+                    <>
+                      <button onClick={() => startEdit(r)} className="text-emerald-700 hover:underline">
+                        {t('admin.edit')}
+                      </button>
+                      {!r.returnedAt && (
+                        <button onClick={() => markReturned(r)} className="text-amber-700 hover:underline ml-2">
+                          {t('admin.playersUniformMarkReturned')}
+                        </button>
+                      )}
+                      <button onClick={() => remove(r)} className="text-rose-700 hover:underline ml-2">
+                        {t('admin.delete')}
+                      </button>
+                    </>
+                  )}
+                </td>
+              </tr>
+            )
+          })}
           {rows.length === 0 && (
             <tr><td colSpan={6} className="py-3 text-center text-slate-400">{t('admin.playersUniformEmpty')}</td></tr>
           )}
