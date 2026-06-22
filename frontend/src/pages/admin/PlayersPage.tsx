@@ -373,8 +373,12 @@ function PlayerUniformPanel({
   const [catalog, setCatalog] = useState<Uniform[]>([])
   const [busy, setBusy] = useState(false)
 
-  // Add-form state.
-  const [uniformId, setUniformId] = useState<number | ''>('')
+  // Add-form state. Multi-select uniforms — typical case is to hand out Home + Away (and
+  // sometimes Practice) in one go with the same jersey number stamped on each kit. Each
+  // checked uniform becomes one PlayerUniformAssignment row sharing the jersey + date +
+  // notes. Order in the catalog is preserved on submit so Home → Away → Practice is the
+  // natural creation order.
+  const [pickedUniformIds, setPickedUniformIds] = useState<Set<number>>(new Set())
   const [jerseyNumber, setJerseyNumber] = useState('')
   const [assignedAt, setAssignedAt] = useState(() => new Date().toISOString().slice(0, 10))
   const [notes, setNotes] = useState('')
@@ -388,24 +392,44 @@ function PlayerUniformPanel({
 
   useEffect(() => { refresh() }, [player.id])
 
-  const addAssignment = async () => {
-    if (uniformId === '' || !jerseyNumber.trim() || !assignedAt) {
+  const togglePicked = (uniformId: number, checked: boolean) => {
+    setPickedUniformIds(prev => {
+      const next = new Set(prev)
+      if (checked) next.add(uniformId); else next.delete(uniformId)
+      return next
+    })
+  }
+
+  const addAssignments = async () => {
+    if (pickedUniformIds.size === 0 || !jerseyNumber.trim() || !assignedAt) {
       onError(t('admin.playersUniformAddRequired'))
       return
     }
     setBusy(true)
+    // Fan out in catalog order so newly-created rows show up Home → Away → Practice in the
+    // assignments table. Stop on the first failure so the admin can fix and retry.
+    const orderedIds = catalog.filter(u => pickedUniformIds.has(u.id)).map(u => u.id)
+    let created = 0
     try {
-      await Api.createPlayerUniform(player.id, {
-        uniformId: Number(uniformId),
-        jerseyNumber: jerseyNumber.trim(),
-        assignedAt,
-        notes: notes.trim() || null,
-      })
-      setJerseyNumber(''); setNotes(''); setUniformId('')
+      for (const uid of orderedIds) {
+        await Api.createPlayerUniform(player.id, {
+          uniformId: uid,
+          jerseyNumber: jerseyNumber.trim(),
+          assignedAt,
+          notes: notes.trim() || null,
+        })
+        created++
+      }
+      setJerseyNumber(''); setNotes(''); setPickedUniformIds(new Set())
       await refresh()
       await onChanged()
-      onNotice(t('admin.playersUniformAddedNotice'))
-    } catch (e: any) { onError(errMsg(e)) }
+      onNotice(t('admin.playersUniformAddedNotice', { count: created }))
+    } catch (e: any) {
+      // Partial-success: if any succeeded before the error, refresh so the admin sees the
+      // partial state instead of stale data.
+      if (created > 0) { await refresh(); await onChanged() }
+      onError(errMsg(e))
+    }
     finally { setBusy(false) }
   }
 
@@ -442,31 +466,50 @@ function PlayerUniformPanel({
 
       <div className="bg-slate-50 border border-slate-200 rounded p-3 space-y-2">
         <div className="text-xs font-medium text-emerald-800">{t('admin.playersUniformAddTitle')}</div>
-        <div className="grid sm:grid-cols-4 gap-2">
-          <label className="text-xs sm:col-span-2">
-            <span className="text-slate-700">{t('admin.playersUniformPickKit')}</span>
-            <select value={uniformId} onChange={e => setUniformId(e.target.value === '' ? '' : Number(e.target.value))}
-              className="mt-1 w-full border border-slate-300 rounded-md px-2 py-1 text-sm">
-              <option value="">—</option>
-              {catalog.map(u => (
-                <option key={u.id} value={u.id}>
-                  {u.name}{designationLabel(u.designation) ? ` (${designationLabel(u.designation)})` : ''}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="text-xs">
-            <span className="text-slate-700">{t('admin.playersUniformJersey')}</span>
-            <input type="text" value={jerseyNumber} onChange={e => setJerseyNumber(e.target.value)}
-              className="mt-1 w-full border border-slate-300 rounded-md px-2 py-1 text-sm font-mono"
-              maxLength={16} />
-          </label>
-          <label className="text-xs">
-            <span className="text-slate-700">{t('admin.playersUniformAssignedAt')}</span>
-            <input type="date" value={assignedAt} onChange={e => setAssignedAt(e.target.value)}
-              className="mt-1 w-full border border-slate-300 rounded-md px-2 py-1 text-sm" />
-          </label>
-          <label className="text-xs sm:col-span-4">
+        <div className="space-y-2">
+          <div className="text-xs">
+            <div className="text-slate-700 mb-1">{t('admin.playersUniformPickKit')}</div>
+            {catalog.length === 0 ? (
+              <div className="text-[11px] text-slate-400 border border-dashed border-slate-300 rounded p-2">
+                {t('admin.playersUniformCatalogEmpty')}
+              </div>
+            ) : (
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-1 max-h-40 overflow-y-auto border border-slate-200 rounded bg-white p-1">
+                {catalog.map(u => (
+                  <label key={u.id}
+                    className="flex items-center gap-2 px-2 py-1 text-xs rounded hover:bg-emerald-50 cursor-pointer">
+                    <input type="checkbox" checked={pickedUniformIds.has(u.id)}
+                      onChange={e => togglePicked(u.id, e.target.checked)} />
+                    <span className="font-medium">{u.name}</span>
+                    {designationLabel(u.designation) && (
+                      <span className="text-[10px] uppercase tracking-wide bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded ml-auto">
+                        {designationLabel(u.designation)}
+                      </span>
+                    )}
+                  </label>
+                ))}
+              </div>
+            )}
+            {pickedUniformIds.size > 0 && (
+              <div className="text-[11px] text-slate-500 mt-1">
+                {t('admin.playersUniformPickedCount', { count: pickedUniformIds.size })}
+              </div>
+            )}
+          </div>
+          <div className="grid sm:grid-cols-2 gap-2">
+            <label className="text-xs">
+              <span className="text-slate-700">{t('admin.playersUniformJersey')}</span>
+              <input type="text" value={jerseyNumber} onChange={e => setJerseyNumber(e.target.value)}
+                className="mt-1 w-full border border-slate-300 rounded-md px-2 py-1 text-sm font-mono"
+                maxLength={16} />
+            </label>
+            <label className="text-xs">
+              <span className="text-slate-700">{t('admin.playersUniformAssignedAt')}</span>
+              <input type="date" value={assignedAt} onChange={e => setAssignedAt(e.target.value)}
+                className="mt-1 w-full border border-slate-300 rounded-md px-2 py-1 text-sm" />
+            </label>
+          </div>
+          <label className="text-xs block">
             <span className="text-slate-700">{t('admin.playersUniformNotes')}</span>
             <input type="text" value={notes} onChange={e => setNotes(e.target.value)}
               maxLength={500}
@@ -474,10 +517,18 @@ function PlayerUniformPanel({
           </label>
         </div>
         <div>
-          <button onClick={addAssignment} disabled={busy}
+          <button onClick={addAssignments} disabled={busy || pickedUniformIds.size === 0}
             className="bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded-md hover:bg-emerald-800 disabled:opacity-60">
-            {busy ? t('admin.sending') : t('admin.playersUniformAddSubmit')}
+            {busy
+              ? t('admin.sending')
+              : t('admin.playersUniformAddSubmit', { count: pickedUniformIds.size })}
           </button>
+          {pickedUniformIds.size > 0 && (
+            <button type="button" onClick={() => setPickedUniformIds(new Set())} disabled={busy}
+              className="ml-2 text-xs text-slate-600 hover:underline">
+              {t('admin.playersUniformPickedClear')}
+            </button>
+          )}
         </div>
       </div>
 
