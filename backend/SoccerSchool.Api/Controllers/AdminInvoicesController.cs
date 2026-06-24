@@ -70,6 +70,7 @@ public class AdminInvoicesController : ControllerBase
             r.Description, r.Amount, r.Currency, r.Type, r.Status,
             r.IssuedAt, r.DueDate, r.SentAt, r.PaidAt,
             r.PaymentMethod, r.PaymentReference, r.Notes,
+            r.ChargeTypeId, r.ChargeTypeName,
             r.CreatedAt, r.UpdatedAt));
 
         if (!string.IsNullOrWhiteSpace(q))
