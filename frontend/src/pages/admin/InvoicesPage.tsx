@@ -377,39 +377,7 @@ function AddInvoiceForm({ onCreated, onError, onCancel }: {
     <form onSubmit={submit} className="bg-white border border-emerald-200 rounded-lg p-4 space-y-3">
       <h3 className="font-semibold text-emerald-800">{t('admin.invoicesAddTitle')}</h3>
       <div>
-        <div className="text-xs text-slate-700 mb-1">{t('admin.invoicesAddParent')}</div>
-        {picked ? (
-          <div className="flex items-center gap-2 text-xs bg-emerald-50 border border-emerald-200 rounded p-2">
-            <span className="font-medium">{picked.name}</span>
-            <span className="text-slate-500 font-mono">{picked.phone}</span>
-            <button type="button" onClick={() => { setPicked(null); setParentQuery('') }}
-              className="ml-auto text-emerald-700 hover:underline">{t('admin.invoicesAddParentChange')}</button>
-          </div>
-        ) : (
-          <>
-            <input type="text" value={parentQuery} onChange={e => setParentQuery(e.target.value)}
-              placeholder={t('admin.invoicesAddParentSearch')}
-              className="w-full border border-slate-300 rounded-md px-2 py-1 text-sm" />
-            <ul className="max-h-40 overflow-y-auto bg-white border border-slate-200 rounded divide-y divide-slate-100 mt-1">
-              {parentLoading && <li className="text-xs text-slate-400 p-2 text-center">{t('common.loading')}</li>}
-              {!parentLoading && parentResults.length === 0 && (
-                <li className="text-xs text-slate-400 p-2 text-center">{t('admin.msgInboxParentNone')}</li>
-              )}
-              {!parentLoading && parentResults.map(p => (
-                <li key={p.parentAccountId}>
-                  <button type="button" onClick={() => setPicked(p)}
-                    className="w-full text-left px-2 py-1.5 text-xs hover:bg-emerald-50">
-                    <span className="font-medium">{p.name}</span>
-                    <span className="text-[10px] text-slate-500 font-mono ml-2">{p.phone}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
-      </div>
-      <div>
-        <div className="text-xs text-slate-700 mb-1">{t('admin.invoicesAddPlayer')}</div>
+        <div className="text-xs text-slate-700 mb-1 font-medium">{t('admin.invoicesAddPlayer')}</div>
         {pickedPlayer ? (
           <div className="flex items-center gap-2 text-xs bg-emerald-50 border border-emerald-200 rounded p-2">
             <span className="font-medium">{pickedPlayer.firstName} {pickedPlayer.lastName}</span>
@@ -440,6 +408,38 @@ function AddInvoiceForm({ onCreated, onError, onCancel }: {
               ))}
             </ul>
             <span className="text-[10px] text-slate-500 mt-0.5 block">{t('admin.invoicesAddPlayerHelp')}</span>
+          </>
+        )}
+      </div>
+      <div>
+        <div className="text-xs text-slate-700 mb-1">{t('admin.invoicesAddParent')}{pickedPlayer && <span className="text-emerald-700 ml-1">— {t('admin.invoicesAddParentAuto')}</span>}</div>
+        {picked ? (
+          <div className="flex items-center gap-2 text-xs bg-emerald-50 border border-emerald-200 rounded p-2">
+            <span className="font-medium">{picked.name}</span>
+            <span className="text-slate-500 font-mono">{picked.phone}</span>
+            <button type="button" onClick={() => { setPicked(null); setParentQuery('') }}
+              className="ml-auto text-emerald-700 hover:underline">{t('admin.invoicesAddParentChange')}</button>
+          </div>
+        ) : (
+          <>
+            <input type="text" value={parentQuery} onChange={e => setParentQuery(e.target.value)}
+              placeholder={t('admin.invoicesAddParentSearch')}
+              className="w-full border border-slate-300 rounded-md px-2 py-1 text-sm" />
+            <ul className="max-h-40 overflow-y-auto bg-white border border-slate-200 rounded divide-y divide-slate-100 mt-1">
+              {parentLoading && <li className="text-xs text-slate-400 p-2 text-center">{t('common.loading')}</li>}
+              {!parentLoading && parentResults.length === 0 && (
+                <li className="text-xs text-slate-400 p-2 text-center">{t('admin.msgInboxParentNone')}</li>
+              )}
+              {!parentLoading && parentResults.map(p => (
+                <li key={p.parentAccountId}>
+                  <button type="button" onClick={() => setPicked(p)}
+                    className="w-full text-left px-2 py-1.5 text-xs hover:bg-emerald-50">
+                    <span className="font-medium">{p.name}</span>
+                    <span className="text-[10px] text-slate-500 font-mono ml-2">{p.phone}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
           </>
         )}
       </div>

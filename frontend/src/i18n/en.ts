@@ -225,6 +225,7 @@ const en = {
     invoicesAddPlayerNone: 'No players match.',
     invoicesAddPlayerHelp: 'Picking a player auto-fills the parent from their account.',
     invoicesAddPlayerNoneOpt: '— No player —',
+    invoicesAddParentAuto: 'auto-filled from player',
     settingsTabChargeTypes: 'Charge types',
     chargeTypesHeader: 'Charge types',
     chargeTypesBlurb: 'Catalog of billable charge types. Each one carries a default amount + recurrence and shows up in the Invoices "Pick a charge type" dropdown.',
