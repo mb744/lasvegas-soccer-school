@@ -10,6 +10,7 @@ import type {
   InvoiceType,
   InboxParent,
   ChargeTypeDto,
+  AdminPlayerSummary,
 } from '../../api/types'
 import { InvoiceStatusValue, InvoiceTypeValue } from '../../api/types'
 
@@ -162,11 +163,18 @@ export function AdminInvoicesPage() {
                     </td>
                     <td className="py-2 px-3">
                       <div>{inv.description}</div>
-                      {inv.chargeTypeName && (
-                        <span className="inline-block text-[10px] uppercase tracking-wide bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded mt-0.5">
-                          {inv.chargeTypeName}
-                        </span>
-                      )}
+                      <div className="flex flex-wrap gap-1 mt-0.5">
+                        {inv.playerName && (
+                          <span className="inline-block text-[10px] uppercase tracking-wide bg-sky-100 text-sky-800 px-1.5 py-0.5 rounded">
+                            {inv.playerName}
+                          </span>
+                        )}
+                        {inv.chargeTypeName && (
+                          <span className="inline-block text-[10px] uppercase tracking-wide bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded">
+                            {inv.chargeTypeName}
+                          </span>
+                        )}
+                      </div>
                       {inv.notes && <div className="text-[11px] text-slate-500 mt-0.5">{inv.notes}</div>}
                     </td>
                     <td className="py-2 px-3 font-mono whitespace-nowrap">{formatUsd(inv.amount)}</td>
@@ -256,6 +264,12 @@ function AddInvoiceForm({ onCreated, onError, onCancel }: {
   const [parentResults, setParentResults] = useState<InboxParent[]>([])
   const [parentLoading, setParentLoading] = useState(false)
   const [picked, setPicked] = useState<InboxParent | null>(null)
+  // Optional player picker. When the admin picks a player, we infer + lock the parent
+  // from the player's account so the invoice ties to the right family automatically.
+  const [playerQuery, setPlayerQuery] = useState('')
+  const [playerResults, setPlayerResults] = useState<AdminPlayerSummary[]>([])
+  const [playerLoading, setPlayerLoading] = useState(false)
+  const [pickedPlayer, setPickedPlayer] = useState<AdminPlayerSummary | null>(null)
   const [description, setDescription] = useState('')
   const [amount, setAmount] = useState('')
   const [type, setType] = useState<InvoiceType>(InvoiceTypeValue.OneTime)
@@ -299,6 +313,41 @@ function AddInvoiceForm({ onCreated, onError, onCancel }: {
     return () => { stale = true; clearTimeout(t) }
   }, [parentQuery, picked])
 
+  // Debounced player search. Skipped once a player is locked in to avoid extra queries
+  // while the admin types into description / amount fields.
+  useEffect(() => {
+    if (pickedPlayer) return
+    let stale = false
+    setPlayerLoading(true)
+    const t = setTimeout(async () => {
+      try {
+        const rows = await Api.listAdminPlayers(playerQuery.trim() || undefined)
+        if (!stale) setPlayerResults(rows.slice(0, 20))
+      } catch (e: any) {
+        if (!stale) onError(errMsg(e))
+      } finally {
+        if (!stale) setPlayerLoading(false)
+      }
+    }, 200)
+    return () => { stale = true; clearTimeout(t) }
+  }, [playerQuery, pickedPlayer])
+
+  // When the admin picks a player, fill in the parent from the player's account so they
+  // don't have to search twice. If a different parent was picked first, the player's
+  // parent wins — keeps the invoice consistent with the player it's tied to.
+  const onPickPlayer = (p: AdminPlayerSummary) => {
+    setPickedPlayer(p)
+    if (p.parentAccountId && p.parentName) {
+      setPicked({
+        parentAccountId: p.parentAccountId,
+        name: p.parentName,
+        phone: p.parentCellPhone ?? '',
+        language: 0,
+        hasReplied: false,
+      })
+    }
+  }
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!picked) { onError(t('admin.invoicesAddPickParent')); return }
@@ -317,6 +366,7 @@ function AddInvoiceForm({ onCreated, onError, onCancel }: {
         dueDate: dueDate || null,
         notes: notes.trim() || null,
         chargeTypeId: chargeTypeId === '' ? null : chargeTypeId,
+        playerId: pickedPlayer?.id ?? null,
       })
       await onCreated()
     } catch (e: any) { onError(errMsg(e)) }
@@ -355,6 +405,41 @@ function AddInvoiceForm({ onCreated, onError, onCancel }: {
                 </li>
               ))}
             </ul>
+          </>
+        )}
+      </div>
+      <div>
+        <div className="text-xs text-slate-700 mb-1">{t('admin.invoicesAddPlayer')}</div>
+        {pickedPlayer ? (
+          <div className="flex items-center gap-2 text-xs bg-emerald-50 border border-emerald-200 rounded p-2">
+            <span className="font-medium">{pickedPlayer.firstName} {pickedPlayer.lastName}</span>
+            {pickedPlayer.ageBracket && <span className="text-slate-500">{pickedPlayer.ageBracket}</span>}
+            {pickedPlayer.parentName && <span className="text-slate-500">· {pickedPlayer.parentName}</span>}
+            <button type="button" onClick={() => { setPickedPlayer(null); setPlayerQuery('') }}
+              className="ml-auto text-emerald-700 hover:underline">{t('admin.invoicesAddPlayerChange')}</button>
+          </div>
+        ) : (
+          <>
+            <input type="text" value={playerQuery} onChange={e => setPlayerQuery(e.target.value)}
+              placeholder={t('admin.invoicesAddPlayerSearch')}
+              className="w-full border border-slate-300 rounded-md px-2 py-1 text-sm" />
+            <ul className="max-h-40 overflow-y-auto bg-white border border-slate-200 rounded divide-y divide-slate-100 mt-1">
+              {playerLoading && <li className="text-xs text-slate-400 p-2 text-center">{t('common.loading')}</li>}
+              {!playerLoading && playerResults.length === 0 && (
+                <li className="text-xs text-slate-400 p-2 text-center">{t('admin.invoicesAddPlayerNone')}</li>
+              )}
+              {!playerLoading && playerResults.map(p => (
+                <li key={p.id}>
+                  <button type="button" onClick={() => onPickPlayer(p)}
+                    className="w-full text-left px-2 py-1.5 text-xs hover:bg-emerald-50">
+                    <span className="font-medium">{p.firstName} {p.lastName}</span>
+                    {p.ageBracket && <span className="text-[10px] text-slate-500 ml-2">{p.ageBracket}</span>}
+                    {p.parentName && <span className="text-[10px] text-slate-500 ml-2">· {p.parentName}</span>}
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <span className="text-[10px] text-slate-500 mt-0.5 block">{t('admin.invoicesAddPlayerHelp')}</span>
           </>
         )}
       </div>
@@ -430,7 +515,16 @@ function EditInvoiceForm({ invoice, onSaved, onError, onCancel }: {
   const [type, setType] = useState<InvoiceType>(invoice.type)
   const [dueDate, setDueDate] = useState(invoice.dueDate ?? '')
   const [notes, setNotes] = useState(invoice.notes ?? '')
+  const [playerId, setPlayerId] = useState<number | ''>(invoice.playerId ?? '')
+  // Players for this invoice's parent — populate the dropdown so the admin can re-assign
+  // or attach the invoice to a player without leaving the row.
+  const [roster, setRoster] = useState<AdminPlayerSummary[]>([])
   const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    Api.listAdminPlayers().then(all => {
+      setRoster(all.filter(p => p.parentAccountId === invoice.parentAccountId))
+    }).catch((e: any) => onError(errMsg(e)))
+  }, [invoice.parentAccountId])
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -447,6 +541,7 @@ function EditInvoiceForm({ invoice, onSaved, onError, onCancel }: {
         type,
         dueDate: dueDate || null,
         notes: notes.trim() || null,
+        playerId: playerId === '' ? null : playerId,
       })
       await onSaved()
     } catch (e: any) { onError(errMsg(e)) }
@@ -488,6 +583,16 @@ function EditInvoiceForm({ invoice, onSaved, onError, onCancel }: {
         <button type="button" onClick={onCancel} disabled={busy}
           className="text-xs text-slate-600 hover:underline">{t('admin.cancel')}</button>
       </div>
+      <label className="text-xs sm:col-span-5">
+        <span className="text-slate-700">{t('admin.invoicesAddPlayer')}</span>
+        <select value={playerId} onChange={e => setPlayerId(e.target.value === '' ? '' : Number(e.target.value))}
+          className="mt-1 w-full border border-slate-300 rounded-md px-2 py-1 text-sm">
+          <option value="">{t('admin.invoicesAddPlayerNoneOpt')}</option>
+          {roster.map(p => (
+            <option key={p.id} value={p.id}>{p.firstName} {p.lastName}{p.ageBracket ? ` (${p.ageBracket})` : ''}</option>
+          ))}
+        </select>
+      </label>
       <label className="text-xs sm:col-span-5">
         <span className="text-slate-700">{t('admin.invoicesAddNotes')}</span>
         <input type="text" value={notes} onChange={e => setNotes(e.target.value)}

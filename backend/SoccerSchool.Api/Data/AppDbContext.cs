@@ -459,8 +459,15 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
                 .WithMany()
                 .HasForeignKey(i => i.ChargeTypeId)
                 .OnDelete(DeleteBehavior.SetNull);
+            // SetNull on player delete so historical invoices survive a player removal —
+            // the parent FK still holds the invoice in the family's history.
+            b.HasOne(i => i.Player)
+                .WithMany()
+                .HasForeignKey(i => i.PlayerId)
+                .OnDelete(DeleteBehavior.SetNull);
             b.HasIndex(i => i.ParentAccountId);
             b.HasIndex(i => i.ChargeTypeId);
+            b.HasIndex(i => i.PlayerId);
             // Common filter on the admin list: by status, ordered by issue date.
             b.HasIndex(i => new { i.Status, i.IssuedAt });
         });

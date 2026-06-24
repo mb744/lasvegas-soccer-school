@@ -24,6 +24,13 @@ public class Invoice
     public int? ChargeTypeId { get; set; }
     public ChargeType? ChargeType { get; set; }
 
+    /// <summary>Optional link to a specific <see cref="Player"/> on the parent's account
+    /// — useful when the charge is per-kid (tournament fee, monthly training for one kid)
+    /// so the admin can see "this is Carlos's invoice" at a glance and report per-player.
+    /// Validated to belong to <see cref="ParentAccountId"/> at create/update time.</summary>
+    public int? PlayerId { get; set; }
+    public Player? Player { get; set; }
+
     /// <summary>What the charge is for — admin types this in. Surfaced in the invoices list
     /// and in any parent-facing message that references the invoice.</summary>
     [Required, MaxLength(256)]

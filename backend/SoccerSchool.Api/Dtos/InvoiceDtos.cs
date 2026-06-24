@@ -27,12 +27,18 @@ public record InvoiceDto(
     /// Null for ad-hoc invoices the admin typed in directly.</summary>
     int? ChargeTypeId,
     string? ChargeTypeName,
+    /// <summary>Optional FK to the <see cref="Player"/> the invoice is for. Lets the admin
+    /// table show "this is Carlos's invoice" and lets us report per-player.</summary>
+    int? PlayerId,
+    string? PlayerName,
     DateTime CreatedAt,
     DateTime UpdatedAt);
 
 public record CreateInvoiceRequest
 {
-    [Required] public int ParentAccountId { get; init; }
+    /// <summary>Optional when <see cref="PlayerId"/> is supplied — the controller derives the
+    /// parent from the player. Required otherwise.</summary>
+    public int? ParentAccountId { get; init; }
     [Required, MaxLength(256)] public string Description { get; init; } = string.Empty;
     [Required, Range(0.01, 1_000_000)] public decimal Amount { get; init; }
     [MaxLength(3)] public string Currency { get; init; } = "USD";
@@ -42,6 +48,9 @@ public record CreateInvoiceRequest
     /// <summary>When the admin picked a ChargeType in the create form, store it on the
     /// invoice for later reporting. Validated to exist when set.</summary>
     public int? ChargeTypeId { get; init; }
+    /// <summary>Optional player the invoice is for. When supplied, the controller derives /
+    /// validates ParentAccountId from the player's account.</summary>
+    public int? PlayerId { get; init; }
 }
 
 /// <summary>Mutable invoice fields the admin can edit post-create. Status changes go through
@@ -56,6 +65,8 @@ public record UpdateInvoiceRequest
     public DateOnly? DueDate { get; init; }
     [MaxLength(2000)] public string? Notes { get; init; }
     public int? ChargeTypeId { get; init; }
+    /// <summary>Player the invoice is for. Validated to belong to the invoice's parent.</summary>
+    public int? PlayerId { get; init; }
 }
 
 /// <summary>State-machine transition request. PaymentMethod + PaymentReference are admin-

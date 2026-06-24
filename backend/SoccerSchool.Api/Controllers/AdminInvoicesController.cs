@@ -59,6 +59,9 @@ public class AdminInvoicesController : ControllerBase
                 i.PaymentMethod, i.PaymentReference, i.Notes,
                 i.ChargeTypeId,
                 ChargeTypeName = i.ChargeType != null ? i.ChargeType.Name : null,
+                i.PlayerId,
+                PlayerFirstName = i.Player != null ? i.Player.FirstName : null,
+                PlayerLastName = i.Player != null ? i.Player.LastName : null,
                 i.CreatedAt, i.UpdatedAt,
             })
             .ToListAsync(ct);
@@ -71,6 +74,7 @@ public class AdminInvoicesController : ControllerBase
             r.IssuedAt, r.DueDate, r.SentAt, r.PaidAt,
             r.PaymentMethod, r.PaymentReference, r.Notes,
             r.ChargeTypeId, r.ChargeTypeName,
+            r.PlayerId, ComposeName(r.PlayerFirstName, r.PlayerLastName),
             r.CreatedAt, r.UpdatedAt));
 
         if (!string.IsNullOrWhiteSpace(q))
@@ -114,7 +118,25 @@ public class AdminInvoicesController : ControllerBase
         if (string.IsNullOrWhiteSpace(req.Description))
             return BadRequest("Description is required.");
         if (req.Amount <= 0) return BadRequest("Amount must be greater than zero.");
-        if (!await _db.ParentAccounts.AnyAsync(p => p.Id == req.ParentAccountId, ct))
+
+        // Derive ParentAccountId from PlayerId when the admin picked a player. If both are
+        // supplied, the player's owning account wins — keeps the invoice consistent with the
+        // player it's tied to.
+        int? parentId = req.ParentAccountId;
+        if (req.PlayerId is int pidForLookup)
+        {
+            var player = await _db.Players.AsNoTracking()
+                .Where(p => p.Id == pidForLookup)
+                .Select(p => new { p.Id, p.ParentAccountId })
+                .FirstOrDefaultAsync(ct);
+            if (player is null) return BadRequest("Player not found.");
+            if (parentId is int suppliedParent && suppliedParent != player.ParentAccountId)
+                return BadRequest("Player does not belong to the specified parent account.");
+            parentId = player.ParentAccountId;
+        }
+        if (parentId is not int finalParentId)
+            return BadRequest("ParentAccountId or PlayerId is required.");
+        if (!await _db.ParentAccounts.AnyAsync(p => p.Id == finalParentId, ct))
             return BadRequest("Parent account not found.");
         if (req.ChargeTypeId is int ctId && !await _db.ChargeTypes.AnyAsync(c => c.Id == ctId, ct))
             return BadRequest("Charge type not found.");
@@ -122,7 +144,8 @@ public class AdminInvoicesController : ControllerBase
         var now = DateTime.UtcNow;
         var inv = new Invoice
         {
-            ParentAccountId = req.ParentAccountId,
+            ParentAccountId = finalParentId,
+            PlayerId = req.PlayerId,
             ChargeTypeId = req.ChargeTypeId,
             Description = req.Description.Trim(),
             Amount = req.Amount,
@@ -153,6 +176,16 @@ public class AdminInvoicesController : ControllerBase
         if (inv is null) return NotFound();
         if (req.ChargeTypeId is int ctId && !await _db.ChargeTypes.AnyAsync(c => c.Id == ctId, ct))
             return BadRequest("Charge type not found.");
+        if (req.PlayerId is int pidForLookup)
+        {
+            var ownerId = await _db.Players.AsNoTracking()
+                .Where(p => p.Id == pidForLookup)
+                .Select(p => (int?)p.ParentAccountId)
+                .FirstOrDefaultAsync(ct);
+            if (ownerId is null) return BadRequest("Player not found.");
+            if (ownerId != inv.ParentAccountId)
+                return BadRequest("Player does not belong to this invoice's parent account.");
+        }
 
         inv.Description = req.Description.Trim();
         inv.Amount = req.Amount;
@@ -161,6 +194,7 @@ public class AdminInvoicesController : ControllerBase
         inv.DueDate = req.DueDate;
         inv.Notes = string.IsNullOrWhiteSpace(req.Notes) ? null : req.Notes.Trim();
         inv.ChargeTypeId = req.ChargeTypeId;
+        inv.PlayerId = req.PlayerId;
         inv.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
         return Ok(await BuildDtoAsync(inv.Id, ct));
@@ -228,6 +262,9 @@ public class AdminInvoicesController : ControllerBase
                 i.PaymentMethod, i.PaymentReference, i.Notes,
                 i.ChargeTypeId,
                 ChargeTypeName = i.ChargeType != null ? i.ChargeType.Name : null,
+                i.PlayerId,
+                PlayerFirstName = i.Player != null ? i.Player.FirstName : null,
+                PlayerLastName = i.Player != null ? i.Player.LastName : null,
                 i.CreatedAt, i.UpdatedAt,
             })
             .FirstAsync(ct);
@@ -239,6 +276,7 @@ public class AdminInvoicesController : ControllerBase
             r.IssuedAt, r.DueDate, r.SentAt, r.PaidAt,
             r.PaymentMethod, r.PaymentReference, r.Notes,
             r.ChargeTypeId, r.ChargeTypeName,
+            r.PlayerId, ComposeName(r.PlayerFirstName, r.PlayerLastName),
             r.CreatedAt, r.UpdatedAt);
     }
 

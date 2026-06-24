@@ -1315,6 +1315,8 @@ export interface InvoiceDto {
   notes: string | null
   chargeTypeId: number | null
   chargeTypeName: string | null
+  playerId: number | null
+  playerName: string | null
   createdAt: string
   updatedAt: string
 }
@@ -1345,7 +1347,8 @@ export interface SaveChargeTypeRequest {
 }
 
 export interface CreateInvoiceRequest {
-  parentAccountId: number
+  /** Optional when playerId is supplied — the backend derives the parent from the player. */
+  parentAccountId?: number | null
   description: string
   amount: number
   currency?: string
@@ -1353,6 +1356,7 @@ export interface CreateInvoiceRequest {
   dueDate?: string | null
   notes?: string | null
   chargeTypeId?: number | null
+  playerId?: number | null
 }
 
 export interface UpdateInvoiceRequest {
@@ -1363,6 +1367,7 @@ export interface UpdateInvoiceRequest {
   dueDate?: string | null
   notes?: string | null
   chargeTypeId?: number | null
+  playerId?: number | null
 }
 
 export interface ChangeInvoiceStatusRequest {
