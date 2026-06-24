@@ -634,6 +634,10 @@ export interface EmailTemplateVariable {
   position: number
   label: string
   example: string | null
+  /** Optional mapping to a property in the template's context (e.g. "event.dateTime",
+   *  "player.fullName"). When set, the bulk-send pipeline fills it automatically and the admin
+   *  doesn't have to type a value. */
+  propertyKey: string | null
 }
 
 export interface EmailTemplatePair {
@@ -642,6 +646,7 @@ export interface EmailTemplatePair {
   language: Language
   subject: string
   body: string
+  context: TemplateContext
   variables: EmailTemplateVariable[]
 }
 
@@ -652,6 +657,9 @@ export interface EmailTemplate {
   description: string | null
   subject: string
   body: string
+  /** Which send pipeline this template is for. Drives the property registry surfaced in the
+   *  per-variable "Map to" dropdown and the send-time auto-fill. */
+  context: TemplateContext
   createdAt: string
   updatedAt: string
   variables: EmailTemplateVariable[]
@@ -665,6 +673,7 @@ export interface SaveEmailTemplateRequest {
   description?: string | null
   subject: string
   body: string
+  context?: TemplateContext
   variables: SaveTemplateVariable[]
 }
 

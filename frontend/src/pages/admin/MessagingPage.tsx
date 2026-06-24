@@ -503,9 +503,10 @@ function ComposeTab({
     }
     if (usingEmailTemplate) {
       if (!selectedEmailTemplate) { onError('Pick an email template.'); return }
-      // Email templates don't support property mapping, so every variable needs a value.
+      // Mapped variables (propertyKey set) are filled server-side at send time from the
+      // template's context — only require manual entry for unmapped, free-text variables.
       const missing = selectedEmailTemplate.variables
-        .filter(v => !templateValues[v.position.toString()]?.trim())
+        .filter(v => !v.propertyKey && !templateValues[v.position.toString()]?.trim())
         .map(v => v.label)
       if (missing.length) { onError(`Fill in: ${missing.join(', ')}.`); return }
       await sendNow({ usingTemplate: true })
@@ -2393,24 +2394,43 @@ function EmailTemplatesSection({
   const [subject, setSubject] = useState('')
   const [body, setBody] = useState('')
   const [vars, setVars] = useState<SaveTemplateVariable[]>([])
+  // Context + property registry — mirrors the WhatsApp template editor. Picking a context
+  // populates the per-variable "Map to" dropdown with that context's property catalog so
+  // admins can auto-fill event/team/player/tournament fields at send time.
+  const [context, setContext] = useState<TemplateContext>(0)
+  const [contextOptions, setContextOptions] = useState<TemplateContextOption[]>([])
+  const [propertyOptions, setPropertyOptions] = useState<TemplateProperty[]>([])
   const v = useRequiredValidation(['name', 'subject', 'body'])
+
+  useEffect(() => {
+    Api.listTemplateContexts().then(setContextOptions).catch(() => { /* non-fatal */ })
+  }, [])
+  useEffect(() => {
+    Api.listTemplateProperties(context)
+      .then(opts => {
+        const seen = new Set<string>()
+        setPropertyOptions(opts.filter(o => (seen.has(o.key) ? false : (seen.add(o.key), true))))
+      })
+      .catch(() => setPropertyOptions([]))
+  }, [context])
 
   const loadForm = (tpl: EmailTemplate | null) => {
     if (tpl) {
       setEditingId(tpl.id)
       setName(tpl.name); setLanguage(tpl.language)
       setDescription(tpl.description ?? ''); setSubject(tpl.subject); setBody(tpl.body)
-      setVars(tpl.variables.map(v => ({ position: v.position, label: v.label, example: v.example })))
+      setContext(tpl.context)
+      setVars(tpl.variables.map(v => ({ position: v.position, label: v.label, example: v.example, propertyKey: v.propertyKey })))
     } else {
       setEditingId('new')
       setName(''); setLanguage(0)
-      setDescription(''); setSubject(''); setBody(''); setVars([])
+      setDescription(''); setSubject(''); setBody(''); setContext(0); setVars([])
     }
   }
 
   const addVar = () => {
     const next = vars.length === 0 ? 1 : Math.max(...vars.map(v => v.position)) + 1
-    setVars(prev => [...prev, { position: next, label: '', example: '' }])
+    setVars(prev => [...prev, { position: next, label: '', example: '', propertyKey: null }])
   }
   const updateVar = (idx: number, patch: Partial<SaveTemplateVariable>) =>
     setVars(prev => prev.map((v, i) => i === idx ? { ...v, ...patch } : v))
@@ -2428,6 +2448,7 @@ function EmailTemplatesSection({
       description: description.trim() || null,
       subject: subject.trim(),
       body,
+      context,
       variables: vars.filter(v => v.label.trim()),
     }
     try {
@@ -2506,6 +2527,16 @@ function EmailTemplatesSection({
                 <input type="text" value={description} onChange={e => setDescription(e.target.value)}
                   className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
               </label>
+              <label className="block text-sm sm:col-span-2">
+                <span className="font-medium text-slate-700">{t('admin.msgTemplateContext')}</span>
+                <select value={context} onChange={e => setContext(Number(e.target.value) as TemplateContext)}
+                  className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm">
+                  {contextOptions.map(c => (
+                    <option key={c.context} value={c.context}>{c.label}</option>
+                  ))}
+                </select>
+                <span className="block text-xs text-slate-500 mt-1">{t('admin.msgTemplateContextHelp')}</span>
+              </label>
             </div>
 
             <label className="block text-sm">
@@ -2536,7 +2567,7 @@ function EmailTemplatesSection({
               <p className="text-xs text-slate-500 mb-2">{t('admin.msgTemplateVariablesHelp')}</p>
               {vars.length === 0 && <p className="text-xs text-slate-400">{t('admin.msgTemplateNoVariables')}</p>}
               {vars.map((v, idx) => (
-                <div key={idx} className="grid grid-cols-[5rem_1fr_1fr_2rem] items-center gap-2 mb-1">
+                <div key={idx} className="grid grid-cols-[3.5rem_1fr_1fr_1fr_2rem] items-center gap-2 mb-1">
                   <input type="number" min={1} value={v.position}
                     onChange={e => updateVar(idx, { position: Number(e.target.value) })}
                     className="border border-slate-300 rounded-md px-2 py-1 text-sm" />
@@ -2546,6 +2577,16 @@ function EmailTemplatesSection({
                   <input type="text" value={v.example ?? ''} placeholder={t('admin.msgTemplateVarExample')}
                     onChange={e => updateVar(idx, { example: e.target.value })}
                     className="border border-slate-300 rounded-md px-2 py-1 text-sm" />
+                  <select value={v.propertyKey ?? ''}
+                    onChange={e => updateVar(idx, { propertyKey: e.target.value || null })}
+                    disabled={propertyOptions.length === 0}
+                    title={t('admin.msgTemplateVarPropertyHelp')}
+                    className="border border-slate-300 rounded-md px-2 py-1 text-sm disabled:bg-slate-50 disabled:text-slate-400">
+                    <option value="">— {t('admin.msgTemplateVarNoMap')} —</option>
+                    {propertyOptions.map(p => (
+                      <option key={p.key} value={p.key}>{p.label}</option>
+                    ))}
+                  </select>
                   <button type="button" onClick={() => removeVar(idx)}
                     className="text-rose-700 text-sm">✕</button>
                 </div>

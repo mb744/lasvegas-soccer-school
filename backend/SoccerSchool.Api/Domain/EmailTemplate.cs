@@ -26,6 +26,13 @@ public class EmailTemplate
     [Required, MaxLength(8000)]
     public string Body { get; set; } = string.Empty;
 
+    /// <summary>Which send pipeline this template is for. Drives the property registry shown
+    /// in the admin's "Map to" dropdown and the send-time resolver that auto-fills mapped
+    /// variables from the broadcast's context (event, tournament, month, etc.).
+    /// <see cref="TemplateContext.FreeForm"/> is the legacy default — variables stay
+    /// positional and the admin types every value by hand.</summary>
+    public TemplateContext Context { get; set; } = TemplateContext.FreeForm;
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 

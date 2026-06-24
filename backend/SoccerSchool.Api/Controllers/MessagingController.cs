@@ -344,7 +344,44 @@ public class MessagingController : ControllerBase
             templateVars = (request.TemplateVariables ?? new())
                 .Where(kv => !string.IsNullOrEmpty(kv.Key))
                 .ToDictionary(kv => kv.Key, kv => kv.Value ?? string.Empty);
+
+            // Property-mapping fill — mirrors the WhatsApp template branch above. When the email
+            // template has a non-FreeForm context, resolve context properties (event details,
+            // tournament, month, app settings) and use them to fill any variable whose
+            // PropertyKey is set AND the admin hasn't typed a value. Admin-typed values always
+            // win — the mapping is just a default.
+            if (emailTemplate.Context != TemplateContext.FreeForm)
+            {
+                var properties = await ResolveContextPropertiesAsync(emailTemplate.Context, request, ct);
+                if (properties.Count > 0)
+                {
+                    foreach (var v in emailTemplate.Variables)
+                    {
+                        var key = v.Position.ToString(CultureInfo.InvariantCulture);
+                        var hasAdminValue = templateVars.TryGetValue(key, out var adminVal) && !string.IsNullOrWhiteSpace(adminVal);
+                        if (hasAdminValue) continue;
+                        if (!string.IsNullOrEmpty(v.PropertyKey)
+                            && properties.TryGetValue(v.PropertyKey, out var mapped)
+                            && !string.IsNullOrEmpty(mapped))
+                        {
+                            templateVars[key] = mapped;
+                        }
+                    }
+                }
+            }
+
+            // Mapped variables the context couldn't satisfy (e.g. player.* on a group send) stay
+            // intentionally blank rather than blocking the send; seed an empty value so the
+            // rendered subject/body shows nothing instead of a literal "{{n}}".
+            foreach (var v in emailTemplate.Variables)
+            {
+                if (string.IsNullOrEmpty(v.PropertyKey)) continue;
+                var key = v.Position.ToString(CultureInfo.InvariantCulture);
+                if (!templateVars.ContainsKey(key)) templateVars[key] = string.Empty;
+            }
+
             var missing = emailTemplate.Variables
+                .Where(v => string.IsNullOrEmpty(v.PropertyKey)) // only unmapped vars are required
                 .Select(v => v.Position.ToString(CultureInfo.InvariantCulture))
                 .Where(key => !templateVars.ContainsKey(key) || string.IsNullOrWhiteSpace(templateVars[key]))
                 .ToList();
@@ -2982,6 +3019,7 @@ public class MessagingController : ControllerBase
             Description = request.Description?.Trim(),
             Subject = subject,
             Body = body,
+            Context = request.Context,
             Variables = MapEmailVariables(request.Variables)
         };
         _db.EmailTemplates.Add(template);
@@ -3012,6 +3050,7 @@ public class MessagingController : ControllerBase
         template.Description = request.Description?.Trim();
         template.Subject = subject;
         template.Body = body;
+        template.Context = request.Context;
         template.UpdatedAt = DateTime.UtcNow;
         _db.EmailTemplateVariables.RemoveRange(template.Variables);
         template.Variables = MapEmailVariables(request.Variables);
@@ -3353,13 +3392,13 @@ public class MessagingController : ControllerBase
     }
 
     private static EmailTemplateDto ToEmailDto(EmailTemplate t, EmailTemplate? pair = null) => new(
-        t.Id, t.Name, t.Language, t.Description, t.Subject, t.Body, t.CreatedAt, t.UpdatedAt,
+        t.Id, t.Name, t.Language, t.Description, t.Subject, t.Body, t.Context, t.CreatedAt, t.UpdatedAt,
         t.Variables.OrderBy(v => v.Position).Select(v => new EmailTemplateVariableDto(
-            v.Id, v.Position, v.Label, v.Example)).ToList(),
+            v.Id, v.Position, v.Label, v.Example, v.PropertyKey)).ToList(),
         pair is null ? null : new EmailTemplatePairDto(
-            pair.Id, pair.Name, pair.Language, pair.Subject, pair.Body,
+            pair.Id, pair.Name, pair.Language, pair.Subject, pair.Body, pair.Context,
             pair.Variables.OrderBy(v => v.Position).Select(v => new EmailTemplateVariableDto(
-                v.Id, v.Position, v.Label, v.Example)).ToList()));
+                v.Id, v.Position, v.Label, v.Example, v.PropertyKey)).ToList()));
 
     private static EmailTemplate? FindEmailPairFromGroup(
         EmailTemplate t,
@@ -3378,7 +3417,8 @@ public class MessagingController : ControllerBase
             {
                 Position = v.Position,
                 Label = v.Label.Trim(),
-                Example = v.Example?.Trim()
+                Example = v.Example?.Trim(),
+                PropertyKey = string.IsNullOrWhiteSpace(v.PropertyKey) ? null : v.PropertyKey.Trim()
             })
             .ToList();
 

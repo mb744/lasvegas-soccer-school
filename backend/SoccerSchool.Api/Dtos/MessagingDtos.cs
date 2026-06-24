@@ -340,7 +340,7 @@ public record TemplateContextOptionDto(TemplateContext Context, string Label);
 
 // --- Email templates ---
 
-public record EmailTemplateVariableDto(int Id, int Position, string Label, string? Example);
+public record EmailTemplateVariableDto(int Id, int Position, string Label, string? Example, string? PropertyKey);
 
 public record EmailTemplateDto(
     int Id,
@@ -349,6 +349,7 @@ public record EmailTemplateDto(
     string? Description,
     string Subject,
     string Body,
+    TemplateContext Context,
     DateTime CreatedAt,
     DateTime UpdatedAt,
     IReadOnlyList<EmailTemplateVariableDto> Variables,
@@ -362,6 +363,7 @@ public record EmailTemplatePairDto(
     Language Language,
     string Subject,
     string Body,
+    TemplateContext Context,
     IReadOnlyList<EmailTemplateVariableDto> Variables);
 
 public record SaveEmailTemplateRequest
@@ -379,6 +381,11 @@ public record SaveEmailTemplateRequest
 
     [Required, MaxLength(8000)]
     public string Body { get; init; } = string.Empty;
+
+    /// <summary>Which send pipeline this template is for. Drives the property registry shown in
+    /// the admin's per-variable "Map to" dropdown and the send-time resolver that auto-fills
+    /// mapped variables. Defaults to <see cref="TemplateContext.FreeForm"/> for legacy templates.</summary>
+    public TemplateContext Context { get; init; } = TemplateContext.FreeForm;
 
     public List<SaveTemplateVariableDto> Variables { get; init; } = new();
 }

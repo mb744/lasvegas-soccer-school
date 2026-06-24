@@ -22,4 +22,11 @@ public class EmailTemplateVariable
 
     [MaxLength(256)]
     public string? Example { get; set; }
+
+    /// <summary>Optional mapping to a property in the parent template's <see cref="EmailTemplate.Context"/>
+    /// registry (e.g. "tournament.dates", "player.fullName"). When set, the bulk-send pipeline
+    /// pulls the resolved value from the context's resolver instead of asking the admin to type
+    /// it for every send. Mirrors <see cref="WhatsAppTemplateVariable.PropertyKey"/>.</summary>
+    [MaxLength(64)]
+    public string? PropertyKey { get; set; }
 }
