@@ -459,12 +459,15 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
                 .WithMany()
                 .HasForeignKey(i => i.ChargeTypeId)
                 .OnDelete(DeleteBehavior.SetNull);
-            // SetNull on player delete so historical invoices survive a player removal —
-            // the parent FK still holds the invoice in the family's history.
+            // ClientSetNull (= ON DELETE NO ACTION at the SQL level) so historical invoices
+            // survive a player removal — EF nulls the tracked PlayerId at SaveChanges time, but
+            // the DB FK does NOT cascade. The cascade would otherwise create multi-path conflict
+            // with Invoice → ParentAccount (Cascade): deleting the parent cascade-deletes both
+            // Player and Invoice, and SQL Server rejects two converging paths on Invoice (1785).
             b.HasOne(i => i.Player)
                 .WithMany()
                 .HasForeignKey(i => i.PlayerId)
-                .OnDelete(DeleteBehavior.SetNull);
+                .OnDelete(DeleteBehavior.ClientSetNull);
             b.HasIndex(i => i.ParentAccountId);
             b.HasIndex(i => i.ChargeTypeId);
             b.HasIndex(i => i.PlayerId);

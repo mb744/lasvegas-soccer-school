@@ -2238,8 +2238,7 @@ namespace SoccerSchool.Api.Data.Migrations
                 {
                     b.HasOne("SoccerSchool.Api.Domain.Player", "Player")
                         .WithMany()
-                        .HasForeignKey("PlayerId")
-                        .OnDelete(DeleteBehavior.SetNull);
+                        .HasForeignKey("PlayerId");
 
                     b.HasOne("SoccerSchool.Api.Domain.ScheduledGame", "ScheduledGame")
                         .WithMany()
@@ -2403,8 +2402,7 @@ namespace SoccerSchool.Api.Data.Migrations
 
                     b.HasOne("SoccerSchool.Api.Domain.Player", "Player")
                         .WithMany()
-                        .HasForeignKey("PlayerId")
-                        .OnDelete(DeleteBehavior.SetNull);
+                        .HasForeignKey("PlayerId");
 
                     b.Navigation("ChargeType");
 

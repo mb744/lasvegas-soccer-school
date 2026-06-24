@@ -26,8 +26,7 @@ namespace SoccerSchool.Api.Data.Migrations
                 table: "Invoices",
                 column: "PlayerId",
                 principalTable: "Players",
-                principalColumn: "Id",
-                onDelete: ReferentialAction.SetNull);
+                principalColumn: "Id");
         }
 
         /// <inheritdoc />
