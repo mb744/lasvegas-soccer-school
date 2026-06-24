@@ -23,6 +23,10 @@ public record InvoiceDto(
     string? PaymentMethod,
     string? PaymentReference,
     string? Notes,
+    /// <summary>Optional FK to the <see cref="ChargeType"/> the invoice was created from.
+    /// Null for ad-hoc invoices the admin typed in directly.</summary>
+    int? ChargeTypeId,
+    string? ChargeTypeName,
     DateTime CreatedAt,
     DateTime UpdatedAt);
 
@@ -35,6 +39,9 @@ public record CreateInvoiceRequest
     public InvoiceType Type { get; init; } = InvoiceType.OneTime;
     public DateOnly? DueDate { get; init; }
     [MaxLength(2000)] public string? Notes { get; init; }
+    /// <summary>When the admin picked a ChargeType in the create form, store it on the
+    /// invoice for later reporting. Validated to exist when set.</summary>
+    public int? ChargeTypeId { get; init; }
 }
 
 /// <summary>Mutable invoice fields the admin can edit post-create. Status changes go through
@@ -48,6 +55,7 @@ public record UpdateInvoiceRequest
     public InvoiceType Type { get; init; } = InvoiceType.OneTime;
     public DateOnly? DueDate { get; init; }
     [MaxLength(2000)] public string? Notes { get; init; }
+    public int? ChargeTypeId { get; init; }
 }
 
 /// <summary>State-machine transition request. PaymentMethod + PaymentReference are admin-

@@ -73,6 +73,8 @@ import type {
   CreateInvoiceRequest,
   UpdateInvoiceRequest,
   ChangeInvoiceStatusRequest,
+  ChargeTypeDto,
+  SaveChargeTypeRequest,
   InboxParent,
   ThreadDetail,
   ThreadMessage,
@@ -553,6 +555,24 @@ export const Api = {
   },
   async deleteInvoice(id: number) {
     await api.delete(`/admin/invoices/${id}`)
+  },
+
+  // --- Admin Charge Types (catalog of billable types invoices can be created from) ---
+  async listChargeTypes(activeOnly = false) {
+    const qs = activeOnly ? '?activeOnly=true' : ''
+    const r = await api.get<ChargeTypeDto[]>(`/admin/charge-types${qs}`)
+    return r.data
+  },
+  async createChargeType(payload: SaveChargeTypeRequest) {
+    const r = await api.post<ChargeTypeDto>('/admin/charge-types', payload)
+    return r.data
+  },
+  async updateChargeType(id: number, payload: SaveChargeTypeRequest) {
+    const r = await api.put<ChargeTypeDto>(`/admin/charge-types/${id}`, payload)
+    return r.data
+  },
+  async deleteChargeType(id: number) {
+    await api.delete(`/admin/charge-types/${id}`)
   },
 
   async listThreads() {

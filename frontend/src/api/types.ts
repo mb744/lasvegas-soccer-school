@@ -1313,8 +1313,35 @@ export interface InvoiceDto {
   paymentMethod: string | null
   paymentReference: string | null
   notes: string | null
+  chargeTypeId: number | null
+  chargeTypeName: string | null
   createdAt: string
   updatedAt: string
+}
+
+/** Recurrence cadence on a ChargeType — matches the backend enum (numeric). */
+export type ChargeRecurrence = 0 | 1 | 2 | 3 | 4 | 5
+export const ChargeRecurrenceValue = {
+  OneTime: 0, Hourly: 1, Daily: 2, Weekly: 3, Monthly: 4, Yearly: 5,
+} as const
+
+export interface ChargeTypeDto {
+  id: number
+  name: string
+  description: string | null
+  amount: number
+  recurrence: ChargeRecurrence
+  active: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface SaveChargeTypeRequest {
+  name: string
+  description?: string | null
+  amount: number
+  recurrence: ChargeRecurrence
+  active: boolean
 }
 
 export interface CreateInvoiceRequest {
@@ -1325,6 +1352,7 @@ export interface CreateInvoiceRequest {
   type: InvoiceType
   dueDate?: string | null
   notes?: string | null
+  chargeTypeId?: number | null
 }
 
 export interface UpdateInvoiceRequest {
@@ -1334,6 +1362,7 @@ export interface UpdateInvoiceRequest {
   type: InvoiceType
   dueDate?: string | null
   notes?: string | null
+  chargeTypeId?: number | null
 }
 
 export interface ChangeInvoiceStatusRequest {

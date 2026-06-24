@@ -9,6 +9,7 @@ import type {
   InvoiceSummaryDto,
   InvoiceType,
   InboxParent,
+  ChargeTypeDto,
 } from '../../api/types'
 import { InvoiceStatusValue, InvoiceTypeValue } from '../../api/types'
 
@@ -27,6 +28,9 @@ const STATUS_BADGE_CLS: Record<InvoiceStatus, string> = {
   1: 'bg-amber-200 text-amber-900',
   2: 'bg-emerald-200 text-emerald-900',
   3: 'bg-slate-300 text-slate-600',
+}
+const RECURRENCE_LABEL: Record<number, string> = {
+  0: 'One-time', 1: 'Hourly', 2: 'Daily', 3: 'Weekly', 4: 'Monthly', 5: 'Yearly',
 }
 
 function formatUsd(amount: number): string {
@@ -158,6 +162,11 @@ export function AdminInvoicesPage() {
                     </td>
                     <td className="py-2 px-3">
                       <div>{inv.description}</div>
+                      {inv.chargeTypeName && (
+                        <span className="inline-block text-[10px] uppercase tracking-wide bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded mt-0.5">
+                          {inv.chargeTypeName}
+                        </span>
+                      )}
                       {inv.notes && <div className="text-[11px] text-slate-500 mt-0.5">{inv.notes}</div>}
                     </td>
                     <td className="py-2 px-3 font-mono whitespace-nowrap">{formatUsd(inv.amount)}</td>
@@ -253,6 +262,25 @@ function AddInvoiceForm({ onCreated, onError, onCancel }: {
   const [dueDate, setDueDate] = useState('')
   const [notes, setNotes] = useState('')
   const [busy, setBusy] = useState(false)
+  // Optional ChargeType pre-fill. Loads active-only since admin shouldn't bill from a
+  // retired type. Picking one writes description / amount / type and remembers the id so
+  // the saved invoice carries the link for reporting.
+  const [chargeTypes, setChargeTypes] = useState<ChargeTypeDto[]>([])
+  const [chargeTypeId, setChargeTypeId] = useState<number | ''>('')
+  useEffect(() => {
+    Api.listChargeTypes(true).then(setChargeTypes).catch((e: any) => onError(errMsg(e)))
+  }, [])
+  const onPickChargeType = (id: number | '') => {
+    setChargeTypeId(id)
+    if (id === '') return
+    const ct = chargeTypes.find(c => c.id === id)
+    if (!ct) return
+    // Pre-fill from the type — admin can still edit the fields before submit.
+    setDescription(ct.name)
+    setAmount(String(ct.amount))
+    // Recurrence drives whether this looks like a subscription or one-off line.
+    setType(ct.recurrence === 0 ? InvoiceTypeValue.OneTime : InvoiceTypeValue.Subscription)
+  }
 
   useEffect(() => {
     if (picked) return // don't keep searching once a parent is chosen
@@ -288,6 +316,7 @@ function AddInvoiceForm({ onCreated, onError, onCancel }: {
         type,
         dueDate: dueDate || null,
         notes: notes.trim() || null,
+        chargeTypeId: chargeTypeId === '' ? null : chargeTypeId,
       })
       await onCreated()
     } catch (e: any) { onError(errMsg(e)) }
@@ -329,6 +358,21 @@ function AddInvoiceForm({ onCreated, onError, onCancel }: {
           </>
         )}
       </div>
+      {chargeTypes.length > 0 && (
+        <label className="text-xs block">
+          <span className="text-slate-700">{t('admin.invoicesAddChargeType')}</span>
+          <select value={chargeTypeId} onChange={e => onPickChargeType(e.target.value === '' ? '' : Number(e.target.value))}
+            className="mt-1 w-full border border-slate-300 rounded-md px-2 py-1 text-sm">
+            <option value="">{t('admin.invoicesAddChargeTypeNone')}</option>
+            {chargeTypes.map(c => (
+              <option key={c.id} value={c.id}>
+                {c.name} — {formatUsd(c.amount)}{c.recurrence !== 0 ? ' · ' + RECURRENCE_LABEL[c.recurrence] : ''}
+              </option>
+            ))}
+          </select>
+          <span className="text-[10px] text-slate-500 mt-0.5 block">{t('admin.invoicesAddChargeTypeHelp')}</span>
+        </label>
+      )}
       <div className="grid sm:grid-cols-2 gap-2">
         <label className="text-xs sm:col-span-2">
           <span className="text-slate-700">{t('admin.invoicesAddDescription')}</span>

@@ -57,6 +57,8 @@ public class AdminInvoicesController : ControllerBase
                 i.Description, i.Amount, i.Currency, i.Type, i.Status,
                 i.IssuedAt, i.DueDate, i.SentAt, i.PaidAt,
                 i.PaymentMethod, i.PaymentReference, i.Notes,
+                i.ChargeTypeId,
+                ChargeTypeName = i.ChargeType != null ? i.ChargeType.Name : null,
                 i.CreatedAt, i.UpdatedAt,
             })
             .ToListAsync(ct);
@@ -113,11 +115,14 @@ public class AdminInvoicesController : ControllerBase
         if (req.Amount <= 0) return BadRequest("Amount must be greater than zero.");
         if (!await _db.ParentAccounts.AnyAsync(p => p.Id == req.ParentAccountId, ct))
             return BadRequest("Parent account not found.");
+        if (req.ChargeTypeId is int ctId && !await _db.ChargeTypes.AnyAsync(c => c.Id == ctId, ct))
+            return BadRequest("Charge type not found.");
 
         var now = DateTime.UtcNow;
         var inv = new Invoice
         {
             ParentAccountId = req.ParentAccountId,
+            ChargeTypeId = req.ChargeTypeId,
             Description = req.Description.Trim(),
             Amount = req.Amount,
             Currency = string.IsNullOrWhiteSpace(req.Currency) ? "USD" : req.Currency.Trim().ToUpperInvariant(),
@@ -145,6 +150,8 @@ public class AdminInvoicesController : ControllerBase
 
         var inv = await _db.Invoices.FirstOrDefaultAsync(i => i.Id == id, ct);
         if (inv is null) return NotFound();
+        if (req.ChargeTypeId is int ctId && !await _db.ChargeTypes.AnyAsync(c => c.Id == ctId, ct))
+            return BadRequest("Charge type not found.");
 
         inv.Description = req.Description.Trim();
         inv.Amount = req.Amount;
@@ -152,6 +159,7 @@ public class AdminInvoicesController : ControllerBase
         inv.Type = req.Type;
         inv.DueDate = req.DueDate;
         inv.Notes = string.IsNullOrWhiteSpace(req.Notes) ? null : req.Notes.Trim();
+        inv.ChargeTypeId = req.ChargeTypeId;
         inv.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
         return Ok(await BuildDtoAsync(inv.Id, ct));
@@ -217,6 +225,8 @@ public class AdminInvoicesController : ControllerBase
                 i.Description, i.Amount, i.Currency, i.Type, i.Status,
                 i.IssuedAt, i.DueDate, i.SentAt, i.PaidAt,
                 i.PaymentMethod, i.PaymentReference, i.Notes,
+                i.ChargeTypeId,
+                ChargeTypeName = i.ChargeType != null ? i.ChargeType.Name : null,
                 i.CreatedAt, i.UpdatedAt,
             })
             .FirstAsync(ct);
@@ -227,6 +237,7 @@ public class AdminInvoicesController : ControllerBase
             r.Description, r.Amount, r.Currency, r.Type, r.Status,
             r.IssuedAt, r.DueDate, r.SentAt, r.PaidAt,
             r.PaymentMethod, r.PaymentReference, r.Notes,
+            r.ChargeTypeId, r.ChargeTypeName,
             r.CreatedAt, r.UpdatedAt);
     }
 

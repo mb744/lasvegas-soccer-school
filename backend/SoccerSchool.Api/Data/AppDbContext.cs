@@ -79,6 +79,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
     public DbSet<Uniform> Uniforms => Set<Uniform>();
     public DbSet<PlayerUniformAssignment> PlayerUniformAssignments => Set<PlayerUniformAssignment>();
     public DbSet<Invoice> Invoices => Set<Invoice>();
+    public DbSet<ChargeType> ChargeTypes => Set<ChargeType>();
     public DbSet<Venue> Venues => Set<Venue>();
     public DbSet<MappedField> MappedFields => Set<MappedField>();
 
@@ -452,9 +453,24 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
                 .WithMany()
                 .HasForeignKey(i => i.ParentAccountId)
                 .OnDelete(DeleteBehavior.Cascade);
+            // SetNull on charge-type delete so an old invoice's history survives even if the
+            // catalog row is later retired — the invoice retains its description/amount snapshot.
+            b.HasOne(i => i.ChargeType)
+                .WithMany()
+                .HasForeignKey(i => i.ChargeTypeId)
+                .OnDelete(DeleteBehavior.SetNull);
             b.HasIndex(i => i.ParentAccountId);
+            b.HasIndex(i => i.ChargeTypeId);
             // Common filter on the admin list: by status, ordered by issue date.
             b.HasIndex(i => new { i.Status, i.IssuedAt });
+        });
+
+        modelBuilder.Entity<ChargeType>(b =>
+        {
+            b.Property(c => c.Amount).HasPrecision(10, 2);
+            b.HasIndex(c => c.Name).IsUnique();
+            // Active=true is the picker's working set; index helps the admin list filter.
+            b.HasIndex(c => c.Active);
         });
 
         modelBuilder.Entity<Venue>(b =>

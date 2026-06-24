@@ -18,6 +18,12 @@ public class Invoice
     public int ParentAccountId { get; set; }
     public ParentAccount? ParentAccount { get; set; }
 
+    /// <summary>Optional link to the <see cref="ChargeType"/> the admin picked when creating
+    /// the invoice. Lets us report "how much did we collect from Monthly training in June?"
+    /// without parsing free-text descriptions. Null = ad-hoc charge typed in directly.</summary>
+    public int? ChargeTypeId { get; set; }
+    public ChargeType? ChargeType { get; set; }
+
     /// <summary>What the charge is for — admin types this in. Surfaced in the invoices list
     /// and in any parent-facing message that references the invoice.</summary>
     [Required, MaxLength(256)]
