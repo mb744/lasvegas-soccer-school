@@ -14,6 +14,7 @@ export function AdminPage() {
     { to: '/admin/users',               title: t('admin.hubUsers'),            blurb: t('admin.hubUsersBlurb'),            icon: '👥' },
     { to: '/admin/coaches',             title: t('admin.hubCoaches'),          blurb: t('admin.hubCoachesBlurb'),          icon: '🧤' },
     { to: '/admin/players',             title: t('admin.hubPlayers'),          blurb: t('admin.hubPlayersBlurb'),          icon: '🧒' },
+    { to: '/admin/invoices',            title: t('admin.hubInvoices'),         blurb: t('admin.hubInvoicesBlurb'),         icon: '💰' },
     { to: '/admin/settings',            title: t('admin.hubSettings'),         blurb: t('admin.hubSettingsBlurb'),         icon: '⚙️' },
   ] as const
 

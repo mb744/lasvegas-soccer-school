@@ -13,6 +13,7 @@ import { AdminEventsPage } from './pages/admin/EventsPage'
 import { AdminSettingsPage } from './pages/admin/SettingsPage'
 import { AdminCoachesPage } from './pages/admin/CoachesPage'
 import { AdminPlayersPage } from './pages/admin/PlayersPage'
+import { AdminInvoicesPage } from './pages/admin/InvoicesPage'
 import { LoginPage } from './pages/LoginPage'
 import { SignupPage } from './pages/SignupPage'
 import { PrivacyPage } from './pages/PrivacyPage'
@@ -87,6 +88,10 @@ export default function App() {
           <Route
             path="/admin/players"
             element={<RequireAuth adminOnly><AdminPlayersPage /></RequireAuth>}
+          />
+          <Route
+            path="/admin/invoices"
+            element={<RequireAuth adminOnly><AdminInvoicesPage /></RequireAuth>}
           />
           <Route path="*" element={<LandingPage />} />
         </Routes>

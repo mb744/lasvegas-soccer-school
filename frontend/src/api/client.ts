@@ -67,6 +67,12 @@ import type {
   AdminUpdatePlayerRequest,
   SendRegistrationInviteRequest,
   SendRegistrationInviteResult,
+  InvoiceDto,
+  InvoiceStatus,
+  InvoiceSummaryDto,
+  CreateInvoiceRequest,
+  UpdateInvoiceRequest,
+  ChangeInvoiceStatusRequest,
   InboxParent,
   ThreadDetail,
   ThreadMessage,
@@ -517,6 +523,36 @@ export const Api = {
   async sendRegistrationInvite(payload: SendRegistrationInviteRequest) {
     const r = await api.post<SendRegistrationInviteResult>('/admin/players/send-registration-invite', payload)
     return r.data
+  },
+
+  // --- Admin Invoices ---
+  async listInvoices(filter?: { status?: InvoiceStatus; parentAccountId?: number; q?: string }) {
+    const params = new URLSearchParams()
+    if (filter?.status !== undefined) params.set('status', String(filter.status))
+    if (filter?.parentAccountId !== undefined) params.set('parentAccountId', String(filter.parentAccountId))
+    if (filter?.q) params.set('q', filter.q)
+    const qs = params.toString()
+    const r = await api.get<InvoiceDto[]>(`/admin/invoices${qs ? `?${qs}` : ''}`)
+    return r.data
+  },
+  async getInvoiceSummary() {
+    const r = await api.get<InvoiceSummaryDto>('/admin/invoices/summary')
+    return r.data
+  },
+  async createInvoice(payload: CreateInvoiceRequest) {
+    const r = await api.post<InvoiceDto>('/admin/invoices', payload)
+    return r.data
+  },
+  async updateInvoice(id: number, payload: UpdateInvoiceRequest) {
+    const r = await api.put<InvoiceDto>(`/admin/invoices/${id}`, payload)
+    return r.data
+  },
+  async changeInvoiceStatus(id: number, payload: ChangeInvoiceStatusRequest) {
+    const r = await api.post<InvoiceDto>(`/admin/invoices/${id}/status`, payload)
+    return r.data
+  },
+  async deleteInvoice(id: number) {
+    await api.delete(`/admin/invoices/${id}`)
   },
 
   async listThreads() {

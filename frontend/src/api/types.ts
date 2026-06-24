@@ -1286,6 +1286,72 @@ export interface SendRegistrationInviteResult {
   message: string
 }
 
+/** Invoice lifecycle state — admin moves through New → Sent → Paid → Closed. Matches the
+ *  backend enum (numeric). */
+export type InvoiceStatus = 0 | 1 | 2 | 3
+export const InvoiceStatusValue = { New: 0, Sent: 1, Paid: 2, Closed: 3 } as const
+
+/** Categorizes the charge. Matches the backend enum. */
+export type InvoiceType = 0 | 1
+export const InvoiceTypeValue = { OneTime: 0, Subscription: 1 } as const
+
+export interface InvoiceDto {
+  id: number
+  parentAccountId: number
+  parentName: string | null
+  parentEmail: string | null
+  parentCellPhone: string | null
+  description: string
+  amount: number
+  currency: string
+  type: InvoiceType
+  status: InvoiceStatus
+  issuedAt: string
+  dueDate: string | null
+  sentAt: string | null
+  paidAt: string | null
+  paymentMethod: string | null
+  paymentReference: string | null
+  notes: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CreateInvoiceRequest {
+  parentAccountId: number
+  description: string
+  amount: number
+  currency?: string
+  type: InvoiceType
+  dueDate?: string | null
+  notes?: string | null
+}
+
+export interface UpdateInvoiceRequest {
+  description: string
+  amount: number
+  currency?: string
+  type: InvoiceType
+  dueDate?: string | null
+  notes?: string | null
+}
+
+export interface ChangeInvoiceStatusRequest {
+  status: InvoiceStatus
+  paymentMethod?: string | null
+  paymentReference?: string | null
+}
+
+export interface InvoiceSummaryDto {
+  totalCount: number
+  newCount: number
+  sentCount: number
+  paidCount: number
+  closedCount: number
+  outstandingAmount: number
+  paidAmount: number
+}
+
 export interface ThreadSummary {
   phone: string
   name: string | null

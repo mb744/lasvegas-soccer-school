@@ -78,6 +78,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
     public DbSet<AgeClassification> AgeClassifications => Set<AgeClassification>();
     public DbSet<Uniform> Uniforms => Set<Uniform>();
     public DbSet<PlayerUniformAssignment> PlayerUniformAssignments => Set<PlayerUniformAssignment>();
+    public DbSet<Invoice> Invoices => Set<Invoice>();
     public DbSet<Venue> Venues => Set<Venue>();
     public DbSet<MappedField> MappedFields => Set<MappedField>();
 
@@ -437,6 +438,23 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
                 .OnDelete(DeleteBehavior.Restrict);
             b.HasIndex(a => a.PlayerId);
             b.HasIndex(a => new { a.PlayerId, a.AssignedAt });
+        });
+
+        modelBuilder.Entity<Invoice>(b =>
+        {
+            // Amount is money — fix precision so EF doesn't pick a default truncating type.
+            // 10,2 covers anything realistic for a youth-league fee or monthly stipend.
+            b.Property(i => i.Amount).HasPrecision(10, 2);
+            // Cascade keeps invoice rows tied to the parent. If the parent record is removed
+            // (rare, but possible), their invoices go with them — there's no orphan history
+            // we'd want to preserve without the family context.
+            b.HasOne(i => i.ParentAccount)
+                .WithMany()
+                .HasForeignKey(i => i.ParentAccountId)
+                .OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(i => i.ParentAccountId);
+            // Common filter on the admin list: by status, ordered by issue date.
+            b.HasIndex(i => new { i.Status, i.IssuedAt });
         });
 
         modelBuilder.Entity<Venue>(b =>
