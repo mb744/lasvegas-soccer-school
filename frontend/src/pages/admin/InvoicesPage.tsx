@@ -14,6 +14,7 @@ import type {
   EmailTemplate,
 } from '../../api/types'
 import { InvoiceStatusValue, InvoiceTypeValue, TemplateContextValue } from '../../api/types'
+import { EmailTemplatePreviewModal } from './MessagingPage'
 
 function errMsg(e: any): string {
   return e?.response?.data?.title || e?.response?.data || e?.message || 'Error'
@@ -707,6 +708,7 @@ function SendInvoiceEmailForm({ invoice, onSent, onError, onCancel }: {
   const [templateId, setTemplateId] = useState<number | ''>('')
   const [values, setValues] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState(false)
+  const [previewOpen, setPreviewOpen] = useState(false)
   useEffect(() => {
     Api.listEmailTemplates()
       .then(all => setTemplates(all.filter(t => t.context === TemplateContextValue.InvoiceNotification)))
@@ -716,12 +718,17 @@ function SendInvoiceEmailForm({ invoice, onSent, onError, onCancel }: {
   // Only show inputs for variables that aren't auto-mapped — mapped ones are filled server-side.
   const unmapped = picked?.variables.filter(v => !v.propertyKey) ?? []
 
-  const submit = async (e: React.FormEvent) => {
+  const openPreview = (e: React.FormEvent) => {
     e.preventDefault()
     if (!picked) { onError(t('admin.invoicesEmailPickTemplate')); return }
     if (!invoice.parentEmail) { onError(t('admin.invoicesEmailNoAddress')); return }
     const missing = unmapped.filter(v => !values[v.position.toString()]?.trim()).map(v => v.label)
     if (missing.length) { onError(`Fill in: ${missing.join(', ')}.`); return }
+    setPreviewOpen(true)
+  }
+
+  const send = async () => {
+    if (!picked) return
     setBusy(true)
     try {
       await Api.createBroadcast({
@@ -734,17 +741,29 @@ function SendInvoiceEmailForm({ invoice, onSent, onError, onCancel }: {
           recipients: [{
             phone: invoice.parentCellPhone ?? '',
             name: invoice.parentName ?? '',
-            email: invoice.parentEmail,
+            email: invoice.parentEmail!,
           }],
         },
       })
+      setPreviewOpen(false)
       await onSent(picked.name)
     } catch (e: any) { onError(errMsg(e)) }
     finally { setBusy(false) }
   }
 
   return (
-    <form onSubmit={submit} className="space-y-2">
+    <form onSubmit={openPreview} className="space-y-2">
+      {previewOpen && picked && (
+        <EmailTemplatePreviewModal
+          template={picked}
+          values={values}
+          recipientLabel={`${invoice.parentName ?? ''} <${invoice.parentEmail}>`}
+          invoiceId={invoice.id}
+          sending={busy}
+          onCancel={() => setPreviewOpen(false)}
+          onConfirm={send}
+        />
+      )}
       <div className="text-xs text-slate-600">
         {t('admin.invoicesEmailTo')}: <span className="font-medium">{invoice.parentName ?? invoice.parentEmail}</span>
         <span className="text-slate-500 ml-1">&lt;{invoice.parentEmail}&gt;</span>

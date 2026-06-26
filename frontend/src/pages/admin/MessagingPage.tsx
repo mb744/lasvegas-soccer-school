@@ -29,6 +29,8 @@ import type {
   TemplateProperty,
   TemplatePreviewResponse,
   TemplatePreviewSide,
+  EmailTemplatePreviewResponse,
+  EmailTemplatePreviewSide,
   WhatsAppTemplate,
   EmailTemplate,
   ThreadSummary,
@@ -334,6 +336,7 @@ function ComposeTab({
   const [perPlayerPreview, setPerPlayerPreview] = useState<PerPlayerPreviewResult | null>(null)
   const [previewStep, setPreviewStep] = useState<'edit' | 'confirm' | null>(null)
   const [templatePreviewOpen, setTemplatePreviewOpen] = useState(false)
+  const [emailTemplatePreviewOpen, setEmailTemplatePreviewOpen] = useState(false)
   const [sending, setSending] = useState(false)
 
   const selectedTemplate = useMemo(
@@ -509,7 +512,7 @@ function ComposeTab({
         .filter(v => !v.propertyKey && !templateValues[v.position.toString()]?.trim())
         .map(v => v.label)
       if (missing.length) { onError(`Fill in: ${missing.join(', ')}.`); return }
-      await sendNow({ usingTemplate: true })
+      setEmailTemplatePreviewOpen(true)
       return
     }
 
@@ -608,7 +611,7 @@ function ComposeTab({
         await onSent(`Group chat "${r.title}" created with ${r.participants.length} participants.`)
       }
       setBodyEn(''); setBodyEs(''); setSubjectEn(''); setSubjectEs('')
-      setPreviewStep(null); setTemplatePreviewOpen(false)
+      setPreviewStep(null); setTemplatePreviewOpen(false); setEmailTemplatePreviewOpen(false)
       setPickedEventId(null)
       if (args.usingTemplate) setTemplateValues({})
     } catch (e: any) {
@@ -976,6 +979,17 @@ function ComposeTab({
         scheduledGameId={pickedEventId}
         sending={sending}
         onCancel={() => setTemplatePreviewOpen(false)}
+        onConfirm={() => sendNow({ usingTemplate: true })}
+      />
+    )}
+    {emailTemplatePreviewOpen && selectedEmailTemplate && (
+      <EmailTemplatePreviewModal
+        template={selectedEmailTemplate}
+        values={templateValues}
+        recipientLabel={recipientPreview}
+        scheduledGameId={pickedEventId}
+        sending={sending}
+        onCancel={() => setEmailTemplatePreviewOpen(false)}
         onConfirm={() => sendNow({ usingTemplate: true })}
       />
     )}
@@ -3067,6 +3081,108 @@ function TemplatePreviewModal({
             </tbody>
           </table>
         </div>
+
+        <div className="flex items-center gap-3 pt-3 border-t border-slate-100">
+          <button onClick={onConfirm} disabled={sending}
+            className="bg-emerald-700 text-white text-sm font-semibold px-4 py-2 rounded-md hover:bg-emerald-800 disabled:opacity-60">
+            {sending ? t('admin.sending') : t('admin.msgPreviewConfirmSend')}
+          </button>
+          <button onClick={onCancel} disabled={sending}
+            className="text-sm text-slate-600 hover:underline ml-auto">{t('admin.msgCancel')}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** Email-template preview modal: shows the rendered Subject + Body for both EN and ES sides
+ *  exactly the way the bulk-send pipeline would produce them. Mirrors TemplatePreviewModal but
+ *  for EmailTemplate (Subject + Body instead of one text body). Optional invoiceId lets the
+ *  backend resolve invoice.* / chargeType.* / player.* / parent.* properties when invoked from
+ *  the Invoices admin. */
+export function EmailTemplatePreviewModal({
+  template, values, recipientLabel, scheduledGameId, invoiceId, sending, onCancel, onConfirm,
+}: {
+  template: EmailTemplate
+  values: Record<string, string>
+  recipientLabel: string
+  scheduledGameId?: number | null
+  invoiceId?: number | null
+  sending: boolean
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  const { t } = useTranslation()
+  const [preview, setPreview] = useState<EmailTemplatePreviewResponse | null>(null)
+  const [previewError, setPreviewError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    Api.emailTemplatePreview({ templateId: template.id, values, scheduledGameId, invoiceId })
+      .then(r => { if (!cancelled) setPreview(r) })
+      .catch(e => { if (!cancelled) setPreviewError(extractError(e)) })
+    return () => { cancelled = true }
+  }, [template.id, values, scheduledGameId, invoiceId])
+
+  const langLabel = (lang: Language) => lang === 1 ? 'Español' : 'English'
+
+  const renderSide = (side: EmailTemplatePreviewSide) => {
+    const sourceLabel =
+      side.source === 0 ? t('admin.msgPreviewSourceApproved') :
+      side.source === 1 ? t('admin.msgPreviewSourceTranslated') :
+      t('admin.msgPreviewSourceUnavailable')
+    const sourceClass =
+      side.source === 0 ? 'bg-emerald-50 text-emerald-800 border-emerald-200' :
+      side.source === 1 ? 'bg-amber-50 text-amber-800 border-amber-200' :
+      'bg-slate-50 text-slate-500 border-slate-200'
+    return (
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <div className="text-xs font-medium text-slate-700">
+            {langLabel(side.language)} <span className="text-slate-400">— {side.templateName}</span>
+          </div>
+          <span className={`text-[10px] uppercase tracking-wide px-2 py-0.5 rounded border ${sourceClass}`}>{sourceLabel}</span>
+        </div>
+        <div>
+          <div className="text-[10px] uppercase tracking-wide text-slate-500 mb-0.5">{t('admin.msgSubject')}</div>
+          <pre className="w-full border border-slate-200 bg-slate-50 rounded-md px-3 py-1.5 text-sm whitespace-pre-wrap">{side.subject ?? '—'}</pre>
+        </div>
+        <div>
+          <div className="text-[10px] uppercase tracking-wide text-slate-500 mb-0.5">{t('admin.msgBody')}</div>
+          <pre className="w-full border border-slate-200 bg-slate-50 rounded-md px-3 py-2 text-sm whitespace-pre-wrap min-h-[8rem]">{side.body ?? '—'}</pre>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-start justify-center p-4 overflow-y-auto">
+      <div className="bg-white rounded-lg shadow-xl max-w-5xl w-full mt-10 p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-bold text-emerald-800">{t('admin.msgEmailPreviewTitle')}</h2>
+          <button onClick={onCancel} className="text-sm text-slate-500 hover:text-slate-700">✕</button>
+        </div>
+        <p className="text-sm text-slate-600">{t('admin.msgEmailPreviewHelp')}</p>
+        <div className="text-xs text-slate-500 flex flex-wrap gap-x-4">
+          <span><strong className="text-slate-700">{t('admin.msgPreviewTemplateLabel')}:</strong> {template.name} ({langLabel(template.language)})</span>
+          {template.paired && (
+            <span><strong className="text-slate-700">{t('admin.msgPreviewPairedLabel')}:</strong> {template.paired.name} ({langLabel(template.paired.language)})</span>
+          )}
+          <span><strong className="text-slate-700">{t('admin.msgPreviewRecipientLabel')}:</strong> {recipientLabel}</span>
+        </div>
+
+        {previewError && (
+          <div className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-md p-3">{previewError}</div>
+        )}
+        {!preview && !previewError && (
+          <div className="text-sm text-slate-500">{t('admin.msgPreviewLoading')}</div>
+        )}
+        {preview && (
+          <div className="grid md:grid-cols-2 gap-4">
+            {renderSide(preview.english)}
+            {renderSide(preview.spanish)}
+          </div>
+        )}
 
         <div className="flex items-center gap-3 pt-3 border-t border-slate-100">
           <button onClick={onConfirm} disabled={sending}

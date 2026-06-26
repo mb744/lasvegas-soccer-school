@@ -104,6 +104,8 @@ import type {
   SaveTeamCoachRequest,
   TemplatePreviewRequest,
   TemplatePreviewResponse,
+  EmailTemplatePreviewRequest,
+  EmailTemplatePreviewResponse,
   TemplateProperty,
   TemplateContext,
   MappedField,
@@ -943,6 +945,10 @@ export const Api = {
   },
   async templatePreview(payload: TemplatePreviewRequest) {
     const r = await api.post<TemplatePreviewResponse>('/messaging/template-preview', payload)
+    return r.data
+  },
+  async emailTemplatePreview(payload: EmailTemplatePreviewRequest) {
+    const r = await api.post<EmailTemplatePreviewResponse>('/messaging/email-template-preview', payload)
     return r.data
   },
   /** Lists the property keys exposed by a TemplateContext, used by the admin Templates UI

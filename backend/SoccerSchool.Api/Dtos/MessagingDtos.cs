@@ -474,6 +474,32 @@ public record TemplatePreviewSide(
 
 public record TemplatePreviewResponse(TemplatePreviewSide English, TemplatePreviewSide Spanish);
 
+// --- Email template preview (renders Subject + Body for both EN/ES sides) ---
+
+public record EmailTemplatePreviewRequest
+{
+    public int TemplateId { get; init; }
+    public Dictionary<string, string> Values { get; init; } = new();
+
+    /// <summary>Optional event context — resolves event.* / tournament.* / app.* properties so
+    /// the rendered preview matches what the send pipeline would produce, not raw "{{1}}"s.</summary>
+    public int? ScheduledGameId { get; init; }
+    public int? TournamentId { get; init; }
+
+    /// <summary>Optional invoice context for invoice-flavored templates.</summary>
+    public int? InvoiceId { get; init; }
+}
+
+public record EmailTemplatePreviewSide(
+    Language Language,
+    string TemplateName,
+    string? Subject,
+    string? Body,
+    TemplatePreviewSource Source,
+    IReadOnlyDictionary<string, string>? Values);
+
+public record EmailTemplatePreviewResponse(EmailTemplatePreviewSide English, EmailTemplatePreviewSide Spanish);
+
 // --- Per-phone conversation threads (admin reads & replies in-line) ---
 
 /// <summary>Direction of a single entry in a phone-keyed conversation thread.</summary>

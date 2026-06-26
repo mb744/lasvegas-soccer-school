@@ -3348,6 +3348,92 @@ public class MessagingController : ControllerBase
         return Ok(new TemplatePreviewResponse(en, es));
     }
 
+    /// <summary>Renders an email template's Subject + Body for both EN and ES so the admin can
+    /// preview exactly what each recipient language will receive. Mirrors the WhatsApp
+    /// <see cref="TemplatePreview"/> endpoint: pulls the paired-language sibling, applies the
+    /// template's Context to fill propertyKey-mapped variables from the surrounding
+    /// event/tournament/invoice/app data, and falls back to dictionary translation when the
+    /// opposite-language template doesn't exist.</summary>
+    [HttpPost("email-template-preview")]
+    public async Task<ActionResult<EmailTemplatePreviewResponse>> EmailTemplatePreview(
+        [FromBody] EmailTemplatePreviewRequest request, CancellationToken ct)
+    {
+        var template = await _db.EmailTemplates
+            .Include(t => t.Variables)
+            .FirstOrDefaultAsync(t => t.Id == request.TemplateId, ct);
+        if (template is null) return NotFound();
+        var pair = await FindEmailPairAsync(template, ct);
+
+        var values = request.Values ?? new();
+
+        // Resolve event.* / invoice.* / app.* and any custom mapped fields so the preview
+        // matches what the send pipeline will fill — admin-typed values always win.
+        if (template.Context != TemplateContext.FreeForm)
+        {
+            var props = await ResolveContextPropertiesAsync(template.Context,
+                new CreateBroadcastRequest
+                {
+                    ScheduledGameId = request.ScheduledGameId,
+                    TournamentId = request.TournamentId,
+                    InvoiceId = request.InvoiceId,
+                }, ct);
+            foreach (var v in template.Variables)
+            {
+                var key = v.Position.ToString(CultureInfo.InvariantCulture);
+                if (values.TryGetValue(key, out var av) && !string.IsNullOrWhiteSpace(av)) continue;
+                if (!string.IsNullOrEmpty(v.PropertyKey) && props.TryGetValue(v.PropertyKey, out var mapped) && !string.IsNullOrEmpty(mapped))
+                    values[key] = mapped;
+            }
+        }
+
+        async Task<EmailTemplatePreviewSide> BuildSideAsync(Language target)
+        {
+            var pickedTemplate = template.Language == target ? template
+                : (pair?.Language == target ? pair : null);
+
+            var valuesForSide = values;
+            var sourceLang = pickedTemplate?.Language ?? template.Language;
+            if (sourceLang != template.Language)
+            {
+                var translated = new Dictionary<string, string>();
+                foreach (var kv in values)
+                {
+                    var outcome = await _translator.TranslateAsync(kv.Value ?? string.Empty,
+                        template.Language, sourceLang, ct);
+                    translated[kv.Key] = outcome.Translated;
+                }
+                valuesForSide = translated;
+            }
+
+            if (pickedTemplate is not null)
+            {
+                var subject = RenderTemplateString(pickedTemplate.Subject, pickedTemplate.Variables, valuesForSide);
+                var body = RenderTemplateString(pickedTemplate.Body, pickedTemplate.Variables, valuesForSide);
+                return new EmailTemplatePreviewSide(target, pickedTemplate.Name, subject, body,
+                    TemplatePreviewSource.ApprovedTemplate, valuesForSide);
+            }
+
+            // No paired template in the target language — render the primary's subject+body with
+            // values translated into the target language so the admin still sees something
+            // reasonable for that side. Mirrors what the send loop does.
+            var fallbackTranslated = new Dictionary<string, string>();
+            foreach (var kv in values)
+            {
+                var outcome = await _translator.TranslateAsync(kv.Value ?? string.Empty,
+                    template.Language, target, ct);
+                fallbackTranslated[kv.Key] = outcome.Translated;
+            }
+            var fallbackSubject = RenderTemplateString(template.Subject, template.Variables, fallbackTranslated);
+            var fallbackBody = RenderTemplateString(template.Body, template.Variables, fallbackTranslated);
+            return new EmailTemplatePreviewSide(target, template.Name, fallbackSubject, fallbackBody,
+                TemplatePreviewSource.TranslatedValues, fallbackTranslated);
+        }
+
+        var en = await BuildSideAsync(Language.English);
+        var es = await BuildSideAsync(Language.Spanish);
+        return Ok(new EmailTemplatePreviewResponse(en, es));
+    }
+
     private static string RenderTemplatePreviewBody(
         string? previewText,
         IEnumerable<WhatsAppTemplateVariable> templateVars,

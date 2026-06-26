@@ -1202,6 +1202,28 @@ export interface TemplatePreviewRequest {
   tournamentId?: number | null
 }
 
+export interface EmailTemplatePreviewSide {
+  language: Language
+  templateName: string
+  subject: string | null
+  body: string | null
+  source: TemplatePreviewSource
+  values: Record<string, string> | null
+}
+
+export interface EmailTemplatePreviewResponse {
+  english: EmailTemplatePreviewSide
+  spanish: EmailTemplatePreviewSide
+}
+
+export interface EmailTemplatePreviewRequest {
+  templateId: number
+  values: Record<string, string>
+  scheduledGameId?: number | null
+  tournamentId?: number | null
+  invoiceId?: number | null
+}
+
 // --- Messaging settings (auto-reply text + toggle) ---
 
 export interface MessagingSettings {
