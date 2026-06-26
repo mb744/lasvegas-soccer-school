@@ -2192,8 +2192,18 @@ export function TemplatesTab({
     const next = vars.length === 0 ? 1 : Math.max(...vars.map(v => v.position)) + 1
     setVars(prev => [...prev, { position: next, label: '', example: '', propertyKey: null }])
   }
+  // Auto-fill label from the picked property's catalog label when blank — picking a mapping
+  // implies what the variable is, but the save filter requires a non-empty label.
   const updateVar = (idx: number, patch: Partial<SaveTemplateVariable>) =>
-    setVars(prev => prev.map((v, i) => i === idx ? { ...v, ...patch } : v))
+    setVars(prev => prev.map((v, i) => {
+      if (i !== idx) return v
+      const merged = { ...v, ...patch }
+      if (patch.propertyKey && !merged.label.trim()) {
+        const opt = propertyOptions.find(p => p.key === patch.propertyKey)
+        if (opt) merged.label = opt.label.slice(0, 64)
+      }
+      return merged
+    }))
   const removeVar = (idx: number) =>
     setVars(prev => prev.filter((_, i) => i !== idx))
 
@@ -2208,7 +2218,11 @@ export function TemplatesTab({
       description: description.trim() || null,
       previewText: previewText.trim() || null,
       context,
-      variables: vars.filter(v => v.label.trim()),
+      // Keep rows with either a typed label OR a mapped property; backfill the label from
+      // the property key when blank so the backend's [Required] Label validation passes.
+      variables: vars
+        .filter(v => v.label.trim() || v.propertyKey)
+        .map(v => ({ ...v, label: v.label.trim() || v.propertyKey || '' })),
     }
     try {
       if (editingId === 'new' || editingId === null) {
@@ -2446,8 +2460,19 @@ function EmailTemplatesSection({
     const next = vars.length === 0 ? 1 : Math.max(...vars.map(v => v.position)) + 1
     setVars(prev => [...prev, { position: next, label: '', example: '', propertyKey: null }])
   }
+  // Picking a propertyKey auto-fills the label from the property's catalog label (when blank)
+  // — admins kept losing rows on save because picking a mapping doesn't imply typing a label,
+  // and the save filter drops vars with no label.
   const updateVar = (idx: number, patch: Partial<SaveTemplateVariable>) =>
-    setVars(prev => prev.map((v, i) => i === idx ? { ...v, ...patch } : v))
+    setVars(prev => prev.map((v, i) => {
+      if (i !== idx) return v
+      const merged = { ...v, ...patch }
+      if (patch.propertyKey && !merged.label.trim()) {
+        const opt = propertyOptions.find(p => p.key === patch.propertyKey)
+        if (opt) merged.label = opt.label.slice(0, 64)
+      }
+      return merged
+    }))
   const removeVar = (idx: number) =>
     setVars(prev => prev.filter((_, i) => i !== idx))
 
@@ -2463,7 +2488,12 @@ function EmailTemplatesSection({
       subject: subject.trim(),
       body,
       context,
-      variables: vars.filter(v => v.label.trim()),
+      // Keep any row that has either a typed label OR a mapped property — and fall back to
+      // the property key as the label when neither was typed, so the [Required] Label
+      // validation on the backend passes.
+      variables: vars
+        .filter(v => v.label.trim() || v.propertyKey)
+        .map(v => ({ ...v, label: v.label.trim() || v.propertyKey || '' })),
     }
     try {
       if (editingId === 'new' || editingId === null) {
