@@ -263,7 +263,7 @@ public class MessagingController : ControllerBase
     public async Task<ActionResult<BroadcastDetail>> CreateBroadcast(
         [FromBody] CreateBroadcastRequest request, CancellationToken ct)
     {
-        if (!_sender.IsAvailable(request.Channel))
+        if (!IsChannelAvailable(request.Channel))
             return BadRequest($"{request.Channel} not configured on this server.");
 
         // Two send modes: free-form (with optional bilingual bodies) or WhatsApp Content template.
@@ -1518,7 +1518,7 @@ public class MessagingController : ControllerBase
     {
         if (string.IsNullOrWhiteSpace(phone)) return BadRequest("Phone is required.");
         if (string.IsNullOrWhiteSpace(request.Body)) return BadRequest("Body is required.");
-        if (!_sender.IsAvailable(request.Channel))
+        if (!IsChannelAvailable(request.Channel))
             return BadRequest($"{request.Channel} not configured on this server.");
 
         // Normalize so the stored Phone is in E.164 — that way the same recipient row will
@@ -2297,6 +2297,16 @@ public class MessagingController : ControllerBase
         var s = _db.MessagingSettings.AsNoTracking().FirstOrDefault();
         return s?.ZellePhone ?? string.Empty;
     }
+
+    /// <summary>Per-channel availability gate. <see cref="IMessageSender"/> only knows about
+    /// Twilio (SMS / WhatsApp); email lives behind <see cref="IEmailSender"/> (ACS), so the
+    /// broadcast endpoints route the Email channel here instead of through MessageSender to
+    /// avoid getting back a spurious "Email not configured" when ACS is actually wired up.</summary>
+    private bool IsChannelAvailable(MessageChannel channel) => channel switch
+    {
+        MessageChannel.Email => _emailSender.IsAvailable,
+        _ => _sender.IsAvailable(channel),
+    };
 
     /// <summary>Dispatches to the right context-specific resolver. Empty dict for FreeForm
     /// or contexts the caller's request can't satisfy.</summary>
