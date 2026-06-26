@@ -347,9 +347,12 @@ public class MessagingController : ControllerBase
 
             // Property-mapping fill — mirrors the WhatsApp template branch above. When the email
             // template has a non-FreeForm context, resolve context properties (event details,
-            // tournament, month, app settings) and use them to fill any variable whose
-            // PropertyKey is set AND the admin hasn't typed a value. Admin-typed values always
-            // win — the mapping is just a default.
+            // tournament, month, app settings, invoice fields) and use them to fill any variable
+            // whose PropertyKey is set AND the admin hasn't typed a value. Admin-typed values
+            // always win — the mapping is just a default. We also drop the resolved property
+            // values into templateVars under their own keys so the renderer can substitute
+            // {invoice.amount}-style placeholders the admin wrote directly in the body/subject,
+            // not just {{1}}-style positional ones.
             if (emailTemplate.Context != TemplateContext.FreeForm)
             {
                 var properties = await ResolveContextPropertiesAsync(emailTemplate.Context, request, ct);
@@ -367,6 +370,8 @@ public class MessagingController : ControllerBase
                             templateVars[key] = mapped;
                         }
                     }
+                    foreach (var kv in properties)
+                        if (!templateVars.ContainsKey(kv.Key)) templateVars[kv.Key] = kv.Value;
                 }
             }
 
@@ -1147,6 +1152,10 @@ public class MessagingController : ControllerBase
         recipient.StatusMessage = send.Message;
     }
 
+    private static readonly System.Text.RegularExpressions.Regex PropertyKeyPlaceholder =
+        new(@"\{([A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+)\}",
+            System.Text.RegularExpressions.RegexOptions.Compiled);
+
     private static string RenderTemplateString(
         string template,
         IEnumerable<EmailTemplateVariable> templateVars,
@@ -1154,12 +1163,19 @@ public class MessagingController : ControllerBase
     {
         if (string.IsNullOrEmpty(template)) return string.Empty;
         var result = template;
+        // Positional {{N}} substitution — what Twilio-style approved templates use.
         foreach (var v in templateVars)
         {
             var key = v.Position.ToString(CultureInfo.InvariantCulture);
             var val = values.TryGetValue(key, out var x) ? x : "";
             result = result.Replace($"{{{{{key}}}}}", val);
         }
+        // {property.key} substitution — lets admins write readable bodies that match the
+        // "Map to" dropdown directly without having to also wire a numbered variable for each
+        // field. The regex requires a dot in the key so plain English in braces like
+        // {Customer} stays intact when no matching property is registered.
+        result = PropertyKeyPlaceholder.Replace(result, m =>
+            values.TryGetValue(m.Groups[1].Value, out var v) ? v : m.Value);
         return result;
     }
 
@@ -3381,7 +3397,9 @@ public class MessagingController : ControllerBase
         var values = request.Values ?? new();
 
         // Resolve event.* / invoice.* / app.* and any custom mapped fields so the preview
-        // matches what the send pipeline will fill — admin-typed values always win.
+        // matches what the send pipeline will fill — admin-typed values always win. Drop the
+        // resolved values into `values` under their property-key names too so {invoice.amount}
+        // style placeholders in the body resolve in the preview the same as the live send.
         if (template.Context != TemplateContext.FreeForm)
         {
             var props = await ResolveContextPropertiesAsync(template.Context,
@@ -3398,6 +3416,8 @@ public class MessagingController : ControllerBase
                 if (!string.IsNullOrEmpty(v.PropertyKey) && props.TryGetValue(v.PropertyKey, out var mapped) && !string.IsNullOrEmpty(mapped))
                     values[key] = mapped;
             }
+            foreach (var kv in props)
+                if (!values.ContainsKey(kv.Key)) values[kv.Key] = kv.Value;
         }
 
         async Task<EmailTemplatePreviewSide> BuildSideAsync(Language target)

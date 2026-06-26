@@ -840,7 +840,7 @@ const en = {
     msgEmailTemplatesHint: 'Email templates are admin-managed. They use positional {{1}}, {{2}} placeholders that get substituted at send time.',
     msgEmailSubjectTemplatePh: 'e.g. "Practice today at {{1}}"',
     msgEmailBodyTemplatePh: 'e.g. "Hi {{1}}, practice today is at {{2}}. Wear {{3}}."',
-    msgEmailTemplatePlaceholderHelp: 'Use {{1}}, {{2}}, … in the subject and body; define their labels below.',
+    msgEmailTemplatePlaceholderHelp: 'Use {{1}}, {{2}}, … for positional variables (defined below), or write {invoice.amount} / {player.fullName} / {parent.firstName} etc. directly — any property from the picked context resolves at send time.',
     msgSubject: 'Subject',
     msgSubjectPlaceholder: 'Email subject line',
     msgSubjectHint: 'Email subject (max 256 characters).',

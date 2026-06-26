@@ -842,7 +842,7 @@ const es: Translations = {
     msgEmailTemplatesHint: 'Las plantillas de correo las administra el equipo. Usan marcadores posicionales {{1}}, {{2}} que se sustituyen al enviar.',
     msgEmailSubjectTemplatePh: 'ej. "Práctica hoy a las {{1}}"',
     msgEmailBodyTemplatePh: 'ej. "Hola {{1}}, la práctica de hoy es a las {{2}}. Usar {{3}}."',
-    msgEmailTemplatePlaceholderHelp: 'Usa {{1}}, {{2}}, … en el asunto y el cuerpo; define sus etiquetas debajo.',
+    msgEmailTemplatePlaceholderHelp: 'Usa {{1}}, {{2}}, … para variables posicionales (definidas debajo), o escribe {invoice.amount} / {player.fullName} / {parent.firstName} directamente — cualquier propiedad del contexto se resuelve al enviar.',
     msgSubject: 'Asunto',
     msgSubjectPlaceholder: 'Asunto del correo',
     msgSubjectHint: 'Asunto del correo (máx. 256 caracteres).',
