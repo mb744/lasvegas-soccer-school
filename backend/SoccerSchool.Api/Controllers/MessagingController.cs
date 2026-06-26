@@ -403,6 +403,20 @@ public class MessagingController : ControllerBase
         if (resolved.Recipients.Count == 0)
             return BadRequest("No recipients matched the selected target.");
 
+        // Channel-specific reachability filter. The resolver returns anyone with phone OR email
+        // so the same group works across every channel; here we drop recipients who can't be
+        // reached on the picked channel, so an email blast to a registration group doesn't
+        // fill the History view with "No email address on file" failures for phone-only parents
+        // (and conversely for SMS/WhatsApp).
+        var reachableRecipients = request.Channel == MessageChannel.Email
+            ? resolved.Recipients.Where(r => !string.IsNullOrWhiteSpace(r.Email)).ToList()
+            : resolved.Recipients.Where(r => !string.IsNullOrWhiteSpace(r.Phone)).ToList();
+        if (reachableRecipients.Count == 0)
+        {
+            var missing = request.Channel == MessageChannel.Email ? "email" : "phone";
+            return BadRequest($"No recipients in this group have a {missing} on file — pick a different channel or audience.");
+        }
+
         // For template sends, look up the language pair so we can route each recipient to the
         // template matching their language. Pair lookup is by base name with opposite Language.
         // If no pair exists, every recipient gets the primary template and the log notes the mismatch.
@@ -462,7 +476,7 @@ public class MessagingController : ControllerBase
             PlayerId = request.PlayerId,
             BatchId = request.BatchId,
         };
-        foreach (var r in resolved.Recipients)
+        foreach (var r in reachableRecipients)
         {
             var lang = r.Language ?? request.DefaultLanguage;
             broadcast.Recipients.Add(new BroadcastRecipient
@@ -477,11 +491,11 @@ public class MessagingController : ControllerBase
         _db.Broadcasts.Add(broadcast);
         await _db.SaveChangesAsync(ct);
 
-        // Build a phone → HasWhatsApp lookup from the resolved recipients so the WhatsApp skip
+        // Build a phone → HasWhatsApp lookup from the reachable recipients so the WhatsApp skip
         // below has O(1) access to each recipient's stored flag. Recipients with an unknown flag
         // (individual sends, ad-hoc list, group members not linked to a ParentAccount) are absent
         // from the dict and fall through to the normal send path.
-        var hasWhatsAppByPhone = resolved.Recipients
+        var hasWhatsAppByPhone = reachableRecipients
             .Where(r => r.HasWhatsApp.HasValue && !string.IsNullOrWhiteSpace(r.Phone))
             .GroupBy(r => r.Phone)
             .ToDictionary(g => g.Key, g => g.First().HasWhatsApp!.Value);
