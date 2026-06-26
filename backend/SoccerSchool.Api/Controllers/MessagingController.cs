@@ -2314,6 +2314,8 @@ public class MessagingController : ControllerBase
                 or TemplateContext.EventCancellation =>
                     await BuildEventDetailsPropertiesAsync(request.ScheduledGameId, request.TournamentId, request.PlayerId, ct),
             TemplateContext.MonthlyFee => BuildMonthlyFeeProperties(),
+            TemplateContext.InvoiceNotification =>
+                await BuildInvoicePropertiesAsync(request.InvoiceId, ct),
             _ => new Dictionary<string, string>(),
         };
         if (context == TemplateContext.FreeForm) return baseProps;
@@ -2530,6 +2532,95 @@ public class MessagingController : ControllerBase
         props["team.name"] = ev.Team?.Name ?? string.Empty;
         return props;
     */
+
+    /// <summary>Loads the invoice with its parent + player + charge-type and builds the
+    /// property dict that fills <c>invoice.*</c> / <c>chargeType.*</c> / <c>player.*</c> /
+    /// <c>parent.*</c> / <c>app.*</c> at send time. Empty dict when no invoice id was supplied
+    /// or the row's gone — the template renders blanks for those keys rather than blocking.</summary>
+    private async Task<IReadOnlyDictionary<string, string>> BuildInvoicePropertiesAsync(
+        int? invoiceId, CancellationToken ct)
+    {
+        var props = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["app.zellePhone"] = _cachedZellePhone ??= ResolveZellePhone(),
+            ["app.activeSeason"] = _app.ActiveSeason ?? string.Empty,
+            ["app.publicBaseUrl"] = _app.PublicBaseUrl?.TrimEnd('/') ?? string.Empty,
+        };
+        if (invoiceId is not int id) return props;
+
+        var us = System.Globalization.CultureInfo.GetCultureInfo("en-US");
+        var inv = await _db.Invoices
+            .AsNoTracking()
+            .Where(i => i.Id == id)
+            .Select(i => new
+            {
+                i.Id,
+                i.Description,
+                i.Amount,
+                i.Currency,
+                i.Status,
+                i.Type,
+                i.IssuedAt,
+                i.DueDate,
+                i.PaidAt,
+                i.PaymentMethod,
+                i.PaymentReference,
+                i.Notes,
+                ChargeTypeName = i.ChargeType != null ? i.ChargeType.Name : null,
+                ChargeTypeDescription = i.ChargeType != null ? i.ChargeType.Description : null,
+                ChargeTypeRecurrence = (int?)(i.ChargeType != null ? (int?)i.ChargeType.Recurrence : null),
+                PlayerFirstName = i.Player != null ? i.Player.FirstName : null,
+                PlayerLastName = i.Player != null ? i.Player.LastName : null,
+                ParentFirstName = i.ParentAccount != null ? i.ParentAccount.FirstName : null,
+                ParentLastName = i.ParentAccount != null ? i.ParentAccount.LastName : null,
+                ParentCellPhone = i.ParentAccount != null ? i.ParentAccount.CellPhone : null,
+                ParentEmail = i.ParentAccount != null && i.ParentAccount.User != null ? i.ParentAccount.User.Email : null,
+            })
+            .FirstOrDefaultAsync(ct);
+        if (inv is null) return props;
+
+        props["invoice.description"] = inv.Description ?? string.Empty;
+        props["invoice.amount"] = inv.Amount.ToString("C", us);
+        props["invoice.amountPlain"] = inv.Amount.ToString("0.00", us);
+        props["invoice.currency"] = inv.Currency ?? "USD";
+        props["invoice.status"] = inv.Status.ToString();
+        props["invoice.type"] = inv.Type switch
+        {
+            InvoiceType.OneTime => "One-time",
+            InvoiceType.Subscription => "Subscription",
+            _ => inv.Type.ToString(),
+        };
+        props["invoice.issuedAt"] = inv.IssuedAt.ToString("MMM d, yyyy", us);
+        props["invoice.issuedAtLong"] = inv.IssuedAt.ToString("MMMM d, yyyy", us);
+        props["invoice.dueDate"] = inv.DueDate?.ToDateTime(TimeOnly.MinValue).ToString("MMM d, yyyy", us) ?? string.Empty;
+        props["invoice.dueDateLong"] = inv.DueDate?.ToDateTime(TimeOnly.MinValue).ToString("MMMM d, yyyy", us) ?? string.Empty;
+        props["invoice.dueDateShort"] = inv.DueDate?.ToDateTime(TimeOnly.MinValue).ToString("MM/dd", us) ?? string.Empty;
+        props["invoice.paidAt"] = inv.PaidAt?.ToString("MMM d, yyyy", us) ?? string.Empty;
+        props["invoice.paymentMethod"] = inv.PaymentMethod ?? string.Empty;
+        props["invoice.paymentReference"] = inv.PaymentReference ?? string.Empty;
+        props["invoice.notes"] = inv.Notes ?? string.Empty;
+        props["chargeType.name"] = inv.ChargeTypeName ?? string.Empty;
+        props["chargeType.description"] = inv.ChargeTypeDescription ?? string.Empty;
+        props["chargeType.recurrence"] = inv.ChargeTypeRecurrence switch
+        {
+            (int)ChargeRecurrence.OneTime => "One-time",
+            (int)ChargeRecurrence.Hourly => "Hourly",
+            (int)ChargeRecurrence.Daily => "Daily",
+            (int)ChargeRecurrence.Weekly => "Weekly",
+            (int)ChargeRecurrence.Monthly => "Monthly",
+            (int)ChargeRecurrence.Yearly => "Yearly",
+            _ => string.Empty,
+        };
+        props["player.firstName"] = inv.PlayerFirstName ?? string.Empty;
+        props["player.lastName"] = inv.PlayerLastName ?? string.Empty;
+        props["player.fullName"] = $"{inv.PlayerFirstName} {inv.PlayerLastName}".Trim();
+        props["parent.firstName"] = inv.ParentFirstName ?? string.Empty;
+        props["parent.lastName"] = inv.ParentLastName ?? string.Empty;
+        props["parent.fullName"] = $"{inv.ParentFirstName} {inv.ParentLastName}".Trim();
+        props["parent.cellPhone"] = inv.ParentCellPhone ?? string.Empty;
+        props["parent.email"] = inv.ParentEmail ?? string.Empty;
+        return props;
+    }
 
     /// <summary>Resolves month/year + app values for the MonthlyFee context. Month is always
     /// "this month" from the server clock — the admin runs the broadcast manually each month
@@ -2967,6 +3058,7 @@ public class MessagingController : ControllerBase
             new TemplateContextOptionDto(TemplateContext.FreeForm, "Free-form (admin fills variables manually)"),
             new TemplateContextOptionDto(TemplateContext.EventDetails, "Event details (tournament / game / practice)"),
             new TemplateContextOptionDto(TemplateContext.MonthlyFee, "Monthly fee"),
+            new TemplateContextOptionDto(TemplateContext.InvoiceNotification, "Invoice notification (per-invoice email/SMS)"),
             // Kept for backward compat — existing templates can stay on these tags. New
             // templates should pick "Event details" so the dropdown shows the full catalog.
             new TemplateContextOptionDto(TemplateContext.TournamentConfirmation, "Tournament confirmation (legacy alias of Event details)"),

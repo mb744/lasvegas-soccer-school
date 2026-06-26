@@ -412,6 +412,9 @@ export interface CreateBroadcastRequest {
   templateVariables?: Record<string, string> | null
   /** Event this send is about (picked from event picker). Drives the cancellation flow later. */
   scheduledGameId?: number | null
+  /** Invoice this send is about. Drives the InvoiceNotification context's property resolver
+   *  so the template's invoice.* / chargeType.* / player.* / parent.* variables auto-fill. */
+  invoiceId?: number | null
   target: BroadcastTarget
 }
 
@@ -547,7 +550,16 @@ export interface GroupConversationDetail {
   participants: GroupConversationParticipantRow[]
 }
 
-export type TemplateContext = 0 | 1 | 2 | 3 | 4 // FreeForm | TournamentConfirmation | EventReminder | EventCancellation | MonthlyFee
+export type TemplateContext = 0 | 1 | 2 | 3 | 4 | 5 | 6 // FreeForm | TournamentConfirmation | EventReminder | EventCancellation | MonthlyFee | EventDetails | InvoiceNotification
+export const TemplateContextValue = {
+  FreeForm: 0,
+  TournamentConfirmation: 1,
+  EventReminder: 2,
+  EventCancellation: 3,
+  MonthlyFee: 4,
+  EventDetails: 5,
+  InvoiceNotification: 6,
+} as const
 
 export interface WhatsAppTemplateVariable {
   id: number

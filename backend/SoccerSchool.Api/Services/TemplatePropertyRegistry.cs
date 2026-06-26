@@ -81,6 +81,52 @@ public static class TemplatePropertyRegistry
         new TemplateProperty("app.publicBaseUrl", "Public site URL"),
     };
 
+    // ============================================================================
+    // InvoiceNotification — per-invoice email/SMS reminder.
+    //
+    // Surfaces the invoice fields the admin would copy/paste by hand into the
+    // body (amount, due date, status, description) plus the linked entities
+    // (charge type, player, parent) so a single template can render fully
+    // personalized "your tournament fee is due" emails per family.
+    // ============================================================================
+    private static readonly TemplateProperty[] InvoiceProps = new[]
+    {
+        // --- Invoice ---
+        new TemplateProperty("invoice.description", "What the charge is for"),
+        new TemplateProperty("invoice.amount", "Amount due ($, formatted)"),
+        new TemplateProperty("invoice.amountPlain", "Amount due — plain (150.00)"),
+        new TemplateProperty("invoice.currency", "Currency code (USD)"),
+        new TemplateProperty("invoice.status", "Status (\"New\", \"Sent\", \"Paid\", \"Closed\")"),
+        new TemplateProperty("invoice.type", "Type (\"One-time\" or \"Subscription\")"),
+        new TemplateProperty("invoice.issuedAt", "Issued date (Jun 5, 2026)"),
+        new TemplateProperty("invoice.issuedAtLong", "Issued date — long (June 5, 2026)"),
+        new TemplateProperty("invoice.dueDate", "Due date (Jun 12, 2026)"),
+        new TemplateProperty("invoice.dueDateLong", "Due date — long (June 12, 2026)"),
+        new TemplateProperty("invoice.dueDateShort", "Due date — short (06/12)"),
+        new TemplateProperty("invoice.paidAt", "Paid date (Jun 12, 2026) — blank until paid"),
+        new TemplateProperty("invoice.paymentMethod", "Payment method (Zelle, Cash, …)"),
+        new TemplateProperty("invoice.paymentReference", "Payment reference / confirmation #"),
+        new TemplateProperty("invoice.notes", "Admin notes (not normally shown to parents)"),
+        // --- Charge type ---
+        new TemplateProperty("chargeType.name", "Charge-type name (Monthly training, Tournament fee, …)"),
+        new TemplateProperty("chargeType.description", "Charge-type description"),
+        new TemplateProperty("chargeType.recurrence", "Recurrence cadence (One-time, Monthly, …)"),
+        // --- Player ---
+        new TemplateProperty("player.firstName", "Player first name"),
+        new TemplateProperty("player.lastName", "Player last name"),
+        new TemplateProperty("player.fullName", "Player full name"),
+        // --- Parent / guardian ---
+        new TemplateProperty("parent.firstName", "Parent first name"),
+        new TemplateProperty("parent.lastName", "Parent last name"),
+        new TemplateProperty("parent.fullName", "Parent full name"),
+        new TemplateProperty("parent.cellPhone", "Parent cell phone (E.164)"),
+        new TemplateProperty("parent.email", "Parent email"),
+        // --- App-level ---
+        new TemplateProperty("app.zellePhone", "Zelle phone (Messaging → Settings)"),
+        new TemplateProperty("app.activeSeason", "Active season (e.g. 2026/27)"),
+        new TemplateProperty("app.publicBaseUrl", "Public site URL"),
+    };
+
     private static readonly TemplateProperty[] MonthlyFeeProps = new[]
     {
         // --- Month ---
@@ -103,6 +149,7 @@ public static class TemplatePropertyRegistry
         TemplateContext.EventReminder => EventDetailsProps,
         TemplateContext.EventCancellation => EventDetailsProps,
         TemplateContext.MonthlyFee => MonthlyFeeProps,
+        TemplateContext.InvoiceNotification => InvoiceProps,
         _ => Array.Empty<TemplateProperty>(),
     };
 }

@@ -24,4 +24,10 @@ public enum TemplateContext
     /// shows the full set; the per-context variants above are kept as aliases for templates
     /// that were tagged before the consolidation.</summary>
     EventDetails = 5,
+    /// <summary>Invoice-flavored: per-invoice notification ("Your tournament fee is due").
+    /// Resolves <c>invoice.*</c> (amount, description, due date, status, payment fields) plus
+    /// the linked <c>chargeType.*</c>, <c>player.*</c>, <c>parent.*</c>, and <c>app.*</c>.
+    /// Triggered from the Invoices admin row's "Email" action, which targets the invoice's
+    /// parent and passes its id so the resolver can fill the invoice fields.</summary>
+    InvoiceNotification = 6,
 }

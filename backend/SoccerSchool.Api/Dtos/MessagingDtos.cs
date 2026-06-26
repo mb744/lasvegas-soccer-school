@@ -148,6 +148,11 @@ public record CreateBroadcastRequest
     /// the player's ID. Stored so the resend flow can find the last delivery status per player.</summary>
     public int? PlayerId { get; init; }
 
+    /// <summary>When this broadcast is an invoice notification, the invoice's ID. The send
+    /// pipeline uses it to resolve <c>invoice.*</c> / <c>chargeType.*</c> / <c>player.*</c> /
+    /// <c>parent.*</c> properties for any template variable mapped to those keys.</summary>
+    public int? InvoiceId { get; init; }
+
     /// <summary>Shared id across all broadcasts in one fan-out batch. Set by the tournament
     /// send/re-send flow; null for individual sends.</summary>
     public Guid? BatchId { get; init; }

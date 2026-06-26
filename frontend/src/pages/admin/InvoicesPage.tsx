@@ -11,8 +11,9 @@ import type {
   InboxParent,
   ChargeTypeDto,
   AdminPlayerSummary,
+  EmailTemplate,
 } from '../../api/types'
-import { InvoiceStatusValue, InvoiceTypeValue } from '../../api/types'
+import { InvoiceStatusValue, InvoiceTypeValue, TemplateContextValue } from '../../api/types'
 
 function errMsg(e: any): string {
   return e?.response?.data?.title || e?.response?.data || e?.message || 'Error'
@@ -53,6 +54,7 @@ export function AdminInvoicesPage() {
   const [showAdd, setShowAdd] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [statusEditingId, setStatusEditingId] = useState<number | null>(null)
+  const [emailingId, setEmailingId] = useState<number | null>(null)
 
   const refresh = async () => {
     try {
@@ -196,11 +198,17 @@ export function AdminInvoicesPage() {
                       )}
                     </td>
                     <td className="py-2 px-3 whitespace-nowrap text-right text-xs space-x-2">
-                      <button onClick={() => { setStatusEditingId(statusEditingId === inv.id ? null : inv.id); setEditingId(null) }}
+                      <button onClick={() => { setEmailingId(emailingId === inv.id ? null : inv.id); setStatusEditingId(null); setEditingId(null) }}
+                        disabled={!inv.parentEmail}
+                        title={inv.parentEmail ? '' : t('admin.invoicesEmailNoAddress')}
+                        className="text-emerald-700 hover:underline disabled:text-slate-400 disabled:no-underline disabled:cursor-not-allowed">
+                        {emailingId === inv.id ? t('admin.cancel') : t('admin.invoicesEmailSend')}
+                      </button>
+                      <button onClick={() => { setStatusEditingId(statusEditingId === inv.id ? null : inv.id); setEditingId(null); setEmailingId(null) }}
                         className="text-emerald-700 hover:underline">
                         {statusEditingId === inv.id ? t('admin.cancel') : t('admin.invoicesStatusChange')}
                       </button>
-                      <button onClick={() => { setEditingId(editingId === inv.id ? null : inv.id); setStatusEditingId(null) }}
+                      <button onClick={() => { setEditingId(editingId === inv.id ? null : inv.id); setStatusEditingId(null); setEmailingId(null) }}
                         className="text-emerald-700 hover:underline">
                         {editingId === inv.id ? t('admin.cancel') : t('admin.edit')}
                       </button>
@@ -209,6 +217,18 @@ export function AdminInvoicesPage() {
                       </button>
                     </td>
                   </tr>
+                  {emailingId === inv.id && (
+                    <tr><td colSpan={8} className="py-2 px-3 bg-sky-50/50">
+                      <SendInvoiceEmailForm invoice={inv}
+                        onSent={async (templateName) => {
+                          await refresh()
+                          setEmailingId(null)
+                          setNotice(t('admin.invoicesEmailSentNotice', { template: templateName }))
+                        }}
+                        onError={(e) => { setError(e); setNotice(null) }}
+                        onCancel={() => setEmailingId(null)} />
+                    </td></tr>
+                  )}
                   {statusEditingId === inv.id && (
                     <tr><td colSpan={8} className="py-2 px-3 bg-emerald-50/50">
                       <StatusForm invoice={inv}
@@ -668,6 +688,105 @@ function StatusForm({ invoice, onSaved, onError, onCancel }: {
         <button type="button" onClick={onCancel} disabled={busy}
           className="text-xs text-slate-600 hover:underline">{t('admin.cancel')}</button>
       </div>
+    </form>
+  )
+}
+
+/** Per-invoice email send: pick an Invoice-context email template, fire one broadcast to the
+ *  invoice's parent. The send pipeline auto-fills invoice.* / chargeType.* / player.* / parent.*
+ *  template variables from the invoice + its joined entities, so the admin doesn't need to type
+ *  any per-row values. Falls back to admin-typed values for any unmapped variable. */
+function SendInvoiceEmailForm({ invoice, onSent, onError, onCancel }: {
+  invoice: InvoiceDto
+  onSent: (templateName: string) => Promise<void> | void
+  onError: (e: string) => void
+  onCancel: () => void
+}) {
+  const { t } = useTranslation()
+  const [templates, setTemplates] = useState<EmailTemplate[]>([])
+  const [templateId, setTemplateId] = useState<number | ''>('')
+  const [values, setValues] = useState<Record<string, string>>({})
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    Api.listEmailTemplates()
+      .then(all => setTemplates(all.filter(t => t.context === TemplateContextValue.InvoiceNotification)))
+      .catch((e: any) => onError(errMsg(e)))
+  }, [])
+  const picked = templates.find(t => t.id === templateId) ?? null
+  // Only show inputs for variables that aren't auto-mapped — mapped ones are filled server-side.
+  const unmapped = picked?.variables.filter(v => !v.propertyKey) ?? []
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!picked) { onError(t('admin.invoicesEmailPickTemplate')); return }
+    if (!invoice.parentEmail) { onError(t('admin.invoicesEmailNoAddress')); return }
+    const missing = unmapped.filter(v => !values[v.position.toString()]?.trim()).map(v => v.label)
+    if (missing.length) { onError(`Fill in: ${missing.join(', ')}.`); return }
+    setBusy(true)
+    try {
+      await Api.createBroadcast({
+        channel: 2, // Email
+        emailTemplateId: picked.id,
+        invoiceId: invoice.id,
+        templateVariables: values,
+        target: {
+          kind: 3, // AdHocList
+          recipients: [{
+            phone: invoice.parentCellPhone ?? '',
+            name: invoice.parentName ?? '',
+            email: invoice.parentEmail,
+          }],
+        },
+      })
+      await onSent(picked.name)
+    } catch (e: any) { onError(errMsg(e)) }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-2">
+      <div className="text-xs text-slate-600">
+        {t('admin.invoicesEmailTo')}: <span className="font-medium">{invoice.parentName ?? invoice.parentEmail}</span>
+        <span className="text-slate-500 ml-1">&lt;{invoice.parentEmail}&gt;</span>
+      </div>
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="text-xs flex-1 min-w-[240px]">
+          <span className="text-slate-700">{t('admin.invoicesEmailTemplate')}</span>
+          <select value={templateId} onChange={e => setTemplateId(e.target.value === '' ? '' : Number(e.target.value))}
+            className="mt-1 w-full border border-slate-300 rounded-md px-2 py-1 text-sm">
+            <option value="">— {t('admin.invoicesEmailPickTemplate')} —</option>
+            {templates.map(tpl => (
+              <option key={tpl.id} value={tpl.id}>{tpl.name} ({tpl.language === 1 ? 'ES' : 'EN'})</option>
+            ))}
+          </select>
+          {templates.length === 0 && (
+            <span className="text-[10px] text-slate-500 mt-0.5 block">{t('admin.invoicesEmailNoTemplates')}</span>
+          )}
+        </label>
+        <button type="submit" disabled={busy || !picked}
+          className="bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded-md hover:bg-emerald-800 disabled:opacity-60">
+          {busy ? t('admin.sending') : t('admin.invoicesEmailSubmit')}
+        </button>
+        <button type="button" onClick={onCancel} disabled={busy}
+          className="text-xs text-slate-600 hover:underline">{t('admin.cancel')}</button>
+      </div>
+      {unmapped.length > 0 && (
+        <div className="space-y-1 pt-2 border-t border-slate-100">
+          <div className="text-[10px] uppercase tracking-wide text-slate-500">{t('admin.invoicesEmailManualVars')}</div>
+          {unmapped.map(v => {
+            const key = v.position.toString()
+            return (
+              <div key={v.id} className="grid grid-cols-[8rem_1fr] items-center gap-2">
+                <label className="text-xs text-slate-700">{v.label}</label>
+                <input type="text" value={values[key] ?? ''}
+                  placeholder={v.example ?? ''}
+                  onChange={e => setValues(prev => ({ ...prev, [key]: e.target.value }))}
+                  className="border border-slate-300 rounded-md px-2 py-1 text-xs" />
+              </div>
+            )
+          })}
+        </div>
+      )}
     </form>
   )
 }
