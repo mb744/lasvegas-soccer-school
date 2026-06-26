@@ -31,6 +31,7 @@ public class MessagingController : ControllerBase
     private readonly ITwilioMessageReconciler _reconciler;
     private readonly TwilioOptions _twilio;
     private readonly AppOptions _app;
+    private readonly ILogger<MessagingController> _logger;
 
     public MessagingController(
         AppDbContext db,
@@ -41,7 +42,8 @@ public class MessagingController : ControllerBase
         IPhraseTranslator translator,
         ITwilioMessageReconciler reconciler,
         IOptions<TwilioOptions> twilio,
-        IOptions<AppOptions> app)
+        IOptions<AppOptions> app,
+        ILogger<MessagingController> logger)
     {
         _db = db;
         _sender = sender;
@@ -52,6 +54,7 @@ public class MessagingController : ControllerBase
         _reconciler = reconciler;
         _twilio = twilio.Value;
         _app = app.Value;
+        _logger = logger;
     }
 
     /// <summary>Admin-triggered backfill of Twilio messages our DB is missing. The hourly
@@ -458,6 +461,17 @@ public class MessagingController : ControllerBase
             }
         }
 
+        // Temporary diagnostic for the email-personalization bug — dumps the dict + the rendered
+        // body so we can see in log analytics whether the property fill / regex pass actually
+        // substituted anything. Remove once the root cause is found.
+        if (isEmailTemplate)
+        {
+            _logger.LogInformation(
+                "EMAILRENDER tpl={Template} ctx={Context} invoiceId={InvoiceId} varsCount={Vars} keys=[{Keys}] origSubject={Subject} origBody={Body}",
+                emailTemplate!.Name, emailTemplate.Context, request.InvoiceId,
+                emailTemplate.Variables.Count, string.Join(",", templateVars.Keys),
+                emailTemplate.Subject, emailTemplate.Body);
+        }
         var broadcast = new Broadcast
         {
             Channel = request.Channel,
@@ -481,6 +495,12 @@ public class MessagingController : ControllerBase
             PlayerId = request.PlayerId,
             BatchId = request.BatchId,
         };
+        if (isEmailTemplate)
+        {
+            _logger.LogInformation(
+                "EMAILRENDER renderedSubject={Subj} renderedBody={Body}",
+                broadcast.SubjectEn, broadcast.BodyEn);
+        }
         foreach (var r in reachableRecipients)
         {
             var lang = r.Language ?? request.DefaultLanguage;
