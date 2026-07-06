@@ -3545,9 +3545,18 @@ public class MessagingController : ControllerBase
             Name: dto.Name,
             CustomGroupId: dto.CustomGroupId,
             DynamicGroupKey: dto.DynamicGroupKey,
+            // Keep recipients that have either a phone OR an email — the invoice email flow
+            // sends AdHocList entries with only an email (parents without a cell number on
+            // file), so a phone-only filter was silently discarding them and producing
+            // "No recipients in this group have an email on file" at the send gate.
             AdHocRecipients: dto.Recipients?
-                .Where(r => !string.IsNullOrWhiteSpace(r.Phone))
-                .Select(r => new ResolvedRecipient(r.Phone.Trim(), r.Name?.Trim(), null))
+                .Where(r => !string.IsNullOrWhiteSpace(r.Phone) || !string.IsNullOrWhiteSpace(r.Email))
+                .Select(r => new ResolvedRecipient(
+                    r.Phone?.Trim() ?? string.Empty,
+                    r.Name?.Trim(),
+                    ParentAccountId: null,
+                    Language: null,
+                    Email: string.IsNullOrWhiteSpace(r.Email) ? null : r.Email.Trim()))
                 .ToList());
 
     private static BroadcastDetail ToDetail(Broadcast b, string? eventLabel = null) => new(
