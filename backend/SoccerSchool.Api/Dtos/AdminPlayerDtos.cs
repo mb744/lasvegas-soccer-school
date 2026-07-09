@@ -96,3 +96,18 @@ public record SendRegistrationInviteRequest
 }
 
 public record SendRegistrationInviteResult(bool Success, string Message);
+
+/// <summary>A single Player row inside a duplicate group. RosterCount + RegistrationCount give
+/// the admin a hint about which row is the "richer" one so they can pick the keeper before merging.</summary>
+public record PlayerDuplicateMemberDto(int Id, int RosterCount, int RegistrationCount);
+
+/// <summary>Group of Player rows that look like the same real kid (same parent + name + DOB).
+/// Presented in a Duplicates panel on the AdminPlayers page; admin merges by picking the keeper
+/// and one or more duplicates to fold into it.</summary>
+public record PlayerDuplicateGroupDto(
+    int ParentAccountId,
+    string? ParentName,
+    string FirstName,
+    string LastName,
+    DateOnly DateOfBirth,
+    IReadOnlyList<PlayerDuplicateMemberDto> Players);

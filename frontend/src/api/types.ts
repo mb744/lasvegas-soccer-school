@@ -1276,6 +1276,25 @@ export interface AdminPlayerSummary {
   activeJerseyNumbers: string
 }
 
+/** One Player row inside a duplicate group. rosterCount + registrationCount hint at which row
+ *  is the richer keeper before merging. */
+export interface PlayerDuplicateMember {
+  id: number
+  rosterCount: number
+  registrationCount: number
+}
+
+/** Group of Player rows that look like the same real kid (same parent, name, DOB). Returned by
+ *  GET /admin/players/duplicates and consumed by the AdminPlayers Duplicates panel. */
+export interface PlayerDuplicateGroup {
+  parentAccountId: number
+  parentName: string | null
+  firstName: string
+  lastName: string
+  dateOfBirth: string
+  players: PlayerDuplicateMember[]
+}
+
 export interface PlayerUniformAssignment {
   id: number
   uniformId: number

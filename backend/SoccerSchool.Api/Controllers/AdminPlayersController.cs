@@ -422,6 +422,133 @@ public class AdminPlayersController : ControllerBase
             : StatusCode(502, new SendRegistrationInviteResult(false, $"Email send failed: {send.Message}"));
     }
 
+    /// <summary>Groups of Player rows that look like the same real kid — same ParentAccountId,
+    /// same first + last name (case-insensitive via the default SQL collation), same DateOfBirth.
+    /// Surfaces existing duplicates the pre-check fix couldn't prevent (rows that already existed
+    /// when the dedup guard shipped). Each group is returned oldest-first so the admin can pick
+    /// the row with the longest history as the "keeper" in the merge UI.</summary>
+    [HttpGet("duplicates")]
+    public async Task<ActionResult<IEnumerable<PlayerDuplicateGroupDto>>> ListDuplicates(CancellationToken ct)
+    {
+        var players = await _db.Players
+            .AsNoTracking()
+            .Select(p => new
+            {
+                p.Id,
+                p.FirstName,
+                p.LastName,
+                p.DateOfBirth,
+                p.ParentAccountId,
+                ParentName = p.ParentAccount != null
+                    ? (p.ParentAccount.FirstName + " " + p.ParentAccount.LastName)
+                    : null,
+                RosterCount = _db.TeamPlayers.Count(tp => tp.PlayerId == p.Id),
+                RegistrationCount = _db.RegistrationPlayers.Count(rp => rp.PlayerId == p.Id),
+            })
+            .ToListAsync(ct);
+
+        var groups = players
+            .GroupBy(p => new
+            {
+                p.ParentAccountId,
+                First = p.FirstName.Trim().ToLowerInvariant(),
+                Last = p.LastName.Trim().ToLowerInvariant(),
+                p.DateOfBirth,
+            })
+            .Where(g => g.Count() > 1)
+            .Select(g =>
+            {
+                var members = g.OrderBy(p => p.Id).ToList();
+                var head = members[0];
+                return new PlayerDuplicateGroupDto(
+                    ParentAccountId: g.Key.ParentAccountId,
+                    ParentName: string.IsNullOrWhiteSpace(head.ParentName) ? null : head.ParentName!.Trim(),
+                    FirstName: head.FirstName.Trim(),
+                    LastName: head.LastName.Trim(),
+                    DateOfBirth: g.Key.DateOfBirth,
+                    Players: members
+                        .Select(m => new PlayerDuplicateMemberDto(m.Id, m.RosterCount, m.RegistrationCount))
+                        .ToList());
+            })
+            .OrderBy(g => g.LastName).ThenBy(g => g.FirstName)
+            .ToList();
+        return Ok(groups);
+    }
+
+    /// <summary>Merges the "delete" player row into the "keep" row: every FK that points at
+    /// deleteId is repointed at keepId (registrations, roster memberships, attendance rows,
+    /// uniform assignments, invoices, broadcasts), unique-index collisions on the target side
+    /// are resolved by dropping the redundant delete-side row, and the delete row itself is
+    /// removed. Both players must belong to the same ParentAccount — merging across families
+    /// isn't allowed since the wrong parent would end up owning the merged history.</summary>
+    [HttpPost("{keepId:int}/merge/{deleteId:int}")]
+    public async Task<IActionResult> MergePlayer(int keepId, int deleteId, CancellationToken ct)
+    {
+        if (keepId == deleteId) return BadRequest("Keep and delete IDs must differ.");
+        var keep = await _db.Players.FirstOrDefaultAsync(p => p.Id == keepId, ct);
+        var drop = await _db.Players.FirstOrDefaultAsync(p => p.Id == deleteId, ct);
+        if (keep is null || drop is null) return NotFound();
+        if (keep.ParentAccountId != drop.ParentAccountId)
+            return BadRequest("Players belong to different parent accounts — merge would move history to the wrong family.");
+
+        // RegistrationPlayer: unique (RegistrationId, PlayerId). If both rows exist under the
+        // same registration, keep 'keepId's row and delete the redundant duplicate.
+        var dropRegs = await _db.RegistrationPlayers.Where(rp => rp.PlayerId == deleteId).ToListAsync(ct);
+        var keepRegIds = await _db.RegistrationPlayers
+            .Where(rp => rp.PlayerId == keepId)
+            .Select(rp => rp.RegistrationId).ToListAsync(ct);
+        foreach (var rp in dropRegs)
+        {
+            if (keepRegIds.Contains(rp.RegistrationId)) _db.RegistrationPlayers.Remove(rp);
+            else rp.PlayerId = keepId;
+        }
+
+        // TeamPlayer: unique (TeamId, PlayerId). Same collision handling.
+        var dropTeamPlayers = await _db.TeamPlayers.Where(tp => tp.PlayerId == deleteId).ToListAsync(ct);
+        var keepTeamIds = await _db.TeamPlayers
+            .Where(tp => tp.PlayerId == keepId)
+            .Select(tp => tp.TeamId).ToListAsync(ct);
+        foreach (var tp in dropTeamPlayers)
+        {
+            if (keepTeamIds.Contains(tp.TeamId)) _db.TeamPlayers.Remove(tp);
+            else tp.PlayerId = keepId;
+        }
+
+        // EventAttendance: unique (ScheduledGameId, PlayerId).
+        var dropAtt = await _db.EventAttendances.Where(a => a.PlayerId == deleteId).ToListAsync(ct);
+        var keepAttEventIds = await _db.EventAttendances
+            .Where(a => a.PlayerId == keepId).Select(a => a.ScheduledGameId).ToListAsync(ct);
+        foreach (var a in dropAtt)
+        {
+            if (keepAttEventIds.Contains(a.ScheduledGameId)) _db.EventAttendances.Remove(a);
+            else a.PlayerId = keepId;
+        }
+
+        // TournamentAttendance: unique (TournamentId, PlayerId).
+        var dropTournAtt = await _db.TournamentAttendances.Where(a => a.PlayerId == deleteId).ToListAsync(ct);
+        var keepTournIds = await _db.TournamentAttendances
+            .Where(a => a.PlayerId == keepId).Select(a => a.TournamentId).ToListAsync(ct);
+        foreach (var a in dropTournAtt)
+        {
+            if (keepTournIds.Contains(a.TournamentId)) _db.TournamentAttendances.Remove(a);
+            else a.PlayerId = keepId;
+        }
+
+        // PlayerUniformAssignment: no unique on player, just repoint.
+        var dropUniforms = await _db.PlayerUniformAssignments.Where(u => u.PlayerId == deleteId).ToListAsync(ct);
+        foreach (var u in dropUniforms) u.PlayerId = keepId;
+
+        // Broadcast.PlayerId and Invoice.PlayerId are nullable — repoint whatever pointed at drop.
+        var dropBroadcasts = await _db.Broadcasts.Where(b => b.PlayerId == deleteId).ToListAsync(ct);
+        foreach (var b in dropBroadcasts) b.PlayerId = keepId;
+        var dropInvoices = await _db.Invoices.Where(i => i.PlayerId == deleteId).ToListAsync(ct);
+        foreach (var i in dropInvoices) i.PlayerId = keepId;
+
+        _db.Players.Remove(drop);
+        await _db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
     private static string? ComposeName(string? first, string? last)
     {
         var name = $"{first ?? string.Empty} {last ?? string.Empty}".Trim();

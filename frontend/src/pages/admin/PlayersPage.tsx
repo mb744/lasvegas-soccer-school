@@ -5,6 +5,7 @@ import { Layout } from '../../components/Layout'
 import { Api } from '../../api/client'
 import type {
   AdminPlayerSummary,
+  PlayerDuplicateGroup,
   PlayerUniformAssignment,
   Uniform,
 } from '../../api/types'
@@ -41,11 +42,27 @@ export function AdminPlayersPage() {
   // Which row is currently being edited inline. Mutually exclusive with the uniforms drawer
   // so the row doesn't try to render both at once.
   const [editingId, setEditingId] = useState<number | null>(null)
+  const [duplicates, setDuplicates] = useState<PlayerDuplicateGroup[]>([])
+  const [showDupes, setShowDupes] = useState(false)
 
   const refresh = async (q: string) => {
     try {
-      setPlayers(await Api.listAdminPlayers(q))
+      const [rows, dupes] = await Promise.all([
+        Api.listAdminPlayers(q),
+        Api.listPlayerDuplicates(),
+      ])
+      setPlayers(rows)
+      setDuplicates(dupes)
     } catch (e: any) { setError(errMsg(e)) }
+  }
+
+  const merge = async (keepId: number, deleteId: number) => {
+    if (!confirm(t('admin.playersDupesConfirm', { keep: keepId, drop: deleteId }))) return
+    try {
+      await Api.mergePlayer(keepId, deleteId)
+      await refresh(query)
+      setNotice(t('admin.playersDupesMergedNotice'))
+    } catch (e: any) { setError(errMsg(e)); setNotice(null) }
   }
 
   // Debounce the query so a typed search doesn't hammer the API on each keystroke.
@@ -74,6 +91,65 @@ export function AdminPlayersPage() {
         )}
         {notice && (
           <div className="text-sm text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-md p-3">{notice}</div>
+        )}
+
+        {duplicates.length > 0 && (
+          <div className="text-sm bg-amber-50 border border-amber-200 rounded-md p-3">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-amber-900">
+                {t('admin.playersDupesBanner', { groups: duplicates.length })}
+              </span>
+              <button onClick={() => setShowDupes(s => !s)}
+                className="ml-auto text-amber-900 font-medium hover:underline">
+                {showDupes ? t('admin.playersDupesHide') : t('admin.playersDupesShow')}
+              </button>
+            </div>
+            {showDupes && (
+              <div className="mt-3 space-y-2">
+                {duplicates.map(g => (
+                  <div key={`${g.parentAccountId}-${g.firstName}-${g.lastName}-${g.dateOfBirth}`}
+                    className="bg-white border border-amber-200 rounded p-2">
+                    <div className="text-xs text-slate-600">
+                      <span className="font-medium text-slate-800">{g.firstName} {g.lastName}</span>
+                      <span className="ml-2 text-slate-500">DOB {g.dateOfBirth}</span>
+                      {g.parentName && <span className="ml-2 text-slate-500">· {g.parentName}</span>}
+                    </div>
+                    <table className="w-full text-xs mt-2">
+                      <thead>
+                        <tr className="text-left text-slate-500">
+                          <th className="py-1">ID</th>
+                          <th className="py-1">{t('admin.playersDupesRoster')}</th>
+                          <th className="py-1">{t('admin.playersDupesRegs')}</th>
+                          <th></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {g.players.map(p => {
+                          const keeper = g.players[0]
+                          const isKeeper = p.id === keeper.id
+                          return (
+                            <tr key={p.id} className="border-t border-slate-100">
+                              <td className="py-1 font-mono">#{p.id}{isKeeper && <span className="ml-1 text-[10px] text-emerald-700 uppercase">{t('admin.playersDupesKeeper')}</span>}</td>
+                              <td className="py-1">{p.rosterCount}</td>
+                              <td className="py-1">{p.registrationCount}</td>
+                              <td className="py-1 text-right">
+                                {!isKeeper && (
+                                  <button onClick={() => merge(keeper.id, p.id)}
+                                    className="text-rose-700 hover:underline">
+                                    {t('admin.playersDupesMerge', { keep: keeper.id })}
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         )}
 
         {showAdd && (

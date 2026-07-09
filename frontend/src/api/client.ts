@@ -60,6 +60,7 @@ import type {
   SaveMessagingSettingsRequest,
   ThreadSummary,
   AdminPlayerSummary,
+  PlayerDuplicateGroup,
   PlayerUniformAssignment,
   CreatePlayerUniformAssignmentRequest,
   UpdatePlayerUniformAssignmentRequest,
@@ -527,6 +528,13 @@ export const Api = {
   async sendRegistrationInvite(payload: SendRegistrationInviteRequest) {
     const r = await api.post<SendRegistrationInviteResult>('/admin/players/send-registration-invite', payload)
     return r.data
+  },
+  async listPlayerDuplicates() {
+    const r = await api.get<PlayerDuplicateGroup[]>('/admin/players/duplicates')
+    return r.data
+  },
+  async mergePlayer(keepId: number, deleteId: number) {
+    await api.post(`/admin/players/${keepId}/merge/${deleteId}`)
   },
 
   // --- Admin Invoices ---
