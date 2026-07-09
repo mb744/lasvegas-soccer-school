@@ -246,9 +246,12 @@ public class TeamsController : ControllerBase
         return await Get(id, ct);
     }
 
-    /// <summary>Registered players (in <paramref name="season"/>, default = active season) not yet
-    /// on this team's roster, with their age bracket + parent name from their most-recent
-    /// registration so the admin can build the roster by age group.</summary>
+    /// <summary>Players eligible for this team's roster: every Player linked to a parent account
+    /// who isn't already rostered. Registered players (in <paramref name="season"/>, default =
+    /// active season) come back with their bracket + parent name from the freshest registration;
+    /// admin-added players who haven't been enrolled in a registration yet still show up with
+    /// bracket derived from their DOB and parent name from the ParentAccount, so the admin can
+    /// roster them without first waiting for the parent to finish signup.</summary>
     [HttpGet("{id:int}/available-players")]
     public async Task<ActionResult<IEnumerable<AvailablePlayerDto>>> AvailablePlayers(
         int id, [FromQuery] string? season, CancellationToken ct)
@@ -257,31 +260,50 @@ public class TeamsController : ControllerBase
 
         var s = string.IsNullOrWhiteSpace(season) ? _app.ActiveSeason : season.Trim();
         var onTeam = await _db.TeamPlayers.Where(tp => tp.TeamId == id).Select(tp => tp.PlayerId).ToListAsync(ct);
+        var classifications = await _db.AgeClassifications.OrderBy(c => c.DobStart).ToListAsync(ct);
 
-        // Most-recent registration first, so the per-player dedupe below keeps the freshest bracket/parent.
-        var rows = await _db.RegistrationPlayers
-            .Where(rp => rp.Registration!.Season == s && !onTeam.Contains(rp.PlayerId))
+        // Fresh-registration lookup: per-player freshest bracket + parent name from the requested
+        // season's registration, if any. Empty for admin-added players who haven't been enrolled.
+        var latestRegs = await _db.RegistrationPlayers
+            .Where(rp => rp.Registration!.Season == s)
             .OrderByDescending(rp => rp.Registration!.CreatedAt)
             .Select(rp => new
             {
                 rp.PlayerId,
-                rp.Player!.FirstName,
-                rp.Player.LastName,
-                rp.Player.DateOfBirth,
                 Bracket = rp.AgeClassification != null ? rp.AgeClassification.Name : null,
                 ParentFirst = rp.Registration!.ParentFirstName,
                 ParentLast = rp.Registration.ParentLastName,
             })
             .ToListAsync(ct);
+        var regByPlayer = latestRegs
+            .GroupBy(r => r.PlayerId)
+            .ToDictionary(g => g.Key, g => g.First());
 
-        var seen = new HashSet<int>();
+        // Every Player is under a ParentAccount (schema requires it), so include them all.
+        var players = await _db.Players
+            .Where(p => !onTeam.Contains(p.Id))
+            .Select(p => new
+            {
+                p.Id,
+                p.FirstName,
+                p.LastName,
+                p.DateOfBirth,
+                ParentFirst = p.ParentAccount != null ? p.ParentAccount.FirstName : null,
+                ParentLast = p.ParentAccount != null ? p.ParentAccount.LastName : null,
+            })
+            .ToListAsync(ct);
+
         var result = new List<AvailablePlayerDto>();
-        foreach (var r in rows)
+        foreach (var p in players)
         {
-            if (!seen.Add(r.PlayerId)) continue;
-            var parentName = $"{r.ParentFirst} {r.ParentLast}".Trim();
+            regByPlayer.TryGetValue(p.Id, out var reg);
+            var bracket = reg?.Bracket
+                ?? classifications.FirstOrDefault(c => c.DobStart <= p.DateOfBirth && p.DateOfBirth <= c.DobEnd)?.Name;
+            var parentName = reg is not null
+                ? $"{reg.ParentFirst} {reg.ParentLast}".Trim()
+                : $"{p.ParentFirst} {p.ParentLast}".Trim();
             result.Add(new AvailablePlayerDto(
-                r.PlayerId, r.FirstName, r.LastName, r.DateOfBirth, r.Bracket,
+                p.Id, p.FirstName, p.LastName, p.DateOfBirth, bracket,
                 string.IsNullOrWhiteSpace(parentName) ? null : parentName));
         }
         result.Sort((a, b) =>

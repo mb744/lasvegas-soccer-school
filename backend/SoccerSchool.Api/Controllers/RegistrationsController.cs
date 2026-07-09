@@ -102,14 +102,25 @@ public class RegistrationsController : ControllerBase
             {
                 if (string.IsNullOrWhiteSpace(input.FirstName) || string.IsNullOrWhiteSpace(input.LastName) || input.DateOfBirth is null)
                     return BadRequest("New players require FirstName, LastName, and DateOfBirth.");
-                player = new Player
+                // Reuse an existing Player under this parent when name + DOB match — otherwise a
+                // parent re-typing their child (or the admin adding the same player twice via
+                // different flows) silently creates a duplicate durable record.
+                var match = await FindExistingPlayerAsync(account.Id, input.FirstName!, input.LastName!, input.DateOfBirth.Value, ct);
+                if (match is not null)
                 {
-                    ParentAccountId = account.Id,
-                    FirstName = input.FirstName!.Trim(),
-                    LastName = input.LastName!.Trim(),
-                    DateOfBirth = input.DateOfBirth.Value
-                };
-                _db.Players.Add(player);
+                    player = match;
+                }
+                else
+                {
+                    player = new Player
+                    {
+                        ParentAccountId = account.Id,
+                        FirstName = input.FirstName!.Trim(),
+                        LastName = input.LastName!.Trim(),
+                        DateOfBirth = input.DateOfBirth.Value
+                    };
+                    _db.Players.Add(player);
+                }
             }
 
             // Auto-assign the age bracket the player's DOB falls into. Null when no defined bracket
@@ -409,14 +420,27 @@ public class RegistrationsController : ControllerBase
         if (string.IsNullOrWhiteSpace(request.FirstName) || string.IsNullOrWhiteSpace(request.LastName) || request.DateOfBirth == default)
             return BadRequest("First name, last name, and date of birth are required.");
 
-        var player = new Player
+        // Reuse an existing Player under this parent when name + DOB already match — otherwise
+        // an admin adding the same kid twice (e.g., via the Players page then via a new
+        // registration) creates a duplicate durable record.
+        Player player;
+        var match = await FindExistingPlayerAsync(
+            registration.ParentAccountId, request.FirstName, request.LastName, request.DateOfBirth, ct);
+        if (match is not null)
         {
-            ParentAccountId = registration.ParentAccountId,
-            FirstName = request.FirstName.Trim(),
-            LastName = request.LastName.Trim(),
-            DateOfBirth = request.DateOfBirth,
-        };
-        _db.Players.Add(player);
+            player = match;
+        }
+        else
+        {
+            player = new Player
+            {
+                ParentAccountId = registration.ParentAccountId,
+                FirstName = request.FirstName.Trim(),
+                LastName = request.LastName.Trim(),
+                DateOfBirth = request.DateOfBirth,
+            };
+            _db.Players.Add(player);
+        }
 
         _db.RegistrationPlayers.Add(new RegistrationPlayer
         {
@@ -503,14 +527,26 @@ public class RegistrationsController : ControllerBase
         if (string.IsNullOrWhiteSpace(request.FirstName) || string.IsNullOrWhiteSpace(request.LastName) || request.DateOfBirth == default)
             return BadRequest("First name, last name, and date of birth are required.");
 
-        var player = new Player
+        // Reuse an existing Player under this parent when name + DOB already match — a parent
+        // re-typing a child who was already added elsewhere should attach to the same durable row.
+        Player player;
+        var match = await FindExistingPlayerAsync(
+            registration!.ParentAccountId, request.FirstName, request.LastName, request.DateOfBirth, ct);
+        if (match is not null)
         {
-            ParentAccountId = registration!.ParentAccountId,
-            FirstName = request.FirstName.Trim(),
-            LastName = request.LastName.Trim(),
-            DateOfBirth = request.DateOfBirth,
-        };
-        _db.Players.Add(player);
+            player = match;
+        }
+        else
+        {
+            player = new Player
+            {
+                ParentAccountId = registration.ParentAccountId,
+                FirstName = request.FirstName.Trim(),
+                LastName = request.LastName.Trim(),
+                DateOfBirth = request.DateOfBirth,
+            };
+            _db.Players.Add(player);
+        }
         _db.RegistrationPlayers.Add(new RegistrationPlayer
         {
             RegistrationId = registration.Id,
@@ -682,6 +718,26 @@ public class RegistrationsController : ControllerBase
     {
         var classifications = await _db.AgeClassifications.ToListAsync(ct);
         return classifications.FirstOrDefault(c => c.DobStart <= dob && dob <= c.DobEnd)?.Id;
+    }
+
+    /// <summary>Look up an existing Player under the parent account by trimmed first + last name
+    /// and matching date of birth. Returns null when there's no match. Prevents duplicate Player
+    /// rows when a parent (or admin) re-types a child who was already added earlier — either via
+    /// the admin Players page (which creates the durable Player without a registration) or a
+    /// prior season's registration. String compare is case-insensitive at the DB level via the
+    /// default SQL Server collation, so "Carlos" and "carlos" match the same row.</summary>
+    private async Task<Player?> FindExistingPlayerAsync(
+        int parentAccountId, string firstName, string lastName, DateOnly dob, CancellationToken ct)
+    {
+        var fn = firstName.Trim();
+        var ln = lastName.Trim();
+        if (string.IsNullOrEmpty(fn) || string.IsNullOrEmpty(ln)) return null;
+        return await _db.Players.FirstOrDefaultAsync(p =>
+            p.ParentAccountId == parentAccountId
+            && p.DateOfBirth == dob
+            && p.FirstName == fn
+            && p.LastName == ln,
+            ct);
     }
 
     private async Task<RegistrationDetail> LoadDetailAsync(int id, CancellationToken ct)
