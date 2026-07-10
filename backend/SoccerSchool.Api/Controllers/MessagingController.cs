@@ -557,6 +557,31 @@ public class MessagingController : ControllerBase
                 recipient.StatusMessage = send.Message;
             }
         }
+
+        // Invoice send: auto-transition New → Sent when at least one recipient was successfully
+        // queued (accepting anything that isn't Failed/Undelivered as "reached the carrier"). The
+        // admin was already manually flipping the status after each send; this closes the loop so
+        // the row on the Invoices page reflects reality without a second click. Only promote from
+        // New — never demote a Paid/Closed invoice for a follow-up reminder, and don't re-stamp
+        // SentAt on a subsequent send since it marks the first outbound.
+        if (request.InvoiceId is int invoiceIdForStatus)
+        {
+            var deliveredCount = broadcast.Recipients
+                .Count(r => r.Status != MessageDeliveryStatus.Failed
+                    && r.Status != MessageDeliveryStatus.Undelivered);
+            if (deliveredCount > 0)
+            {
+                var inv = await _db.Invoices.FirstOrDefaultAsync(i => i.Id == invoiceIdForStatus, ct);
+                if (inv is not null && inv.Status == InvoiceStatus.New)
+                {
+                    var now = DateTime.UtcNow;
+                    inv.Status = InvoiceStatus.Sent;
+                    inv.SentAt = now;
+                    inv.UpdatedAt = now;
+                }
+            }
+        }
+
         await _db.SaveChangesAsync(ct);
 
         return Ok(ToDetail(broadcast));
