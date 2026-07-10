@@ -473,6 +473,10 @@ export const Api = {
   async deleteWhatsAppTemplate(id: number) {
     await api.delete(`/messaging/whatsapp-templates/${id}`)
   },
+  async duplicateWhatsAppTemplate(id: number) {
+    const r = await api.post<WhatsAppTemplate>(`/messaging/whatsapp-templates/${id}/duplicate`)
+    return r.data
+  },
   async listEmailTemplates() {
     const r = await api.get<EmailTemplate[]>('/messaging/email-templates')
     return r.data
@@ -487,6 +491,10 @@ export const Api = {
   },
   async deleteEmailTemplate(id: number) {
     await api.delete(`/messaging/email-templates/${id}`)
+  },
+  async duplicateEmailTemplate(id: number) {
+    const r = await api.post<EmailTemplate>(`/messaging/email-templates/${id}/duplicate`)
+    return r.data
   },
   async getMessagingSettings() {
     const r = await api.get<MessagingSettings>('/messaging/settings')

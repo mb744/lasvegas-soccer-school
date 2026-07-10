@@ -830,6 +830,8 @@ const es: Translations = {
     msgTemplatesHeader: 'Plantillas aprobadas',
     msgTemplatesHint: 'Las plantillas se aprueban en la consola de Twilio. Agregue cada una aquí con su Content SID y las etiquetas de sus marcadores.',
     msgNewTemplate: 'Nueva',
+    msgTemplateDuplicate: 'Copiar',
+    msgTemplateDuplicatedNotice: 'Duplicada como "{{name}}". Edítala para personalizar.',
     msgSelectTemplate: 'Seleccione una plantilla a la izquierda o agregue una nueva.',
     msgTemplateName: 'Nombre (igual al de Twilio)',
     msgTemplateContentSid: 'Content SID (HX…)',

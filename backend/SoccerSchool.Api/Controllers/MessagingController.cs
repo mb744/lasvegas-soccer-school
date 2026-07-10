@@ -3138,6 +3138,45 @@ public class MessagingController : ControllerBase
         return NoContent();
     }
 
+    /// <summary>Clones an existing WhatsApp template with the same ContentSid, language, context,
+    /// preview text, and variable definitions. Name gets a "_copy" suffix, incremented if that's
+    /// already taken (e.g., "_copy2", "_copy3") so the create can't collide with existing rows.
+    /// Same ContentSid on purpose — admin usually wants to fork a template locally to tweak
+    /// variable mappings or context; if they later swap the SID they can do it via edit.</summary>
+    [HttpPost("whatsapp-templates/{id:int}/duplicate")]
+    public async Task<ActionResult<WhatsAppTemplateDto>> DuplicateTemplate(int id, CancellationToken ct)
+    {
+        var source = await _db.WhatsAppTemplates
+            .Include(t => t.Variables)
+            .FirstOrDefaultAsync(t => t.Id == id, ct);
+        if (source is null) return NotFound();
+
+        var newName = await NextAvailableTemplateNameAsync(
+            source.Name,
+            candidate => _db.WhatsAppTemplates.AnyAsync(t => t.Name == candidate, ct));
+        var clone = new WhatsAppTemplate
+        {
+            Name = newName,
+            ContentSid = source.ContentSid,
+            Language = source.Language,
+            Description = source.Description,
+            PreviewText = source.PreviewText,
+            Context = source.Context,
+            Variables = source.Variables
+                .Select(v => new WhatsAppTemplateVariable
+                {
+                    Position = v.Position,
+                    Label = v.Label,
+                    Example = v.Example,
+                    PropertyKey = v.PropertyKey,
+                })
+                .ToList(),
+        };
+        _db.WhatsAppTemplates.Add(clone);
+        await _db.SaveChangesAsync(ct);
+        return Ok(ToDto(clone, await FindPairAsync(clone, ct)));
+    }
+
     // --- Email templates ---
 
     [HttpGet("email-templates")]
@@ -3218,6 +3257,61 @@ public class MessagingController : ControllerBase
         _db.EmailTemplates.Remove(template);
         await _db.SaveChangesAsync(ct);
         return NoContent();
+    }
+
+    /// <summary>Clones an existing email template with the same subject, body, language, context,
+    /// description, and variable definitions (positions, labels, examples, propertyKey mappings).
+    /// Name gets a "_copy" suffix — bumped to "_copy2", "_copy3", … if the earlier ones are
+    /// already taken — so the required-unique-name check on create can't fail.</summary>
+    [HttpPost("email-templates/{id:int}/duplicate")]
+    public async Task<ActionResult<EmailTemplateDto>> DuplicateEmailTemplate(int id, CancellationToken ct)
+    {
+        var source = await _db.EmailTemplates
+            .Include(t => t.Variables)
+            .FirstOrDefaultAsync(t => t.Id == id, ct);
+        if (source is null) return NotFound();
+
+        var newName = await NextAvailableTemplateNameAsync(
+            source.Name,
+            candidate => _db.EmailTemplates.AnyAsync(t => t.Name == candidate, ct));
+        var clone = new EmailTemplate
+        {
+            Name = newName,
+            Language = source.Language,
+            Description = source.Description,
+            Subject = source.Subject,
+            Body = source.Body,
+            Context = source.Context,
+            Variables = source.Variables
+                .Select(v => new EmailTemplateVariable
+                {
+                    Position = v.Position,
+                    Label = v.Label,
+                    Example = v.Example,
+                    PropertyKey = v.PropertyKey,
+                })
+                .ToList(),
+        };
+        _db.EmailTemplates.Add(clone);
+        await _db.SaveChangesAsync(ct);
+        return Ok(ToEmailDto(clone, await FindEmailPairAsync(clone, ct)));
+    }
+
+    /// <summary>Finds the first name in the "{source}_copy", "{source}_copy2", … sequence that
+    /// no existing row uses. Shared by both template kinds; the caller passes the "does a row
+    /// with this name exist?" predicate so the check hits the right table.</summary>
+    private static async Task<string> NextAvailableTemplateNameAsync(
+        string sourceName, Func<string, Task<bool>> exists)
+    {
+        var baseCandidate = $"{sourceName}_copy";
+        if (!await exists(baseCandidate)) return baseCandidate;
+        for (var i = 2; i <= 100; i++)
+        {
+            var candidate = $"{sourceName}_copy{i}";
+            if (!await exists(candidate)) return candidate;
+        }
+        // Absurd fallback — 100 copies feels enough; if we ever hit it the admin has a bigger issue.
+        return $"{sourceName}_copy_{Guid.NewGuid():N}";
     }
 
     // --- Messaging settings (auto-reply text + toggle) ---

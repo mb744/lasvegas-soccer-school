@@ -828,6 +828,8 @@ const en = {
     msgTemplatesHeader: 'Approved templates',
     msgTemplatesHint: 'Templates are pre-approved in the Twilio console. Add each one here with its Content SID and the labels for its placeholders.',
     msgNewTemplate: 'New',
+    msgTemplateDuplicate: 'Copy',
+    msgTemplateDuplicatedNotice: 'Duplicated as "{{name}}". Edit it to customize.',
     msgSelectTemplate: 'Select a template on the left, or add a new one.',
     msgTemplateName: 'Name (matches Twilio)',
     msgTemplateContentSid: 'Content SID (HX…)',

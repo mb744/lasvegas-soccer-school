@@ -2275,11 +2275,21 @@ export function TemplatesTab({
         </div>
         <ul className="space-y-1">
           {templates.map(tpl => (
-            <li key={tpl.id}>
+            <li key={tpl.id} className="group relative">
               <button onClick={() => loadForm(tpl)}
-                className={`w-full text-left px-2 py-1.5 rounded text-sm hover:bg-emerald-50 ${editingId === tpl.id ? 'bg-emerald-50 text-emerald-800 font-medium' : ''}`}>
+                className={`w-full text-left px-2 py-1.5 pr-16 rounded text-sm hover:bg-emerald-50 ${editingId === tpl.id ? 'bg-emerald-50 text-emerald-800 font-medium' : ''}`}>
                 <div>{tpl.name} <span className="text-xs text-slate-400">{tpl.language === 1 ? 'ES' : 'EN'}</span></div>
                 <div className="text-xs text-slate-500 font-mono truncate">{tpl.contentSid}</div>
+              </button>
+              <button type="button" onClick={async () => {
+                try {
+                  const copy = await Api.duplicateWhatsAppTemplate(tpl.id)
+                  onNotice(t('admin.msgTemplateDuplicatedNotice', { name: copy.name }))
+                  await onChanged()
+                } catch (e: any) { onError(extractError(e)) }
+              }}
+                className="absolute right-1 top-1 text-xs text-emerald-700 hover:underline px-1 py-0.5">
+                {t('admin.msgTemplateDuplicate')}
               </button>
             </li>
           ))}
@@ -2528,11 +2538,21 @@ function EmailTemplatesSection({
         </div>
         <ul className="space-y-1">
           {emailTemplates.map(tpl => (
-            <li key={tpl.id}>
+            <li key={tpl.id} className="group relative">
               <button onClick={() => loadForm(tpl)}
-                className={`w-full text-left px-2 py-1.5 rounded text-sm hover:bg-emerald-50 ${editingId === tpl.id ? 'bg-emerald-50 text-emerald-800 font-medium' : ''}`}>
+                className={`w-full text-left px-2 py-1.5 pr-16 rounded text-sm hover:bg-emerald-50 ${editingId === tpl.id ? 'bg-emerald-50 text-emerald-800 font-medium' : ''}`}>
                 <div>{tpl.name} <span className="text-xs text-slate-400">{tpl.language === 1 ? 'ES' : 'EN'}</span></div>
                 <div className="text-xs text-slate-500 truncate">{tpl.subject}</div>
+              </button>
+              <button type="button" onClick={async () => {
+                try {
+                  const copy = await Api.duplicateEmailTemplate(tpl.id)
+                  onNotice(t('admin.msgTemplateDuplicatedNotice', { name: copy.name }))
+                  await onChanged()
+                } catch (e: any) { onError(extractError(e)) }
+              }}
+                className="absolute right-1 top-1 text-xs text-emerald-700 hover:underline px-1 py-0.5">
+                {t('admin.msgTemplateDuplicate')}
               </button>
             </li>
           ))}
