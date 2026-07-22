@@ -53,28 +53,26 @@ resource allowAzureServices 'Microsoft.Sql/servers/firewallRules@2023-08-01-prev
   }
 }
 
-// Serverless General Purpose tier — auto-pauses after 60 min idle so cost stays minimal.
-// Storage capped at 5 GB (cheap); auto-grow disabled so a runaway can't surprise the bill.
-// Note: the free-tier offer (`useFreeLimit`) is not available in westus (Microsoft.Sql region constraint),
-// so this is paid serverless. Expected cost at very low traffic with auto-pause: ~$0–5 / month.
+// Standard S1 DTU tier — 20 DTUs, 20 GB storage. Chosen over the Serverless General Purpose
+// tier because the auto-pause cold starts were making the first admin action of the day feel
+// broken (30–60s stall while the DB warmed). DTU tiers don't support auto-pause / minCapacity;
+// removing those knobs is required or the ARM deploy rejects the update.
+// Expected cost at low traffic: ~$29 / month (S1). Bump to S2 (~$74) if we outgrow 20 DTUs.
 resource sqlDatabase 'Microsoft.Sql/servers/databases@2023-08-01-preview' = {
   name: databaseName
   parent: sqlServer
   location: location
   tags: tags
   sku: {
-    name: 'GP_S_Gen5_2'
-    tier: 'GeneralPurpose'
-    family: 'Gen5'
-    capacity: 2
+    name: 'S1'
+    tier: 'Standard'
+    capacity: 20
   }
   properties: {
     collation: 'SQL_Latin1_General_CP1_CI_AS'
     catalogCollation: 'SQL_Latin1_General_CP1_CI_AS'
     zoneRedundant: false
-    minCapacity: json('0.5')
-    autoPauseDelay: 60
-    maxSizeBytes: 5368709120  // 5 GB
+    maxSizeBytes: 21474836480  // 20 GB
     requestedBackupStorageRedundancy: 'Local'
   }
 }
