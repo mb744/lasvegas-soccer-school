@@ -81,6 +81,9 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
     public DbSet<Invoice> Invoices => Set<Invoice>();
     public DbSet<ChargeType> ChargeTypes => Set<ChargeType>();
     public DbSet<Venue> Venues => Set<Venue>();
+    public DbSet<HostedTournament> HostedTournaments => Set<HostedTournament>();
+    public DbSet<HostedTournamentTeam> HostedTournamentTeams => Set<HostedTournamentTeam>();
+    public DbSet<InvitedTeam> InvitedTeams => Set<InvitedTeam>();
     public DbSet<MappedField> MappedFields => Set<MappedField>();
 
     /// <summary>Backing store for the ASP.NET Core data-protection key ring (cookie encryption
@@ -486,6 +489,44 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
         modelBuilder.Entity<Venue>(b =>
         {
             b.HasIndex(v => v.Name).IsUnique();
+        });
+
+        modelBuilder.Entity<HostedTournament>(b =>
+        {
+            b.Property(t => t.CostPerTeam).HasPrecision(10, 2);
+            b.HasOne(t => t.Venue)
+                .WithMany()
+                .HasForeignKey(t => t.VenueId)
+                .OnDelete(DeleteBehavior.SetNull);
+            b.HasIndex(t => t.StartDate);
+        });
+
+        modelBuilder.Entity<InvitedTeam>(b =>
+        {
+            b.HasIndex(t => t.Name);
+        });
+
+        modelBuilder.Entity<HostedTournamentTeam>(b =>
+        {
+            b.HasOne(t => t.HostedTournament)
+                .WithMany(h => h.Teams)
+                .HasForeignKey(t => t.HostedTournamentId)
+                .OnDelete(DeleteBehavior.Cascade);
+            // ClientSetNull for both team FKs — DB cascade on Team delete would collide with
+            // other Team paths in the model. EF nulls the tracked row on SaveChanges; the DB
+            // FK stays No Action so the participation history survives a team removal.
+            b.HasOne(t => t.LvssTeam)
+                .WithMany()
+                .HasForeignKey(t => t.LvssTeamId)
+                .OnDelete(DeleteBehavior.ClientSetNull);
+            b.HasOne(t => t.InvitedTeam)
+                .WithMany()
+                .HasForeignKey(t => t.InvitedTeamId)
+                .OnDelete(DeleteBehavior.ClientSetNull);
+            // No unique index on (tournament, teamId) — the LVSS and Invited FKs are separate
+            // nullable columns and SQL Server ignores nulls in unique indexes only with a
+            // filtered index. The controller enforces "one team per tournament" instead.
+            b.HasIndex(t => t.HostedTournamentId);
         });
 
         modelBuilder.Entity<MappedField>(b =>

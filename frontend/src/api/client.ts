@@ -116,6 +116,11 @@ import type {
   CoachSummary,
   SaveCoachRecordRequest,
   SaveCoachCertificationRequest,
+  HostedTournament,
+  SaveHostedTournamentRequest,
+  AddHostedTournamentTeamRequest,
+  InvitedTeam,
+  SaveInvitedTeamRequest,
   TranslateRequest,
   TranslateResponse,
   UserSummary,
@@ -1053,6 +1058,46 @@ export const Api = {
   },
   async postChatGroupMessage(id: number, body: string) {
     await api.post(`/admin/chat-groups/${id}/messages`, { body })
+  },
+
+  // --- Admin: LVSS-hosted tournaments + invited teams catalog ---
+  async listHostedTournaments() {
+    const r = await api.get<HostedTournament[]>('/admin/hosted-tournaments')
+    return r.data
+  },
+  async createHostedTournament(payload: SaveHostedTournamentRequest) {
+    const r = await api.post<HostedTournament>('/admin/hosted-tournaments', payload)
+    return r.data
+  },
+  async updateHostedTournament(id: number, payload: SaveHostedTournamentRequest) {
+    const r = await api.put<HostedTournament>(`/admin/hosted-tournaments/${id}`, payload)
+    return r.data
+  },
+  async deleteHostedTournament(id: number) {
+    await api.delete(`/admin/hosted-tournaments/${id}`)
+  },
+  async addHostedTournamentTeam(id: number, payload: AddHostedTournamentTeamRequest) {
+    const r = await api.post<HostedTournament>(`/admin/hosted-tournaments/${id}/teams`, payload)
+    return r.data
+  },
+  async removeHostedTournamentTeam(id: number, teamRowId: number) {
+    const r = await api.delete<HostedTournament>(`/admin/hosted-tournaments/${id}/teams/${teamRowId}`)
+    return r.data
+  },
+  async listInvitedTeams() {
+    const r = await api.get<InvitedTeam[]>('/admin/invited-teams')
+    return r.data
+  },
+  async createInvitedTeam(payload: SaveInvitedTeamRequest) {
+    const r = await api.post<InvitedTeam>('/admin/invited-teams', payload)
+    return r.data
+  },
+  async updateInvitedTeam(id: number, payload: SaveInvitedTeamRequest) {
+    const r = await api.put<InvitedTeam>(`/admin/invited-teams/${id}`, payload)
+    return r.data
+  },
+  async deleteInvitedTeam(id: number) {
+    await api.delete(`/admin/invited-teams/${id}`)
   },
 }
 

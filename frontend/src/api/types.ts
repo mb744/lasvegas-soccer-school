@@ -1619,3 +1619,75 @@ export interface SaveChatGroupRequest {
 export interface AddChatGroupMemberRequest {
   parentAccountId: number
 }
+
+
+// ---------- Hosted Tournaments (LVSS-hosted events) ----------
+
+export interface InvitedTeam {
+  id: number
+  name: string
+  headCoachName: string | null
+  headCoachPhone: string | null
+  headCoachEmail: string | null
+  ageGroup: string | null
+  notes: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface SaveInvitedTeamRequest {
+  name: string
+  headCoachName?: string | null
+  headCoachPhone?: string | null
+  headCoachEmail?: string | null
+  ageGroup?: string | null
+  notes?: string | null
+}
+
+export interface HostedTournamentTeam {
+  id: number
+  lvssTeamId: number | null
+  lvssTeamName: string | null
+  invitedTeamId: number | null
+  invitedTeamName: string | null
+  ageGroup: string | null
+  headCoachName: string | null
+  headCoachPhone: string | null
+  headCoachEmail: string | null
+  notes: string | null
+  createdAt: string
+}
+
+export interface HostedTournament {
+  id: number
+  name: string
+  kind: TournamentKind
+  startDate: string
+  endDate: string | null
+  venueId: number | null
+  venueName: string | null
+  venueAddress: string | null
+  location: string | null
+  costPerTeam: number | null
+  notes: string | null
+  createdAt: string
+  updatedAt: string
+  teams: HostedTournamentTeam[]
+}
+
+export interface SaveHostedTournamentRequest {
+  name: string
+  kind: TournamentKind
+  startDate: string
+  endDate?: string | null
+  venueId?: number | null
+  location?: string | null
+  costPerTeam?: number | null
+  notes?: string | null
+}
+
+export interface AddHostedTournamentTeamRequest {
+  lvssTeamId?: number | null
+  invitedTeamId?: number | null
+  notes?: string | null
+}

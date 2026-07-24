@@ -14,6 +14,7 @@ import { AdminSettingsPage } from './pages/admin/SettingsPage'
 import { AdminCoachesPage } from './pages/admin/CoachesPage'
 import { AdminPlayersPage } from './pages/admin/PlayersPage'
 import { AdminInvoicesPage } from './pages/admin/InvoicesPage'
+import { AdminHostedTournamentsPage } from './pages/admin/HostedTournamentsPage'
 import { LoginPage } from './pages/LoginPage'
 import { SignupPage } from './pages/SignupPage'
 import { PrivacyPage } from './pages/PrivacyPage'
@@ -92,6 +93,10 @@ export default function App() {
           <Route
             path="/admin/invoices"
             element={<RequireAuth adminOnly><AdminInvoicesPage /></RequireAuth>}
+          />
+          <Route
+            path="/admin/hosted-tournaments"
+            element={<RequireAuth adminOnly><AdminHostedTournamentsPage /></RequireAuth>}
           />
           <Route path="*" element={<LandingPage />} />
         </Routes>
