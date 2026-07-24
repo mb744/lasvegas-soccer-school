@@ -524,30 +524,114 @@ function TierCard({ event, tier, onChanged, onError, onNotice, onDelete }: {
           <p className="text-xs text-slate-400 mt-1">{t('admin.hostedBracketsEmpty')}</p>
         ) : (
           <ul className="mt-1 space-y-1">
-            {tier.brackets.map(br => {
-              const rosterHere = teamsByBracket.get(br.id) ?? []
-              return (
-                <li key={br.id} className="text-xs border border-slate-200 rounded px-2 py-1 bg-white">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="font-medium">{br.name}</span>
-                      <span className="text-slate-500 ml-2">{rosterHere.length} {t('admin.hostedTeamCount')}</span>
-                    </div>
-                    <button onClick={() => removeBracket(br.id, br.name)} className="text-rose-700 hover:underline">{t('admin.delete')}</button>
-                  </div>
-                  {rosterHere.length > 0 && (
-                    <ul className="mt-1 ml-3 text-slate-600 list-disc list-inside">
-                      {rosterHere.map(rt => (
-                        <li key={rt.id}>{rt.lvssTeamName ?? rt.invitedTeamName ?? '—'}</li>
-                      ))}
-                    </ul>
-                  )}
-                </li>
-              )
-            })}
+            {tier.brackets.map(br => (
+              <BracketRow key={br.id} event={event} bracket={br}
+                members={teamsByBracket.get(br.id) ?? []}
+                onChanged={onChanged} onError={onError} onNotice={onNotice}
+                onDelete={() => removeBracket(br.id, br.name)} />
+            ))}
           </ul>
         )}
       </div>
+    </li>
+  )
+}
+
+/** Interactive bracket card: lists rostered teams with an inline paid pill + remove action,
+ *  and a "+ add team" picker that pulls from teams already on the event but not yet slotted
+ *  into this bracket (either unbracketed OR in a different bracket — moving between brackets
+ *  is a single click). Works for both LVSS and invited teams; the paid pill uses the same
+ *  endpoint as the roster table so state stays in sync. */
+function BracketRow({ event, bracket, members, onChanged, onError, onNotice, onDelete }: {
+  event: HostedTournament
+  bracket: HostedTournament['tiers'][number]['brackets'][number]
+  members: HostedTournament['teams']
+  onChanged: () => Promise<void> | void
+  onError: (e: string) => void
+  onNotice: (n: string) => void
+  onDelete: () => void
+}) {
+  const { t } = useTranslation()
+  const [pickTeamId, setPickTeamId] = useState<number | ''>('')
+  const [busy, setBusy] = useState(false)
+
+  const memberIds = new Set(members.map(m => m.id))
+  const eligible = event.teams.filter(tt => !memberIds.has(tt.id))
+
+  const addTeam = async () => {
+    if (pickTeamId === '') return
+    setBusy(true)
+    try {
+      await Api.assignHostedTournamentTeamBracket(event.id, Number(pickTeamId), { bracketId: bracket.id })
+      setPickTeamId('')
+      await onChanged()
+      onNotice(t('admin.hostedBracketTeamAddedNotice'))
+    } catch (e: any) { onError(errMsg(e)) }
+    finally { setBusy(false) }
+  }
+  const removeTeam = async (teamRowId: number) => {
+    setBusy(true)
+    try { await Api.assignHostedTournamentTeamBracket(event.id, teamRowId, { bracketId: null }); await onChanged() }
+    catch (e: any) { onError(errMsg(e)) }
+    finally { setBusy(false) }
+  }
+  const togglePaid = async (row: HostedTournament['teams'][number]) => {
+    setBusy(true)
+    try { await Api.setHostedTournamentTeamPaid(event.id, row.id, { paid: !row.paid }); await onChanged() }
+    catch (e: any) { onError(errMsg(e)) }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <li className="text-xs border border-slate-200 rounded px-2 py-1 bg-white">
+      <div className="flex items-center justify-between">
+        <div>
+          <span className="font-medium">{bracket.name}</span>
+          <span className="text-slate-500 ml-2">{members.length} {t('admin.hostedTeamCount')}</span>
+        </div>
+        <button onClick={onDelete} className="text-rose-700 hover:underline">{t('admin.delete')}</button>
+      </div>
+      {members.length > 0 && (
+        <ul className="mt-1 space-y-0.5">
+          {members.map(rt => {
+            const label = rt.lvssTeamName ?? rt.invitedTeamName ?? '—'
+            const source = rt.lvssTeamId != null ? t('admin.hostedSourceLvss') : t('admin.hostedSourceInvited')
+            return (
+              <li key={rt.id} className="flex items-center gap-2 border-t border-slate-100 pt-1">
+                <span className="flex-1 truncate">
+                  <span className="font-medium">{label}</span>
+                  <span className="text-[10px] uppercase tracking-wide text-slate-500 ml-1">{source}</span>
+                </span>
+                <button onClick={() => togglePaid(rt)} disabled={busy}
+                  className={`px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wide ${rt.paid ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600 hover:bg-emerald-50'} disabled:opacity-60`}>
+                  {rt.paid ? t('admin.hostedPaidYes') : t('admin.hostedPaidNo')}
+                </button>
+                <button onClick={() => removeTeam(rt.id)} disabled={busy}
+                  className="text-[10px] text-rose-700 hover:underline">
+                  {t('common.remove')}
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+      {eligible.length > 0 && (
+        <div className="mt-1 pt-1 border-t border-slate-100 flex items-center gap-2">
+          <select value={pickTeamId} onChange={e => setPickTeamId(e.target.value === '' ? '' : Number(e.target.value))}
+            className="border border-slate-300 rounded px-1 py-0.5 text-xs flex-1">
+            <option value="">+ {t('admin.hostedBracketAddTeam')}</option>
+            {eligible.map(tt => {
+              const label = tt.lvssTeamName ?? tt.invitedTeamName ?? '—'
+              const hint = tt.bracketName ? ` (${t('admin.hostedBracketMoveFrom', { from: tt.bracketName })})` : ''
+              return <option key={tt.id} value={tt.id}>{label}{hint}</option>
+            })}
+          </select>
+          <button onClick={addTeam} disabled={busy || pickTeamId === ''}
+            className="text-xs text-emerald-700 hover:underline disabled:text-slate-400 disabled:no-underline">
+            {t('admin.hostedAddTeamSubmit')}
+          </button>
+        </div>
+      )}
     </li>
   )
 }
