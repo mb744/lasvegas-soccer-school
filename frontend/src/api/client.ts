@@ -121,8 +121,16 @@ import type {
   AddHostedTournamentTeamRequest,
   SaveHostedTournamentTierRequest,
   SaveHostedTournamentDayRequest,
+  SaveHostedTournamentBracketRequest,
+  SaveHostedTournamentFieldRequest,
   AssignTeamTierRequest,
+  AssignTeamBracketRequest,
   SetTeamPaidRequest,
+  UpdateTierFlagsRequest,
+  GenerateScheduleRequest,
+  SendScheduleEmailRequest,
+  SendScheduleEmailResult,
+  PublicScheduleDto,
   InvitedTeam,
   SaveInvitedTeamRequest,
   VenueField,
@@ -1120,6 +1128,50 @@ export const Api = {
   },
   async deleteHostedTournamentDay(id: number, dayId: number) {
     const r = await api.delete<HostedTournament>(`/admin/hosted-tournaments/${id}/days/${dayId}`)
+    return r.data
+  },
+  async assignHostedTournamentTeamBracket(id: number, teamRowId: number, payload: AssignTeamBracketRequest) {
+    const r = await api.put<HostedTournament>(`/admin/hosted-tournaments/${id}/teams/${teamRowId}/bracket`, payload)
+    return r.data
+  },
+  async updateHostedTournamentTierFlags(id: number, tierId: number, payload: UpdateTierFlagsRequest) {
+    const r = await api.put<HostedTournament>(`/admin/hosted-tournaments/${id}/tiers/${tierId}/flags`, payload)
+    return r.data
+  },
+  async addHostedTournamentBracket(id: number, tierId: number, payload: SaveHostedTournamentBracketRequest) {
+    const r = await api.post<HostedTournament>(`/admin/hosted-tournaments/${id}/tiers/${tierId}/brackets`, payload)
+    return r.data
+  },
+  async updateHostedTournamentBracket(id: number, tierId: number, bracketId: number, payload: SaveHostedTournamentBracketRequest) {
+    const r = await api.put<HostedTournament>(`/admin/hosted-tournaments/${id}/tiers/${tierId}/brackets/${bracketId}`, payload)
+    return r.data
+  },
+  async deleteHostedTournamentBracket(id: number, tierId: number, bracketId: number) {
+    const r = await api.delete<HostedTournament>(`/admin/hosted-tournaments/${id}/tiers/${tierId}/brackets/${bracketId}`)
+    return r.data
+  },
+  async addHostedTournamentField(id: number, payload: SaveHostedTournamentFieldRequest) {
+    const r = await api.post<HostedTournament>(`/admin/hosted-tournaments/${id}/fields`, payload)
+    return r.data
+  },
+  async updateHostedTournamentField(id: number, fieldId: number, payload: SaveHostedTournamentFieldRequest) {
+    const r = await api.put<HostedTournament>(`/admin/hosted-tournaments/${id}/fields/${fieldId}`, payload)
+    return r.data
+  },
+  async deleteHostedTournamentField(id: number, fieldId: number) {
+    const r = await api.delete<HostedTournament>(`/admin/hosted-tournaments/${id}/fields/${fieldId}`)
+    return r.data
+  },
+  async generateHostedTournamentSchedule(id: number, payload?: GenerateScheduleRequest) {
+    const r = await api.post<HostedTournament>(`/admin/hosted-tournaments/${id}/generate-schedule`, payload ?? {})
+    return r.data
+  },
+  async sendHostedTournamentScheduleEmail(id: number, payload: SendScheduleEmailRequest) {
+    const r = await api.post<SendScheduleEmailResult>(`/admin/hosted-tournaments/${id}/send-schedule-email`, payload)
+    return r.data
+  },
+  async publicHostedTournament(slug: string) {
+    const r = await api.get<PublicScheduleDto>(`/public/hosted-tournaments/${encodeURIComponent(slug)}`)
     return r.data
   },
   async listVenueFields(venueId: number) {

@@ -25,5 +25,12 @@ public class HostedTournamentTier
     [MaxLength(500)]
     public string? Notes { get; set; }
 
+    /// <summary>When true the scheduler pairs teams from DIFFERENT brackets in this tier (only —
+    /// no intra-bracket matches). When false teams only play others in their own bracket
+    /// (standard round-robin per bracket).</summary>
+    public bool CrossBracketPlay { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    public List<HostedTournamentBracket> Brackets { get; set; } = new();
 }

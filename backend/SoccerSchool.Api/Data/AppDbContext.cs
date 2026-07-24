@@ -84,7 +84,10 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
     public DbSet<HostedTournament> HostedTournaments => Set<HostedTournament>();
     public DbSet<HostedTournamentTeam> HostedTournamentTeams => Set<HostedTournamentTeam>();
     public DbSet<HostedTournamentTier> HostedTournamentTiers => Set<HostedTournamentTier>();
+    public DbSet<HostedTournamentBracket> HostedTournamentBrackets => Set<HostedTournamentBracket>();
     public DbSet<HostedTournamentDay> HostedTournamentDays => Set<HostedTournamentDay>();
+    public DbSet<HostedTournamentField> HostedTournamentFields => Set<HostedTournamentField>();
+    public DbSet<HostedTournamentMatch> HostedTournamentMatches => Set<HostedTournamentMatch>();
     public DbSet<InvitedTeam> InvitedTeams => Set<InvitedTeam>();
     public DbSet<VenueField> VenueFields => Set<VenueField>();
     public DbSet<MappedField> MappedFields => Set<MappedField>();
@@ -502,6 +505,9 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
                 .HasForeignKey(t => t.VenueId)
                 .OnDelete(DeleteBehavior.SetNull);
             b.HasIndex(t => t.StartDate);
+            // Filtered unique index so we can lazily assign slugs — rows created before the
+            // slug feature shipped have NULL and don't collide with each other.
+            b.HasIndex(t => t.PublicSlug).IsUnique().HasFilter("[PublicSlug] IS NOT NULL");
         });
 
         modelBuilder.Entity<InvitedTeam>(b =>
@@ -530,11 +536,16 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
                 .WithMany()
                 .HasForeignKey(t => t.TierId)
                 .OnDelete(DeleteBehavior.ClientSetNull);
+            b.HasOne(t => t.Bracket)
+                .WithMany()
+                .HasForeignKey(t => t.BracketId)
+                .OnDelete(DeleteBehavior.ClientSetNull);
             // No unique index on (tournament, teamId) — the LVSS and Invited FKs are separate
             // nullable columns and SQL Server ignores nulls in unique indexes only with a
             // filtered index. The controller enforces "one team per tournament" instead.
             b.HasIndex(t => t.HostedTournamentId);
             b.HasIndex(t => t.TierId);
+            b.HasIndex(t => t.BracketId);
         });
 
         modelBuilder.Entity<HostedTournamentTier>(b =>
@@ -546,6 +557,15 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
             b.HasIndex(t => new { t.HostedTournamentId, t.SortOrder });
         });
 
+        modelBuilder.Entity<HostedTournamentBracket>(b =>
+        {
+            b.HasOne(x => x.Tier)
+                .WithMany(t => t.Brackets)
+                .HasForeignKey(x => x.TierId)
+                .OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(x => new { x.TierId, x.SortOrder });
+        });
+
         modelBuilder.Entity<HostedTournamentDay>(b =>
         {
             b.HasOne(d => d.HostedTournament)
@@ -553,6 +573,51 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
                 .HasForeignKey(d => d.HostedTournamentId)
                 .OnDelete(DeleteBehavior.Cascade);
             b.HasIndex(d => new { d.HostedTournamentId, d.Date }).IsUnique();
+        });
+
+        modelBuilder.Entity<HostedTournamentField>(b =>
+        {
+            b.HasOne(f => f.HostedTournament)
+                .WithMany(h => h.Fields)
+                .HasForeignKey(f => f.HostedTournamentId)
+                .OnDelete(DeleteBehavior.Cascade);
+            // VenueField FK stays No Action — deleting the venue's field shouldn't cascade
+            // through to wipe every event that used it. Admin can re-link or leave the ad-hoc
+            // name intact.
+            b.HasOne(f => f.VenueField)
+                .WithMany()
+                .HasForeignKey(f => f.VenueFieldId)
+                .OnDelete(DeleteBehavior.ClientSetNull);
+            b.HasIndex(f => f.HostedTournamentId);
+        });
+
+        modelBuilder.Entity<HostedTournamentMatch>(b =>
+        {
+            b.HasOne(m => m.HostedTournament)
+                .WithMany(h => h.Matches)
+                .HasForeignKey(m => m.HostedTournamentId)
+                .OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(m => m.Tier)
+                .WithMany()
+                .HasForeignKey(m => m.TierId)
+                .OnDelete(DeleteBehavior.ClientSetNull);
+            b.HasOne(m => m.TeamA)
+                .WithMany()
+                .HasForeignKey(m => m.TeamAId)
+                .OnDelete(DeleteBehavior.ClientSetNull);
+            b.HasOne(m => m.TeamB)
+                .WithMany()
+                .HasForeignKey(m => m.TeamBId)
+                .OnDelete(DeleteBehavior.ClientSetNull);
+            b.HasOne(m => m.Field)
+                .WithMany()
+                .HasForeignKey(m => m.FieldId)
+                .OnDelete(DeleteBehavior.ClientSetNull);
+            b.HasOne(m => m.Day)
+                .WithMany()
+                .HasForeignKey(m => m.DayId)
+                .OnDelete(DeleteBehavior.ClientSetNull);
+            b.HasIndex(m => new { m.HostedTournamentId, m.DayId, m.StartTime });
         });
 
         modelBuilder.Entity<VenueField>(b =>

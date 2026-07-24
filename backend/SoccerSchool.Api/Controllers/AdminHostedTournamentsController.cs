@@ -1,9 +1,12 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using SoccerSchool.Api.Data;
 using SoccerSchool.Api.Domain;
 using SoccerSchool.Api.Dtos;
+using SoccerSchool.Api.Options;
+using SoccerSchool.Api.Services;
 
 namespace SoccerSchool.Api.Controllers;
 
@@ -19,8 +22,18 @@ namespace SoccerSchool.Api.Controllers;
 public class AdminHostedTournamentsController : ControllerBase
 {
     private readonly AppDbContext _db;
+    private readonly IEmailSender _emailSender;
+    private readonly AppOptions _app;
 
-    public AdminHostedTournamentsController(AppDbContext db) => _db = db;
+    public AdminHostedTournamentsController(
+        AppDbContext db,
+        IEmailSender emailSender,
+        IOptions<AppOptions> app)
+    {
+        _db = db;
+        _emailSender = emailSender;
+        _app = app.Value;
+    }
 
     // ------------------------------------------------------------
     // Hosted tournaments
@@ -59,6 +72,9 @@ public class AdminHostedTournamentsController : ControllerBase
             Location = string.IsNullOrWhiteSpace(req.Location) ? null : req.Location!.Trim(),
             CostPerTeam = req.CostPerTeam,
             Notes = string.IsNullOrWhiteSpace(req.Notes) ? null : req.Notes!.Trim(),
+            RulesOfPlay = string.IsNullOrWhiteSpace(req.RulesOfPlay) ? null : req.RulesOfPlay,
+            MatchDurationMinutes = req.MatchDurationMinutes,
+            PublicSlug = await GenerateUniqueSlugAsync(req.Name, ct),
             CreatedAt = now,
             UpdatedAt = now,
         };
@@ -84,6 +100,11 @@ public class AdminHostedTournamentsController : ControllerBase
         t.Location = string.IsNullOrWhiteSpace(req.Location) ? null : req.Location!.Trim();
         t.CostPerTeam = req.CostPerTeam;
         t.Notes = string.IsNullOrWhiteSpace(req.Notes) ? null : req.Notes!.Trim();
+        t.RulesOfPlay = string.IsNullOrWhiteSpace(req.RulesOfPlay) ? null : req.RulesOfPlay;
+        t.MatchDurationMinutes = req.MatchDurationMinutes;
+        // Backfill slug for events created before the public-link feature shipped.
+        if (string.IsNullOrWhiteSpace(t.PublicSlug))
+            t.PublicSlug = await GenerateUniqueSlugAsync(req.Name, ct);
         t.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
         return Ok(await LoadAndMap(t.Id, ct));
@@ -189,6 +210,34 @@ public class AdminHostedTournamentsController : ControllerBase
             row.PaidAt = null;
             row.PaymentMethod = null;
             row.PaymentReference = null;
+        }
+        await _db.SaveChangesAsync(ct);
+        return Ok(await LoadAndMap(id, ct));
+    }
+
+    /// <summary>Slot a rostered team into a bracket (or clear the assignment with BracketId=null).
+    /// Also syncs the team's TierId to the bracket's owning tier so downstream tier-scoped
+    /// queries stay consistent.</summary>
+    [HttpPut("{id:int}/teams/{teamRowId:int}/bracket")]
+    public async Task<ActionResult<HostedTournamentDto>> AssignTeamBracket(
+        int id, int teamRowId, [FromBody] AssignTeamBracketRequest req, CancellationToken ct)
+    {
+        var row = await _db.HostedTournamentTeams
+            .FirstOrDefaultAsync(x => x.Id == teamRowId && x.HostedTournamentId == id, ct);
+        if (row is null) return NotFound();
+        if (req.BracketId is int bid)
+        {
+            var bracket = await _db.HostedTournamentBrackets
+                .Include(x => x.Tier)
+                .FirstOrDefaultAsync(x => x.Id == bid, ct);
+            if (bracket is null || bracket.Tier is null || bracket.Tier.HostedTournamentId != id)
+                return BadRequest("Bracket not found on this tournament.");
+            row.BracketId = bid;
+            row.TierId = bracket.TierId;
+        }
+        else
+        {
+            row.BracketId = null;
         }
         await _db.SaveChangesAsync(ct);
         return Ok(await LoadAndMap(id, ct));
@@ -302,6 +351,291 @@ public class AdminHostedTournamentsController : ControllerBase
     }
 
     // ------------------------------------------------------------
+    // Brackets — sub-groups inside a tier
+    // ------------------------------------------------------------
+
+    [HttpPut("{id:int}/tiers/{tierId:int}/flags")]
+    public async Task<ActionResult<HostedTournamentDto>> UpdateTierFlags(
+        int id, int tierId, [FromBody] UpdateTierFlagsRequest req, CancellationToken ct)
+    {
+        var tier = await _db.HostedTournamentTiers.FirstOrDefaultAsync(t => t.Id == tierId && t.HostedTournamentId == id, ct);
+        if (tier is null) return NotFound();
+        tier.CrossBracketPlay = req.CrossBracketPlay;
+        await _db.SaveChangesAsync(ct);
+        return Ok(await LoadAndMap(id, ct));
+    }
+
+    [HttpPost("{id:int}/tiers/{tierId:int}/brackets")]
+    public async Task<ActionResult<HostedTournamentDto>> AddBracket(
+        int id, int tierId, [FromBody] SaveHostedTournamentBracketRequest req, CancellationToken ct)
+    {
+        var tier = await _db.HostedTournamentTiers.FirstOrDefaultAsync(t => t.Id == tierId && t.HostedTournamentId == id, ct);
+        if (tier is null) return NotFound();
+        if (string.IsNullOrWhiteSpace(req.Name)) return BadRequest("Bracket name is required.");
+        _db.HostedTournamentBrackets.Add(new HostedTournamentBracket
+        {
+            TierId = tierId,
+            Name = req.Name.Trim(),
+            SortOrder = req.SortOrder,
+            Notes = TrimOrNull(req.Notes),
+            CreatedAt = DateTime.UtcNow,
+        });
+        await _db.SaveChangesAsync(ct);
+        return Ok(await LoadAndMap(id, ct));
+    }
+
+    [HttpPut("{id:int}/tiers/{tierId:int}/brackets/{bracketId:int}")]
+    public async Task<ActionResult<HostedTournamentDto>> UpdateBracket(
+        int id, int tierId, int bracketId,
+        [FromBody] SaveHostedTournamentBracketRequest req, CancellationToken ct)
+    {
+        var bracket = await _db.HostedTournamentBrackets
+            .Include(x => x.Tier)
+            .FirstOrDefaultAsync(x => x.Id == bracketId && x.TierId == tierId && x.Tier!.HostedTournamentId == id, ct);
+        if (bracket is null) return NotFound();
+        if (string.IsNullOrWhiteSpace(req.Name)) return BadRequest("Bracket name is required.");
+        bracket.Name = req.Name.Trim();
+        bracket.SortOrder = req.SortOrder;
+        bracket.Notes = TrimOrNull(req.Notes);
+        await _db.SaveChangesAsync(ct);
+        return Ok(await LoadAndMap(id, ct));
+    }
+
+    [HttpDelete("{id:int}/tiers/{tierId:int}/brackets/{bracketId:int}")]
+    public async Task<ActionResult<HostedTournamentDto>> DeleteBracket(
+        int id, int tierId, int bracketId, CancellationToken ct)
+    {
+        var bracket = await _db.HostedTournamentBrackets
+            .Include(x => x.Tier)
+            .FirstOrDefaultAsync(x => x.Id == bracketId && x.TierId == tierId && x.Tier!.HostedTournamentId == id, ct);
+        if (bracket is null) return NotFound();
+        // Null out BracketId on teams that were in this bracket (ClientSetNull) so they don't
+        // silently vanish from the roster on cascade.
+        var members = await _db.HostedTournamentTeams.Where(m => m.BracketId == bracketId).ToListAsync(ct);
+        foreach (var m in members) m.BracketId = null;
+        _db.HostedTournamentBrackets.Remove(bracket);
+        await _db.SaveChangesAsync(ct);
+        return Ok(await LoadAndMap(id, ct));
+    }
+
+    // ------------------------------------------------------------
+    // Event fields — playing surfaces the schedule can slot matches into
+    // ------------------------------------------------------------
+
+    [HttpPost("{id:int}/fields")]
+    public async Task<ActionResult<HostedTournamentDto>> AddField(
+        int id, [FromBody] SaveHostedTournamentFieldRequest req, CancellationToken ct)
+    {
+        if (!await _db.HostedTournaments.AnyAsync(t => t.Id == id, ct)) return NotFound();
+        if (string.IsNullOrWhiteSpace(req.Name)) return BadRequest("Field name is required.");
+        if (req.VenueFieldId is int vf && !await _db.VenueFields.AnyAsync(v => v.Id == vf, ct))
+            return BadRequest("Venue field not found.");
+        _db.HostedTournamentFields.Add(new HostedTournamentField
+        {
+            HostedTournamentId = id,
+            VenueFieldId = req.VenueFieldId,
+            Name = req.Name.Trim(),
+            SortOrder = req.SortOrder,
+            Notes = TrimOrNull(req.Notes),
+            CreatedAt = DateTime.UtcNow,
+        });
+        await _db.SaveChangesAsync(ct);
+        return Ok(await LoadAndMap(id, ct));
+    }
+
+    [HttpPut("{id:int}/fields/{fieldId:int}")]
+    public async Task<ActionResult<HostedTournamentDto>> UpdateField(
+        int id, int fieldId, [FromBody] SaveHostedTournamentFieldRequest req, CancellationToken ct)
+    {
+        var field = await _db.HostedTournamentFields.FirstOrDefaultAsync(f => f.Id == fieldId && f.HostedTournamentId == id, ct);
+        if (field is null) return NotFound();
+        if (string.IsNullOrWhiteSpace(req.Name)) return BadRequest("Field name is required.");
+        field.Name = req.Name.Trim();
+        field.VenueFieldId = req.VenueFieldId;
+        field.SortOrder = req.SortOrder;
+        field.Notes = TrimOrNull(req.Notes);
+        await _db.SaveChangesAsync(ct);
+        return Ok(await LoadAndMap(id, ct));
+    }
+
+    [HttpDelete("{id:int}/fields/{fieldId:int}")]
+    public async Task<ActionResult<HostedTournamentDto>> DeleteField(int id, int fieldId, CancellationToken ct)
+    {
+        var field = await _db.HostedTournamentFields.FirstOrDefaultAsync(f => f.Id == fieldId && f.HostedTournamentId == id, ct);
+        if (field is null) return NotFound();
+        // Matches on this field get FieldId nulled; they stay on the schedule as "no field"
+        // so the admin can re-slot them.
+        var matches = await _db.HostedTournamentMatches.Where(m => m.FieldId == fieldId).ToListAsync(ct);
+        foreach (var m in matches) m.FieldId = null;
+        _db.HostedTournamentFields.Remove(field);
+        await _db.SaveChangesAsync(ct);
+        return Ok(await LoadAndMap(id, ct));
+    }
+
+    // ------------------------------------------------------------
+    // Schedule generator + email + slug
+    // ------------------------------------------------------------
+
+    /// <summary>Generate a round-robin schedule from current tiers/brackets/teams and slot the
+    /// matches into the available fields + day windows. Uses a greedy scheduler: order all
+    /// candidate matches by tier/bracket, then walk day-slot × field-slot pairs assigning the
+    /// next match that doesn't conflict with a team already playing that slot. Matches that
+    /// don't fit come back as-scheduled=null so the admin can extend a day or add a field.</summary>
+    [HttpPost("{id:int}/generate-schedule")]
+    public async Task<ActionResult<HostedTournamentDto>> GenerateSchedule(
+        int id, [FromBody] GenerateScheduleRequest? req, CancellationToken ct)
+    {
+        var tournament = await LoadTournamentQuery().FirstOrDefaultAsync(t => t.Id == id, ct);
+        if (tournament is null) return NotFound();
+        if (tournament.Fields.Count == 0) return BadRequest("Add at least one field before generating a schedule.");
+        if (tournament.Days.Count == 0) return BadRequest("Add at least one day with a time range before generating a schedule.");
+
+        if (req?.ReplaceExisting ?? true)
+        {
+            var existing = await _db.HostedTournamentMatches.Where(m => m.HostedTournamentId == id).ToListAsync(ct);
+            _db.HostedTournamentMatches.RemoveRange(existing);
+            await _db.SaveChangesAsync(ct);
+        }
+
+        var duration = Math.Max(15, tournament.MatchDurationMinutes);
+        var candidates = new List<(int TierId, int TeamAId, int TeamBId)>();
+        foreach (var tier in tournament.Tiers)
+        {
+            var brackets = tier.Brackets.OrderBy(b => b.SortOrder).ThenBy(b => b.Name).ToList();
+            if (brackets.Count == 0) continue;
+            var teamsByBracket = brackets.ToDictionary(
+                b => b.Id,
+                b => tournament.Teams.Where(t => t.BracketId == b.Id).ToList());
+            if (tier.CrossBracketPlay)
+            {
+                // Every pair across DIFFERENT brackets in this tier.
+                for (var i = 0; i < brackets.Count; i++)
+                for (var j = i + 1; j < brackets.Count; j++)
+                    foreach (var a in teamsByBracket[brackets[i].Id])
+                    foreach (var b in teamsByBracket[brackets[j].Id])
+                        candidates.Add((tier.Id, a.Id, b.Id));
+            }
+            else
+            {
+                // Round-robin within each bracket.
+                foreach (var br in brackets)
+                {
+                    var teams = teamsByBracket[br.Id];
+                    for (var i = 0; i < teams.Count; i++)
+                    for (var j = i + 1; j < teams.Count; j++)
+                        candidates.Add((tier.Id, teams[i].Id, teams[j].Id));
+                }
+            }
+        }
+
+        // Slot cursor: iterate day → time slot → field, dropping in the next candidate whose
+        // teams aren't already busy in that slot. Same team can't play twice at the same time
+        // across fields; two fields CAN run parallel matches with different teams.
+        var scheduled = new List<HostedTournamentMatch>();
+        var days = tournament.Days.OrderBy(d => d.Date).ToList();
+        var fields = tournament.Fields.OrderBy(f => f.SortOrder).ThenBy(f => f.Name).ToList();
+        var remaining = new List<(int TierId, int TeamAId, int TeamBId)>(candidates);
+        var now = DateTime.UtcNow;
+
+        foreach (var day in days)
+        {
+            var start = day.StartTime ?? new TimeOnly(9, 0);
+            var end = day.EndTime ?? start.AddMinutes(duration * Math.Max(1, remaining.Count));
+            for (var slot = start; slot.AddMinutes(duration) <= end && remaining.Count > 0; slot = slot.AddMinutes(duration))
+            {
+                var busyThisSlot = new HashSet<int>();
+                foreach (var field in fields)
+                {
+                    if (remaining.Count == 0) break;
+                    var idx = remaining.FindIndex(c => !busyThisSlot.Contains(c.TeamAId) && !busyThisSlot.Contains(c.TeamBId));
+                    if (idx < 0) break;
+                    var next = remaining[idx];
+                    remaining.RemoveAt(idx);
+                    busyThisSlot.Add(next.TeamAId);
+                    busyThisSlot.Add(next.TeamBId);
+                    scheduled.Add(new HostedTournamentMatch
+                    {
+                        HostedTournamentId = id,
+                        TierId = next.TierId,
+                        TeamAId = next.TeamAId,
+                        TeamBId = next.TeamBId,
+                        FieldId = field.Id,
+                        DayId = day.Id,
+                        StartTime = slot,
+                        DurationMinutes = duration,
+                        CreatedAt = now,
+                    });
+                }
+            }
+        }
+
+        // Any candidates that didn't fit still get persisted as unscheduled rows so the admin
+        // sees the total match count and can manually place them (extend a day, add a field).
+        foreach (var leftover in remaining)
+        {
+            scheduled.Add(new HostedTournamentMatch
+            {
+                HostedTournamentId = id,
+                TierId = leftover.TierId,
+                TeamAId = leftover.TeamAId,
+                TeamBId = leftover.TeamBId,
+                DurationMinutes = duration,
+                CreatedAt = now,
+                Notes = "Unscheduled — extend a day or add a field.",
+            });
+        }
+
+        _db.HostedTournamentMatches.AddRange(scheduled);
+        await _db.SaveChangesAsync(ct);
+        return Ok(await LoadAndMap(id, ct));
+    }
+
+    /// <summary>Send the schedule + rules body to every invited team's head-coach email on file.
+    /// LVSS teams don't have coach emails in this domain; those coaches receive the event
+    /// through the normal messaging flow instead. Skips recipients without an email.</summary>
+    [HttpPost("{id:int}/send-schedule-email")]
+    public async Task<ActionResult<SendScheduleEmailResult>> SendScheduleEmail(
+        int id, [FromBody] SendScheduleEmailRequest req, CancellationToken ct)
+    {
+        if (!_emailSender.IsAvailable)
+            return BadRequest(new SendScheduleEmailResult(0, 0, "Email is not configured on this server."));
+        var tournament = await LoadTournamentQuery().FirstOrDefaultAsync(t => t.Id == id, ct);
+        if (tournament is null) return NotFound();
+        if (string.IsNullOrWhiteSpace(tournament.PublicSlug))
+        {
+            tournament.PublicSlug = await GenerateUniqueSlugAsync(tournament.Name, ct);
+            await _db.SaveChangesAsync(ct);
+        }
+        var recipients = tournament.Teams
+            .Select(t => t.InvitedTeam)
+            .Where(t => t != null && !string.IsNullOrWhiteSpace(t!.HeadCoachEmail))
+            .Select(t => new { Email = t!.HeadCoachEmail!.Trim(), Name = t!.HeadCoachName ?? t.Name })
+            .GroupBy(r => r.Email.ToLowerInvariant())
+            .Select(g => g.First())
+            .ToList();
+        if (recipients.Count == 0)
+            return BadRequest(new SendScheduleEmailResult(0, 0, "No invited teams have a head-coach email on file."));
+
+        var link = string.IsNullOrWhiteSpace(_app.PublicBaseUrl)
+            ? $"/tournament/{tournament.PublicSlug}"
+            : $"{_app.PublicBaseUrl.TrimEnd('/')}/tournament/{tournament.PublicSlug}";
+        var subject = string.IsNullOrWhiteSpace(req?.Subject) ? $"{tournament.Name} — Schedule" : req!.Subject!.Trim();
+        var body = new System.Text.StringBuilder();
+        if (!string.IsNullOrWhiteSpace(req?.Intro)) body.Append(req!.Intro).Append("\n\n");
+        if (!string.IsNullOrWhiteSpace(tournament.RulesOfPlay)) body.Append(tournament.RulesOfPlay).Append("\n\n");
+        body.Append("Schedule + updates: ").Append(link).Append('\n');
+
+        var text = body.ToString();
+        var sent = 0; var skipped = 0;
+        foreach (var r in recipients)
+        {
+            var res = await _emailSender.SendAsync(r.Email, subject, text, ct);
+            if (res.Success) sent++; else skipped++;
+        }
+        return Ok(new SendScheduleEmailResult(sent, skipped, sent > 0 ? $"Sent to {sent} coach(es)." : "No emails were queued."));
+    }
+
+    // ------------------------------------------------------------
     // Invited teams catalog
     // ------------------------------------------------------------
 
@@ -377,8 +711,17 @@ public class AdminHostedTournamentsController : ControllerBase
             .Include(t => t.Teams).ThenInclude(r => r.LvssTeam)
             .Include(t => t.Teams).ThenInclude(r => r.InvitedTeam)
             .Include(t => t.Teams).ThenInclude(r => r.Tier)
-            .Include(t => t.Tiers)
-            .Include(t => t.Days);
+            .Include(t => t.Teams).ThenInclude(r => r.Bracket)
+            .Include(t => t.Tiers).ThenInclude(x => x.Brackets)
+            .Include(t => t.Days)
+            .Include(t => t.Fields).ThenInclude(f => f.VenueField)
+            .Include(t => t.Matches).ThenInclude(m => m.TeamA).ThenInclude(t => t!.LvssTeam)
+            .Include(t => t.Matches).ThenInclude(m => m.TeamA).ThenInclude(t => t!.InvitedTeam)
+            .Include(t => t.Matches).ThenInclude(m => m.TeamB).ThenInclude(t => t!.LvssTeam)
+            .Include(t => t.Matches).ThenInclude(m => m.TeamB).ThenInclude(t => t!.InvitedTeam)
+            .Include(t => t.Matches).ThenInclude(m => m.Field)
+            .Include(t => t.Matches).ThenInclude(m => m.Day)
+            .Include(t => t.Matches).ThenInclude(m => m.Tier);
 
     private async Task<HostedTournamentDto> LoadAndMap(int id, CancellationToken ct)
     {
@@ -404,6 +747,7 @@ public class AdminHostedTournamentsController : ControllerBase
             t.Id, t.Name, t.Kind, t.StartDate, t.EndDate,
             t.VenueId, t.Venue?.Name, t.Venue?.Address,
             t.Location, t.CostPerTeam, t.Notes,
+            t.RulesOfPlay, t.PublicSlug, t.MatchDurationMinutes,
             t.CreatedAt, t.UpdatedAt,
             t.Teams
                 .OrderBy(r => r.LvssTeam?.Name ?? r.InvitedTeam?.Name ?? string.Empty)
@@ -417,17 +761,72 @@ public class AdminHostedTournamentsController : ControllerBase
                     r.InvitedTeam?.HeadCoachEmail,
                     r.Notes,
                     r.TierId, r.Tier?.Name,
+                    r.BracketId, r.Bracket?.Name,
                     r.Paid, r.PaidAt, r.PaymentMethod, r.PaymentReference,
                     r.CreatedAt))
                 .ToList(),
             t.Tiers
                 .OrderBy(x => x.SortOrder).ThenBy(x => x.Name)
-                .Select(x => new HostedTournamentTierDto(x.Id, x.Name, x.SortOrder, x.Notes, x.CreatedAt))
+                .Select(x => new HostedTournamentTierDto(
+                    x.Id, x.Name, x.SortOrder, x.Notes, x.CrossBracketPlay, x.CreatedAt,
+                    x.Brackets
+                        .OrderBy(br => br.SortOrder).ThenBy(br => br.Name)
+                        .Select(br => new HostedTournamentBracketDto(br.Id, br.TierId, br.Name, br.SortOrder, br.Notes, br.CreatedAt))
+                        .ToList()))
                 .ToList(),
             t.Days
                 .OrderBy(x => x.Date)
                 .Select(x => new HostedTournamentDayDto(x.Id, x.Date, x.StartTime, x.EndTime, x.Notes, x.CreatedAt))
+                .ToList(),
+            t.Fields
+                .OrderBy(f => f.SortOrder).ThenBy(f => f.Name)
+                .Select(f => new HostedTournamentFieldDto(f.Id, f.VenueFieldId, f.Name, f.SortOrder, f.Notes, f.CreatedAt))
+                .ToList(),
+            t.Matches
+                .OrderBy(m => m.Day?.Date).ThenBy(m => m.StartTime).ThenBy(m => m.Field?.SortOrder ?? 0)
+                .Select(m => new HostedTournamentMatchDto(
+                    m.Id,
+                    m.TierId, m.Tier?.Name,
+                    m.TeamAId, TeamLabel(m.TeamA),
+                    m.TeamBId, TeamLabel(m.TeamB),
+                    m.FieldId, m.Field?.Name,
+                    m.DayId, m.Day?.Date,
+                    m.StartTime, m.DurationMinutes,
+                    m.Notes))
                 .ToList());
+
+    private static string? TeamLabel(HostedTournamentTeam? t) =>
+        t?.LvssTeam?.Name ?? t?.InvitedTeam?.Name;
+
+    private async Task<string> GenerateUniqueSlugAsync(string name, CancellationToken ct)
+    {
+        var basePart = Slugify(name);
+        if (string.IsNullOrEmpty(basePart)) basePart = "event";
+        // Suffix with a short random tail so the URL isn't guessable from the event name
+        // (guards against a stranger typing /tournament/spring-cup and finding a schedule
+        // before we're ready to publish it).
+        for (var attempt = 0; attempt < 10; attempt++)
+        {
+            var candidate = basePart + "-" + Guid.NewGuid().ToString("N")[..6].ToLowerInvariant();
+            if (!await _db.HostedTournaments.AnyAsync(x => x.PublicSlug == candidate, ct))
+                return candidate;
+        }
+        // Absurd fallback if we happened to collide 10 times in a row.
+        return basePart + "-" + Guid.NewGuid().ToString("N")[..12].ToLowerInvariant();
+    }
+
+    private static string Slugify(string s)
+    {
+        var lower = (s ?? string.Empty).Trim().ToLowerInvariant();
+        var sb = new System.Text.StringBuilder();
+        var lastDash = false;
+        foreach (var ch in lower)
+        {
+            if (char.IsLetterOrDigit(ch)) { sb.Append(ch); lastDash = false; }
+            else if (!lastDash) { sb.Append('-'); lastDash = true; }
+        }
+        return sb.ToString().Trim('-');
+    }
 
     private static InvitedTeamDto ToInvitedDto(InvitedTeam t) =>
         new(t.Id, t.Name, t.HeadCoachName, t.HeadCoachPhone, t.HeadCoachEmail,

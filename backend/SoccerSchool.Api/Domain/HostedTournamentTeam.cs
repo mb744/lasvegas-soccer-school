@@ -34,6 +34,12 @@ public class HostedTournamentTeam
     public int? TierId { get; set; }
     public HostedTournamentTier? Tier { get; set; }
 
+    /// <summary>Optional bracket assignment within the tier. When set, the controller keeps
+    /// <see cref="TierId"/> in sync with the bracket's owning tier so downstream queries can
+    /// filter by tier without loading the bracket join.</summary>
+    public int? BracketId { get; set; }
+    public HostedTournamentBracket? Bracket { get; set; }
+
     /// <summary>Whether this team has paid the per-team fee. Toggled from the roster row so
     /// admin can track collection without leaving the Hosted Tournaments page.</summary>
     public bool Paid { get; set; }

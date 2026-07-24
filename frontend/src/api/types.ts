@@ -1657,10 +1657,21 @@ export interface HostedTournamentTeam {
   notes: string | null
   tierId: number | null
   tierName: string | null
+  bracketId: number | null
+  bracketName: string | null
   paid: boolean
   paidAt: string | null
   paymentMethod: string | null
   paymentReference: string | null
+  createdAt: string
+}
+
+export interface HostedTournamentBracket {
+  id: number
+  tierId: number
+  name: string
+  sortOrder: number
+  notes: string | null
   createdAt: string
 }
 
@@ -1669,7 +1680,85 @@ export interface HostedTournamentTier {
   name: string
   sortOrder: number
   notes: string | null
+  crossBracketPlay: boolean
   createdAt: string
+  brackets: HostedTournamentBracket[]
+}
+
+export interface HostedTournamentField {
+  id: number
+  venueFieldId: number | null
+  name: string
+  sortOrder: number
+  notes: string | null
+  createdAt: string
+}
+
+export interface HostedTournamentMatch {
+  id: number
+  tierId: number | null
+  tierName: string | null
+  teamAId: number | null
+  teamALabel: string | null
+  teamBId: number | null
+  teamBLabel: string | null
+  fieldId: number | null
+  fieldName: string | null
+  dayId: number | null
+  dayDate: string | null
+  startTime: string | null
+  durationMinutes: number
+  notes: string | null
+}
+
+export interface SaveHostedTournamentBracketRequest {
+  name: string
+  sortOrder: number
+  notes?: string | null
+}
+
+export interface SaveHostedTournamentFieldRequest {
+  name: string
+  venueFieldId?: number | null
+  sortOrder: number
+  notes?: string | null
+}
+
+export interface AssignTeamBracketRequest {
+  bracketId?: number | null
+}
+
+export interface UpdateTierFlagsRequest {
+  crossBracketPlay: boolean
+}
+
+export interface GenerateScheduleRequest {
+  replaceExisting?: boolean
+}
+
+export interface SendScheduleEmailRequest {
+  subject?: string | null
+  intro?: string | null
+}
+
+export interface SendScheduleEmailResult {
+  sent: number
+  skipped: number
+  message: string | null
+}
+
+export interface PublicScheduleDto {
+  name: string
+  kind: TournamentKind
+  startDate: string
+  endDate: string | null
+  venueName: string | null
+  venueAddress: string | null
+  location: string | null
+  rulesOfPlay: string | null
+  days: HostedTournamentDay[]
+  fields: HostedTournamentField[]
+  matches: HostedTournamentMatch[]
 }
 
 export interface HostedTournamentDay {
@@ -1695,11 +1784,16 @@ export interface HostedTournament {
   location: string | null
   costPerTeam: number | null
   notes: string | null
+  rulesOfPlay: string | null
+  publicSlug: string | null
+  matchDurationMinutes: number
   createdAt: string
   updatedAt: string
   teams: HostedTournamentTeam[]
   tiers: HostedTournamentTier[]
   days: HostedTournamentDay[]
+  fields: HostedTournamentField[]
+  matches: HostedTournamentMatch[]
 }
 
 export interface SaveHostedTournamentTierRequest {
@@ -1749,6 +1843,8 @@ export interface SaveHostedTournamentRequest {
   location?: string | null
   costPerTeam?: number | null
   notes?: string | null
+  rulesOfPlay?: string | null
+  matchDurationMinutes: number
 }
 
 export interface AddHostedTournamentTeamRequest {

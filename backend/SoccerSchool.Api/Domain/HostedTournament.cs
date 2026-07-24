@@ -41,10 +41,25 @@ public class HostedTournament
     [MaxLength(2000)]
     public string? Notes { get; set; }
 
+    /// <summary>Rich body copy for the "here are the rules + schedule" email. Rendered above
+    /// the schedule table on the public schedule page too, so parents/coaches see the same text.</summary>
+    public string? RulesOfPlay { get; set; }
+
+    /// <summary>URL slug for the public schedule page (/tournament/{slug}). Generated on
+    /// create; admin can regenerate to invalidate an old link.</summary>
+    [MaxLength(64)]
+    public string? PublicSlug { get; set; }
+
+    /// <summary>Default per-match window length in minutes. The scheduler advances the slot
+    /// cursor by this amount for each field. Editable per match afterward.</summary>
+    public int MatchDurationMinutes { get; set; } = 60;
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
     public List<HostedTournamentTeam> Teams { get; set; } = new();
     public List<HostedTournamentTier> Tiers { get; set; } = new();
     public List<HostedTournamentDay> Days { get; set; } = new();
+    public List<HostedTournamentField> Fields { get; set; } = new();
+    public List<HostedTournamentMatch> Matches { get; set; } = new();
 }

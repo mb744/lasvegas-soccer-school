@@ -47,6 +47,8 @@ public record HostedTournamentTeamDto(
     string? Notes,
     int? TierId,
     string? TierName,
+    int? BracketId,
+    string? BracketName,
     bool Paid,
     DateTime? PaidAt,
     string? PaymentMethod,
@@ -59,7 +61,84 @@ public record HostedTournamentTierDto(
     string Name,
     int SortOrder,
     string? Notes,
+    bool CrossBracketPlay,
+    DateTime CreatedAt,
+    IReadOnlyList<HostedTournamentBracketDto> Brackets);
+
+public record HostedTournamentBracketDto(
+    int Id,
+    int TierId,
+    string Name,
+    int SortOrder,
+    string? Notes,
     DateTime CreatedAt);
+
+public record HostedTournamentFieldDto(
+    int Id,
+    int? VenueFieldId,
+    string Name,
+    int SortOrder,
+    string? Notes,
+    DateTime CreatedAt);
+
+public record HostedTournamentMatchDto(
+    int Id,
+    int? TierId,
+    string? TierName,
+    int? TeamAId,
+    string? TeamALabel,
+    int? TeamBId,
+    string? TeamBLabel,
+    int? FieldId,
+    string? FieldName,
+    int? DayId,
+    DateOnly? DayDate,
+    TimeOnly? StartTime,
+    int DurationMinutes,
+    string? Notes);
+
+public record SaveHostedTournamentBracketRequest
+{
+    [Required, MaxLength(80)] public string Name { get; init; } = string.Empty;
+    public int SortOrder { get; init; }
+    [MaxLength(500)] public string? Notes { get; init; }
+}
+
+public record SaveHostedTournamentFieldRequest
+{
+    [Required, MaxLength(80)] public string Name { get; init; } = string.Empty;
+    public int? VenueFieldId { get; init; }
+    public int SortOrder { get; init; }
+    [MaxLength(500)] public string? Notes { get; init; }
+}
+
+public record AssignTeamBracketRequest
+{
+    /// <summary>Null clears the bracket assignment.</summary>
+    public int? BracketId { get; init; }
+}
+
+public record UpdateTierFlagsRequest
+{
+    public bool CrossBracketPlay { get; init; }
+}
+
+public record SendScheduleEmailRequest
+{
+    /// <summary>Subject override; falls back to "{Event name} — Schedule" when null.</summary>
+    [MaxLength(256)] public string? Subject { get; init; }
+    /// <summary>Extra copy the admin can layer above the rules body. Optional.</summary>
+    public string? Intro { get; init; }
+}
+
+public record SendScheduleEmailResult(int Sent, int Skipped, string? Message);
+
+public record GenerateScheduleRequest
+{
+    /// <summary>Wipe existing matches before generating; default true. Setting false lets the
+    /// admin append matches instead of a full rebuild.</summary>
+    public bool ReplaceExisting { get; init; } = true;
+}
 
 /// <summary>One calendar date the event runs, with optional daily start/end times.</summary>
 public record HostedTournamentDayDto(
@@ -110,11 +189,16 @@ public record HostedTournamentDto(
     string? Location,
     decimal? CostPerTeam,
     string? Notes,
+    string? RulesOfPlay,
+    string? PublicSlug,
+    int MatchDurationMinutes,
     DateTime CreatedAt,
     DateTime UpdatedAt,
     IReadOnlyList<HostedTournamentTeamDto> Teams,
     IReadOnlyList<HostedTournamentTierDto> Tiers,
-    IReadOnlyList<HostedTournamentDayDto> Days);
+    IReadOnlyList<HostedTournamentDayDto> Days,
+    IReadOnlyList<HostedTournamentFieldDto> Fields,
+    IReadOnlyList<HostedTournamentMatchDto> Matches);
 
 public record SaveHostedTournamentRequest
 {
@@ -126,7 +210,26 @@ public record SaveHostedTournamentRequest
     [MaxLength(400)] public string? Location { get; init; }
     [Range(0, 1_000_000)] public decimal? CostPerTeam { get; init; }
     [MaxLength(2000)] public string? Notes { get; init; }
+    /// <summary>Free-form body used as the email content when the schedule is sent AND as the
+    /// header text on the public schedule page.</summary>
+    public string? RulesOfPlay { get; init; }
+    [Range(10, 240)] public int MatchDurationMinutes { get; init; } = 60;
 }
+
+/// <summary>Public-facing schedule payload — safe to return without auth. Includes the
+/// event's headline info, rules body, day windows, fields, and every scheduled match.</summary>
+public record PublicScheduleDto(
+    string Name,
+    TournamentKind Kind,
+    DateOnly StartDate,
+    DateOnly? EndDate,
+    string? VenueName,
+    string? VenueAddress,
+    string? Location,
+    string? RulesOfPlay,
+    IReadOnlyList<HostedTournamentDayDto> Days,
+    IReadOnlyList<HostedTournamentFieldDto> Fields,
+    IReadOnlyList<HostedTournamentMatchDto> Matches);
 
 public record AddHostedTournamentTeamRequest
 {

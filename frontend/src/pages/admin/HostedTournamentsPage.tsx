@@ -228,7 +228,7 @@ function EventDetailPanel({ event, venues, lvssTeams, invitedTeams, onChanged, o
               <th className="py-1 px-2">{t('admin.hostedTeamCol')}</th>
               <th className="py-1 px-2">{t('admin.hostedTeamSourceCol')}</th>
               <th className="py-1 px-2">{t('admin.hostedAgeCol')}</th>
-              <th className="py-1 px-2">{t('admin.hostedTierCol')}</th>
+              <th className="py-1 px-2">{t('admin.hostedBracketCol')}</th>
               <th className="py-1 px-2">{t('admin.hostedPaidCol')}</th>
               <th className="py-1 px-2">{t('admin.hostedContactCol')}</th>
               <th></th>
@@ -249,7 +249,9 @@ function EventDetailPanel({ event, venues, lvssTeams, invitedTeams, onChanged, o
       </div>
 
       <TiersPanel event={event} onChanged={onChanged} onError={onError} onNotice={onNotice} />
+      <FieldsPanel event={event} onChanged={onChanged} onError={onError} onNotice={onNotice} />
       <DaysPanel event={event} onChanged={onChanged} onError={onError} onNotice={onNotice} />
+      <SchedulePanel event={event} onChanged={onChanged} onError={onError} onNotice={onNotice} />
     </div>
   )
 }
@@ -267,9 +269,9 @@ function TeamRow({ row, event, onChanged, onError, onRemove }: {
   const [payMethod, setPayMethod] = useState(row.paymentMethod ?? '')
   const [payRef, setPayRef] = useState(row.paymentReference ?? '')
 
-  const changeTier = async (tierId: number | null) => {
+  const changeBracket = async (bracketId: number | null) => {
     setBusy(true)
-    try { await Api.assignHostedTournamentTeamTier(event.id, row.id, { tierId }); await onChanged() }
+    try { await Api.assignHostedTournamentTeamBracket(event.id, row.id, { bracketId }); await onChanged() }
     catch (e: any) { onError(errMsg(e)) }
     finally { setBusy(false) }
   }
@@ -309,12 +311,14 @@ function TeamRow({ row, event, onChanged, onError, onRemove }: {
         </td>
         <td className="py-1 px-2 text-xs">{row.ageGroup ?? <span className="text-slate-400">—</span>}</td>
         <td className="py-1 px-2 text-xs">
-          <select value={row.tierId ?? ''}
-            onChange={e => changeTier(e.target.value === '' ? null : Number(e.target.value))}
-            disabled={busy || event.tiers.length === 0}
+          <select value={row.bracketId ?? ''}
+            onChange={e => changeBracket(e.target.value === '' ? null : Number(e.target.value))}
+            disabled={busy || event.tiers.every(tr => tr.brackets.length === 0)}
             className="border border-slate-300 rounded px-1 py-0.5 text-xs disabled:bg-slate-50 disabled:text-slate-400">
-            <option value="">— {t('admin.hostedNoTier')} —</option>
-            {event.tiers.map(tr => <option key={tr.id} value={tr.id}>{tr.name}</option>)}
+            <option value="">— {t('admin.hostedNoBracket')} —</option>
+            {event.tiers.flatMap(tr => tr.brackets.map(br => (
+              <option key={br.id} value={br.id}>{tr.name} / {br.name}</option>
+            )))}
           </select>
         </td>
         <td className="py-1 px-2 text-xs">
@@ -424,22 +428,333 @@ function TiersPanel({ event, onChanged, onError, onNotice }: {
       {event.tiers.length === 0 ? (
         <p className="text-xs text-slate-400 mt-1">{t('admin.hostedTiersEmpty')}</p>
       ) : (
-        <ul className="mt-2 space-y-1">
-          {event.tiers.map(tier => {
-            const teamCount = event.teams.filter(t => t.tierId === tier.id).length
-            return (
-              <li key={tier.id} className="flex items-center justify-between text-sm border border-slate-100 rounded px-2 py-1">
-                <div>
-                  <span className="font-medium">{tier.name}</span>
-                  <span className="text-xs text-slate-500 ml-2">{teamCount} {t('admin.hostedTeamCount')}</span>
-                  {tier.notes && <span className="text-xs text-slate-500 ml-2">· {tier.notes}</span>}
-                </div>
-                <button onClick={() => remove(tier.id, tier.name)}
-                  className="text-xs text-rose-700 hover:underline">{t('admin.delete')}</button>
-              </li>
-            )
-          })}
+        <ul className="mt-2 space-y-2">
+          {event.tiers.map(tier => (
+            <TierCard key={tier.id} event={event} tier={tier}
+              onChanged={onChanged} onError={onError} onNotice={onNotice}
+              onDelete={() => remove(tier.id, tier.name)} />
+          ))}
         </ul>
+      )}
+    </div>
+  )
+}
+
+function TierCard({ event, tier, onChanged, onError, onNotice, onDelete }: {
+  event: HostedTournament
+  tier: HostedTournament['tiers'][number]
+  onChanged: () => Promise<void> | void
+  onError: (e: string) => void
+  onNotice: (n: string) => void
+  onDelete: () => void
+}) {
+  const { t } = useTranslation()
+  const [busy, setBusy] = useState(false)
+  const [showAddBracket, setShowAddBracket] = useState(false)
+  const [bracketName, setBracketName] = useState('')
+
+  const toggleCross = async () => {
+    setBusy(true)
+    try {
+      await Api.updateHostedTournamentTierFlags(event.id, tier.id, { crossBracketPlay: !tier.crossBracketPlay })
+      await onChanged()
+    } catch (e: any) { onError(errMsg(e)) }
+    finally { setBusy(false) }
+  }
+  const addBracket = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!bracketName.trim()) { onError(t('admin.hostedBracketNameRequired')); return }
+    try {
+      await Api.addHostedTournamentBracket(event.id, tier.id, {
+        name: bracketName.trim(),
+        sortOrder: tier.brackets.length,
+      })
+      setBracketName(''); setShowAddBracket(false)
+      await onChanged()
+      onNotice(t('admin.hostedBracketSavedNotice'))
+    } catch (err: any) { onError(errMsg(err)) }
+  }
+  const removeBracket = async (bracketId: number, name: string) => {
+    if (!confirm(t('admin.hostedBracketDeleteConfirm', { name }))) return
+    try { await Api.deleteHostedTournamentBracket(event.id, tier.id, bracketId); await onChanged() }
+    catch (err: any) { onError(errMsg(err)) }
+  }
+
+  const teamsByBracket = new Map<number | 'none', HostedTournament['teams']>()
+  teamsByBracket.set('none', event.teams.filter(t => t.tierId === tier.id && t.bracketId == null))
+  for (const br of tier.brackets) teamsByBracket.set(br.id, event.teams.filter(t => t.bracketId === br.id))
+
+  return (
+    <li className="border border-slate-200 rounded p-2 bg-slate-50/60">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div>
+          <span className="font-medium">{tier.name}</span>
+          {tier.notes && <span className="text-xs text-slate-500 ml-2">· {tier.notes}</span>}
+        </div>
+        <div className="flex items-center gap-2 text-xs">
+          <label className="inline-flex items-center gap-1 text-xs text-slate-700">
+            <input type="checkbox" checked={tier.crossBracketPlay} onChange={toggleCross} disabled={busy} />
+            {t('admin.hostedCrossBracket')}
+          </label>
+          <button onClick={onDelete} className="text-rose-700 hover:underline">{t('admin.delete')}</button>
+        </div>
+      </div>
+
+      <div className="mt-2">
+        <div className="flex items-center justify-between">
+          <div className="text-xs text-slate-600">{t('admin.hostedBracketsHeader')}</div>
+          <button onClick={() => setShowAddBracket(s => !s)} className="text-xs text-emerald-700 hover:underline">
+            {showAddBracket ? t('admin.cancel') : '+ ' + t('admin.hostedBracketAddNew')}
+          </button>
+        </div>
+        {showAddBracket && (
+          <form onSubmit={addBracket} className="mt-1 flex items-end gap-2 flex-wrap">
+            <label className="text-xs flex-1 min-w-[140px]">
+              <span className="text-slate-700">{t('admin.hostedBracketName')}</span>
+              <input type="text" value={bracketName} onChange={e => setBracketName(e.target.value)} maxLength={80}
+                placeholder="Group A, Pool 1…"
+                className="mt-1 w-full border border-slate-300 rounded px-2 py-1 text-sm" />
+            </label>
+            <button type="submit" className="bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded-md hover:bg-emerald-800">
+              {t('admin.save')}
+            </button>
+          </form>
+        )}
+        {tier.brackets.length === 0 ? (
+          <p className="text-xs text-slate-400 mt-1">{t('admin.hostedBracketsEmpty')}</p>
+        ) : (
+          <ul className="mt-1 space-y-1">
+            {tier.brackets.map(br => {
+              const rosterHere = teamsByBracket.get(br.id) ?? []
+              return (
+                <li key={br.id} className="text-xs border border-slate-200 rounded px-2 py-1 bg-white">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="font-medium">{br.name}</span>
+                      <span className="text-slate-500 ml-2">{rosterHere.length} {t('admin.hostedTeamCount')}</span>
+                    </div>
+                    <button onClick={() => removeBracket(br.id, br.name)} className="text-rose-700 hover:underline">{t('admin.delete')}</button>
+                  </div>
+                  {rosterHere.length > 0 && (
+                    <ul className="mt-1 ml-3 text-slate-600 list-disc list-inside">
+                      {rosterHere.map(rt => (
+                        <li key={rt.id}>{rt.lvssTeamName ?? rt.invitedTeamName ?? '—'}</li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </div>
+    </li>
+  )
+}
+
+function FieldsPanel({ event, onChanged, onError, onNotice }: {
+  event: HostedTournament
+  onChanged: () => Promise<void> | void
+  onError: (e: string) => void
+  onNotice: (n: string) => void
+}) {
+  const { t } = useTranslation()
+  const [showAdd, setShowAdd] = useState(false)
+  const [name, setName] = useState('')
+  const [venueFieldId, setVenueFieldId] = useState<number | ''>('')
+  const [venueFields, setVenueFields] = useState<{ id: number; name: string }[]>([])
+  useEffect(() => {
+    if (event.venueId == null) { setVenueFields([]); return }
+    Api.listVenueFields(event.venueId)
+      .then(list => setVenueFields(list.map(v => ({ id: v.id, name: v.name }))))
+      .catch(() => setVenueFields([]))
+  }, [event.venueId])
+
+  const add = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!name.trim()) { onError(t('admin.hostedFieldNameRequired')); return }
+    try {
+      await Api.addHostedTournamentField(event.id, {
+        name: name.trim(),
+        venueFieldId: venueFieldId === '' ? null : venueFieldId,
+        sortOrder: event.fields.length,
+      })
+      setName(''); setVenueFieldId(''); setShowAdd(false)
+      await onChanged()
+      onNotice(t('admin.hostedFieldSavedNotice'))
+    } catch (err: any) { onError(errMsg(err)) }
+  }
+  const remove = async (fieldId: number, name: string) => {
+    if (!confirm(t('admin.hostedFieldDeleteConfirm', { name }))) return
+    try { await Api.deleteHostedTournamentField(event.id, fieldId); await onChanged() }
+    catch (err: any) { onError(errMsg(err)) }
+  }
+
+  return (
+    <div className="border-t border-slate-100 pt-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-medium text-slate-700">{t('admin.hostedFieldsHeader')}</h3>
+        <button onClick={() => setShowAdd(s => !s)} className="text-xs text-emerald-700 hover:underline">
+          {showAdd ? t('admin.cancel') : '+ ' + t('admin.hostedFieldAddNew')}
+        </button>
+      </div>
+      {showAdd && (
+        <form onSubmit={add} className="mt-2 flex items-end gap-2 flex-wrap bg-emerald-50 border border-emerald-200 rounded p-2">
+          {venueFields.length > 0 && (
+            <label className="text-xs">
+              <span className="text-slate-700">{t('admin.hostedFieldFromVenue')}</span>
+              <select value={venueFieldId}
+                onChange={e => {
+                  const v = e.target.value === '' ? '' : Number(e.target.value)
+                  setVenueFieldId(v)
+                  if (v !== '') {
+                    const chosen = venueFields.find(f => f.id === v)
+                    if (chosen) setName(chosen.name)
+                  }
+                }}
+                className="mt-1 border border-slate-300 rounded px-2 py-1 text-sm">
+                <option value="">— {t('admin.hostedFieldAdHoc')} —</option>
+                {venueFields.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+              </select>
+            </label>
+          )}
+          <label className="text-xs flex-1 min-w-[140px]">
+            <span className="text-slate-700">{t('admin.hostedFieldName')}</span>
+            <input type="text" value={name} onChange={e => setName(e.target.value)} maxLength={80}
+              placeholder="Field 1, North Field…"
+              className="mt-1 w-full border border-slate-300 rounded px-2 py-1 text-sm" />
+          </label>
+          <button type="submit" className="bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded-md hover:bg-emerald-800">
+            {t('admin.save')}
+          </button>
+        </form>
+      )}
+      {event.fields.length === 0 ? (
+        <p className="text-xs text-slate-400 mt-1">{t('admin.hostedFieldsEmpty')}</p>
+      ) : (
+        <ul className="mt-2 space-y-1">
+          {event.fields.map(f => (
+            <li key={f.id} className="flex items-center justify-between text-sm border border-slate-100 rounded px-2 py-1">
+              <div>
+                <span className="font-medium">{f.name}</span>
+                {f.notes && <span className="text-xs text-slate-500 ml-2">· {f.notes}</span>}
+              </div>
+              <button onClick={() => remove(f.id, f.name)} className="text-xs text-rose-700 hover:underline">{t('admin.delete')}</button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function SchedulePanel({ event, onChanged, onError, onNotice }: {
+  event: HostedTournament
+  onChanged: () => Promise<void> | void
+  onError: (e: string) => void
+  onNotice: (n: string) => void
+}) {
+  const { t } = useTranslation()
+  const [busy, setBusy] = useState(false)
+  const [showEmail, setShowEmail] = useState(false)
+  const [emailSubject, setEmailSubject] = useState('')
+  const [emailIntro, setEmailIntro] = useState('')
+
+  const generate = async () => {
+    if (event.matches.length > 0 && !confirm(t('admin.hostedGenConfirm'))) return
+    setBusy(true)
+    try {
+      await Api.generateHostedTournamentSchedule(event.id, { replaceExisting: true })
+      await onChanged()
+      onNotice(t('admin.hostedGeneratedNotice'))
+    } catch (e: any) { onError(errMsg(e)) }
+    finally { setBusy(false) }
+  }
+  const sendEmail = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setBusy(true)
+    try {
+      const res = await Api.sendHostedTournamentScheduleEmail(event.id, {
+        subject: emailSubject.trim() || null,
+        intro: emailIntro.trim() || null,
+      })
+      setShowEmail(false)
+      onNotice(res.message ?? `Sent to ${res.sent} coaches.`)
+    } catch (err: any) { onError(errMsg(err)) }
+    finally { setBusy(false) }
+  }
+
+  const publicUrl = event.publicSlug
+    ? `${window.location.origin}/tournament/${event.publicSlug}`
+    : null
+
+  return (
+    <div className="border-t border-slate-100 pt-3">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h3 className="text-sm font-medium text-slate-700">{t('admin.hostedScheduleHeader')}</h3>
+        <div className="flex items-center gap-2 text-xs">
+          <button onClick={generate} disabled={busy}
+            className="bg-emerald-700 text-white font-semibold px-3 py-1 rounded-md hover:bg-emerald-800 disabled:opacity-60">
+            {busy ? t('admin.sending') : t('admin.hostedGenerate')}
+          </button>
+          <button onClick={() => setShowEmail(s => !s)} disabled={busy || event.matches.length === 0}
+            className="text-emerald-700 hover:underline disabled:text-slate-400 disabled:no-underline">
+            {showEmail ? t('admin.cancel') : t('admin.hostedSendSchedule')}
+          </button>
+        </div>
+      </div>
+      {publicUrl && (
+        <div className="text-xs text-slate-500 mt-1">
+          {t('admin.hostedPublicLinkLabel')}: <a href={publicUrl} target="_blank" rel="noreferrer" className="text-emerald-700 hover:underline break-all">{publicUrl}</a>
+        </div>
+      )}
+      {showEmail && (
+        <form onSubmit={sendEmail} className="mt-2 space-y-2 bg-emerald-50/50 border border-emerald-200 rounded p-2">
+          <label className="text-xs block">
+            <span className="text-slate-700">{t('admin.hostedEmailSubject')}</span>
+            <input type="text" value={emailSubject} onChange={e => setEmailSubject(e.target.value)}
+              placeholder={`${event.name} — Schedule`}
+              className="mt-1 w-full border border-slate-300 rounded px-2 py-1 text-sm" />
+          </label>
+          <label className="text-xs block">
+            <span className="text-slate-700">{t('admin.hostedEmailIntro')}</span>
+            <textarea rows={3} value={emailIntro} onChange={e => setEmailIntro(e.target.value)}
+              placeholder={t('admin.hostedEmailIntroPh')}
+              className="mt-1 w-full border border-slate-300 rounded px-2 py-1 text-sm" />
+          </label>
+          <button type="submit" disabled={busy}
+            className="bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded-md hover:bg-emerald-800 disabled:opacity-60">
+            {t('admin.hostedSendSchedule')}
+          </button>
+        </form>
+      )}
+      {event.matches.length === 0 ? (
+        <p className="text-xs text-slate-400 mt-2">{t('admin.hostedScheduleEmpty')}</p>
+      ) : (
+        <table className="w-full text-xs mt-2">
+          <thead>
+            <tr className="text-left text-slate-500 border-b">
+              <th className="py-1 px-2">{t('admin.hostedMatchDay')}</th>
+              <th className="py-1 px-2">{t('admin.hostedMatchTime')}</th>
+              <th className="py-1 px-2">{t('admin.hostedMatchField')}</th>
+              <th className="py-1 px-2">{t('admin.hostedMatchTier')}</th>
+              <th className="py-1 px-2">{t('admin.hostedMatchTeams')}</th>
+              <th className="py-1 px-2">{t('admin.hostedMatchNotes')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {event.matches.map(m => (
+              <tr key={m.id} className="border-b last:border-0">
+                <td className="py-1 px-2">{m.dayDate ?? <span className="text-slate-400">—</span>}</td>
+                <td className="py-1 px-2 font-mono">{m.startTime?.slice(0, 5) ?? '—'}</td>
+                <td className="py-1 px-2">{m.fieldName ?? <span className="text-slate-400">—</span>}</td>
+                <td className="py-1 px-2 text-slate-500">{m.tierName ?? '—'}</td>
+                <td className="py-1 px-2">{m.teamALabel ?? '—'} vs {m.teamBLabel ?? '—'}</td>
+                <td className="py-1 px-2 text-slate-500">{m.notes ?? ''}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
     </div>
   )
@@ -557,6 +872,8 @@ function SaveEventForm({ venues, initial, onSaved, onError, onCancel }: {
   const [location, setLocation] = useState(initial?.location ?? '')
   const [costPerTeam, setCostPerTeam] = useState(initial?.costPerTeam != null ? String(initial.costPerTeam) : '')
   const [notes, setNotes] = useState(initial?.notes ?? '')
+  const [rulesOfPlay, setRulesOfPlay] = useState(initial?.rulesOfPlay ?? '')
+  const [matchDuration, setMatchDuration] = useState(String(initial?.matchDurationMinutes ?? 60))
   const [busy, setBusy] = useState(false)
 
   const submit = async (e: React.FormEvent) => {
@@ -565,6 +882,8 @@ function SaveEventForm({ venues, initial, onSaved, onError, onCancel }: {
     if (!startDate) { onError(t('admin.hostedStartRequired')); return }
     const cost = costPerTeam.trim() === '' ? null : Number(costPerTeam)
     if (cost != null && (!isFinite(cost) || cost < 0)) { onError(t('admin.hostedCostInvalid')); return }
+    const dur = Number(matchDuration)
+    if (!isFinite(dur) || dur < 10 || dur > 240) { onError(t('admin.hostedDurationInvalid')); return }
     setBusy(true)
     try {
       const payload = {
@@ -576,6 +895,8 @@ function SaveEventForm({ venues, initial, onSaved, onError, onCancel }: {
         location: location.trim() || null,
         costPerTeam: cost,
         notes: notes.trim() || null,
+        rulesOfPlay: rulesOfPlay.trim() || null,
+        matchDurationMinutes: dur,
       }
       if (initial) await Api.updateHostedTournament(initial.id, payload)
       else await Api.createHostedTournament(payload)
@@ -631,10 +952,23 @@ function SaveEventForm({ venues, initial, onSaved, onError, onCancel }: {
             step="0.01" min="0"
             className="mt-1 w-full border border-slate-300 rounded-md px-2 py-1 text-sm font-mono" />
         </label>
+        <label className="text-xs">
+          <span className="text-slate-700">{t('admin.hostedMatchDuration')}</span>
+          <input type="number" value={matchDuration} onChange={e => setMatchDuration(e.target.value)}
+            min="10" max="240" step="5"
+            className="mt-1 w-full border border-slate-300 rounded-md px-2 py-1 text-sm font-mono" />
+        </label>
         <label className="text-xs sm:col-span-2">
           <span className="text-slate-700">{t('admin.hostedNotes')}</span>
           <input type="text" value={notes} onChange={e => setNotes(e.target.value)} maxLength={2000}
             className="mt-1 w-full border border-slate-300 rounded-md px-2 py-1 text-sm" />
+        </label>
+        <label className="text-xs sm:col-span-2">
+          <span className="text-slate-700">{t('admin.hostedRules')}</span>
+          <textarea value={rulesOfPlay} onChange={e => setRulesOfPlay(e.target.value)} rows={6}
+            placeholder={t('admin.hostedRulesPh')}
+            className="mt-1 w-full border border-slate-300 rounded-md px-2 py-1 text-sm" />
+          <span className="text-[10px] text-slate-500 mt-0.5 block">{t('admin.hostedRulesHelp')}</span>
         </label>
       </div>
       <div className="flex gap-2">
