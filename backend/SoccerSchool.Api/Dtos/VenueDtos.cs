@@ -21,3 +21,21 @@ public record SaveVenueRequest
 
     public SurfaceType Surface { get; init; } = SurfaceType.Unspecified;
 }
+
+/// <summary>One playing surface under a venue — "Field 1", "North Field", etc.</summary>
+public record VenueFieldDto(
+    int Id,
+    int VenueId,
+    string Name,
+    string? Notes,
+    DateTime CreatedAt,
+    DateTime UpdatedAt);
+
+public record SaveVenueFieldRequest
+{
+    [Required, MaxLength(80)]
+    public string Name { get; init; } = string.Empty;
+
+    [MaxLength(500)]
+    public string? Notes { get; init; }
+}

@@ -90,6 +90,80 @@ public class VenuesController : ControllerBase
         return NoContent();
     }
 
+    // ------------------------------------------------------------
+    // Fields (playing surfaces under a venue)
+    // ------------------------------------------------------------
+
+    /// <summary>List the fields under a venue. Available to any authenticated caller so event
+    /// forms can populate the field picker; auth is at controller level for consistency.</summary>
+    [HttpGet("{venueId:int}/fields")]
+    public async Task<ActionResult<IEnumerable<VenueFieldDto>>> ListFields(int venueId, CancellationToken ct)
+    {
+        if (!await _db.Venues.AnyAsync(v => v.Id == venueId, ct)) return NotFound();
+        var rows = await _db.VenueFields
+            .AsNoTracking()
+            .Where(f => f.VenueId == venueId)
+            .OrderBy(f => f.Name)
+            .Select(f => new VenueFieldDto(f.Id, f.VenueId, f.Name, f.Notes, f.CreatedAt, f.UpdatedAt))
+            .ToListAsync(ct);
+        return Ok(rows);
+    }
+
+    [HttpPost("{venueId:int}/fields")]
+    [Authorize(Roles = Roles.Admin)]
+    public async Task<ActionResult<VenueFieldDto>> CreateField(
+        int venueId, [FromBody] SaveVenueFieldRequest req, CancellationToken ct)
+    {
+        if (!await _db.Venues.AnyAsync(v => v.Id == venueId, ct)) return NotFound();
+        if (string.IsNullOrWhiteSpace(req.Name)) return BadRequest("Field name is required.");
+        var name = req.Name.Trim();
+        if (await _db.VenueFields.AnyAsync(f => f.VenueId == venueId && f.Name == name, ct))
+            return Conflict($"A field named '{name}' already exists on this venue.");
+
+        var now = DateTime.UtcNow;
+        var field = new VenueField
+        {
+            VenueId = venueId,
+            Name = name,
+            Notes = Clean(req.Notes),
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+        _db.VenueFields.Add(field);
+        await _db.SaveChangesAsync(ct);
+        return Ok(new VenueFieldDto(field.Id, field.VenueId, field.Name, field.Notes, field.CreatedAt, field.UpdatedAt));
+    }
+
+    [HttpPut("{venueId:int}/fields/{fieldId:int}")]
+    [Authorize(Roles = Roles.Admin)]
+    public async Task<ActionResult<VenueFieldDto>> UpdateField(
+        int venueId, int fieldId, [FromBody] SaveVenueFieldRequest req, CancellationToken ct)
+    {
+        var field = await _db.VenueFields.FirstOrDefaultAsync(f => f.Id == fieldId && f.VenueId == venueId, ct);
+        if (field is null) return NotFound();
+        if (string.IsNullOrWhiteSpace(req.Name)) return BadRequest("Field name is required.");
+        var name = req.Name.Trim();
+        if (await _db.VenueFields.AnyAsync(f => f.VenueId == venueId && f.Name == name && f.Id != fieldId, ct))
+            return Conflict($"A field named '{name}' already exists on this venue.");
+
+        field.Name = name;
+        field.Notes = Clean(req.Notes);
+        field.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        return Ok(new VenueFieldDto(field.Id, field.VenueId, field.Name, field.Notes, field.CreatedAt, field.UpdatedAt));
+    }
+
+    [HttpDelete("{venueId:int}/fields/{fieldId:int}")]
+    [Authorize(Roles = Roles.Admin)]
+    public async Task<IActionResult> DeleteField(int venueId, int fieldId, CancellationToken ct)
+    {
+        var field = await _db.VenueFields.FirstOrDefaultAsync(f => f.Id == fieldId && f.VenueId == venueId, ct);
+        if (field is null) return NotFound();
+        _db.VenueFields.Remove(field);
+        await _db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
     private static string? Validate(SaveVenueRequest r)
     {
         if (string.IsNullOrWhiteSpace(r.Name)) return "Name is required.";

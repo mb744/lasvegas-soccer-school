@@ -146,6 +146,161 @@ public class AdminHostedTournamentsController : ControllerBase
         return Ok(await LoadAndMap(id, ct));
     }
 
+    /// <summary>Slot a rostered team into a tier (or clear the assignment with TierId=null).
+    /// Rejects tiers that don't belong to the same event so a stray Id can't cross-link.</summary>
+    [HttpPut("{id:int}/teams/{teamRowId:int}/tier")]
+    public async Task<ActionResult<HostedTournamentDto>> AssignTeamTier(
+        int id, int teamRowId, [FromBody] AssignTeamTierRequest req, CancellationToken ct)
+    {
+        var row = await _db.HostedTournamentTeams
+            .FirstOrDefaultAsync(x => x.Id == teamRowId && x.HostedTournamentId == id, ct);
+        if (row is null) return NotFound();
+        if (req.TierId is int tid)
+        {
+            var ownsTier = await _db.HostedTournamentTiers.AnyAsync(t => t.Id == tid && t.HostedTournamentId == id, ct);
+            if (!ownsTier) return BadRequest("Tier not found on this tournament.");
+        }
+        row.TierId = req.TierId;
+        await _db.SaveChangesAsync(ct);
+        return Ok(await LoadAndMap(id, ct));
+    }
+
+    /// <summary>Toggle a team's paid status. Stamps PaidAt on the true→ false transition and
+    /// clears it (and the payment details) on paid→ unpaid so unrelated invoicing state
+    /// doesn't linger.</summary>
+    [HttpPut("{id:int}/teams/{teamRowId:int}/paid")]
+    public async Task<ActionResult<HostedTournamentDto>> SetTeamPaid(
+        int id, int teamRowId, [FromBody] SetTeamPaidRequest req, CancellationToken ct)
+    {
+        var row = await _db.HostedTournamentTeams
+            .FirstOrDefaultAsync(x => x.Id == teamRowId && x.HostedTournamentId == id, ct);
+        if (row is null) return NotFound();
+        var now = DateTime.UtcNow;
+        if (req.Paid)
+        {
+            if (!row.Paid) row.PaidAt = now;
+            row.Paid = true;
+            row.PaymentMethod = TrimOrNull(req.PaymentMethod);
+            row.PaymentReference = TrimOrNull(req.PaymentReference);
+        }
+        else
+        {
+            row.Paid = false;
+            row.PaidAt = null;
+            row.PaymentMethod = null;
+            row.PaymentReference = null;
+        }
+        await _db.SaveChangesAsync(ct);
+        return Ok(await LoadAndMap(id, ct));
+    }
+
+    // ------------------------------------------------------------
+    // Tiers
+    // ------------------------------------------------------------
+
+    [HttpPost("{id:int}/tiers")]
+    public async Task<ActionResult<HostedTournamentDto>> AddTier(
+        int id, [FromBody] SaveHostedTournamentTierRequest req, CancellationToken ct)
+    {
+        if (!await _db.HostedTournaments.AnyAsync(t => t.Id == id, ct)) return NotFound();
+        if (string.IsNullOrWhiteSpace(req.Name)) return BadRequest("Tier name is required.");
+        _db.HostedTournamentTiers.Add(new HostedTournamentTier
+        {
+            HostedTournamentId = id,
+            Name = req.Name.Trim(),
+            SortOrder = req.SortOrder,
+            Notes = TrimOrNull(req.Notes),
+            CreatedAt = DateTime.UtcNow,
+        });
+        await _db.SaveChangesAsync(ct);
+        return Ok(await LoadAndMap(id, ct));
+    }
+
+    [HttpPut("{id:int}/tiers/{tierId:int}")]
+    public async Task<ActionResult<HostedTournamentDto>> UpdateTier(
+        int id, int tierId, [FromBody] SaveHostedTournamentTierRequest req, CancellationToken ct)
+    {
+        var tier = await _db.HostedTournamentTiers.FirstOrDefaultAsync(t => t.Id == tierId && t.HostedTournamentId == id, ct);
+        if (tier is null) return NotFound();
+        if (string.IsNullOrWhiteSpace(req.Name)) return BadRequest("Tier name is required.");
+        tier.Name = req.Name.Trim();
+        tier.SortOrder = req.SortOrder;
+        tier.Notes = TrimOrNull(req.Notes);
+        await _db.SaveChangesAsync(ct);
+        return Ok(await LoadAndMap(id, ct));
+    }
+
+    [HttpDelete("{id:int}/tiers/{tierId:int}")]
+    public async Task<ActionResult<HostedTournamentDto>> DeleteTier(int id, int tierId, CancellationToken ct)
+    {
+        var tier = await _db.HostedTournamentTiers.FirstOrDefaultAsync(t => t.Id == tierId && t.HostedTournamentId == id, ct);
+        if (tier is null) return NotFound();
+        // Rows referencing this tier get their TierId nulled via ClientSetNull; do it here in memory
+        // so the tracked entities stay consistent before EF's cascade fires.
+        var members = await _db.HostedTournamentTeams.Where(m => m.TierId == tierId).ToListAsync(ct);
+        foreach (var m in members) m.TierId = null;
+        _db.HostedTournamentTiers.Remove(tier);
+        await _db.SaveChangesAsync(ct);
+        return Ok(await LoadAndMap(id, ct));
+    }
+
+    // ------------------------------------------------------------
+    // Per-day schedule windows
+    // ------------------------------------------------------------
+
+    [HttpPost("{id:int}/days")]
+    public async Task<ActionResult<HostedTournamentDto>> AddDay(
+        int id, [FromBody] SaveHostedTournamentDayRequest req, CancellationToken ct)
+    {
+        if (!await _db.HostedTournaments.AnyAsync(t => t.Id == id, ct)) return NotFound();
+        if (req.Date == default) return BadRequest("Date is required.");
+        if (req.StartTime is TimeOnly s && req.EndTime is TimeOnly e && e < s)
+            return BadRequest("End time can't be before start time.");
+        if (await _db.HostedTournamentDays.AnyAsync(d => d.HostedTournamentId == id && d.Date == req.Date, ct))
+            return Conflict("A day for that date already exists — edit the existing row instead.");
+        _db.HostedTournamentDays.Add(new HostedTournamentDay
+        {
+            HostedTournamentId = id,
+            Date = req.Date,
+            StartTime = req.StartTime,
+            EndTime = req.EndTime,
+            Notes = TrimOrNull(req.Notes),
+            CreatedAt = DateTime.UtcNow,
+        });
+        await _db.SaveChangesAsync(ct);
+        return Ok(await LoadAndMap(id, ct));
+    }
+
+    [HttpPut("{id:int}/days/{dayId:int}")]
+    public async Task<ActionResult<HostedTournamentDto>> UpdateDay(
+        int id, int dayId, [FromBody] SaveHostedTournamentDayRequest req, CancellationToken ct)
+    {
+        var day = await _db.HostedTournamentDays.FirstOrDefaultAsync(d => d.Id == dayId && d.HostedTournamentId == id, ct);
+        if (day is null) return NotFound();
+        if (req.Date == default) return BadRequest("Date is required.");
+        if (req.StartTime is TimeOnly s && req.EndTime is TimeOnly e && e < s)
+            return BadRequest("End time can't be before start time.");
+        if (req.Date != day.Date
+            && await _db.HostedTournamentDays.AnyAsync(d => d.HostedTournamentId == id && d.Date == req.Date && d.Id != dayId, ct))
+            return Conflict("Another day already covers that date.");
+        day.Date = req.Date;
+        day.StartTime = req.StartTime;
+        day.EndTime = req.EndTime;
+        day.Notes = TrimOrNull(req.Notes);
+        await _db.SaveChangesAsync(ct);
+        return Ok(await LoadAndMap(id, ct));
+    }
+
+    [HttpDelete("{id:int}/days/{dayId:int}")]
+    public async Task<ActionResult<HostedTournamentDto>> DeleteDay(int id, int dayId, CancellationToken ct)
+    {
+        var day = await _db.HostedTournamentDays.FirstOrDefaultAsync(d => d.Id == dayId && d.HostedTournamentId == id, ct);
+        if (day is null) return NotFound();
+        _db.HostedTournamentDays.Remove(day);
+        await _db.SaveChangesAsync(ct);
+        return Ok(await LoadAndMap(id, ct));
+    }
+
     // ------------------------------------------------------------
     // Invited teams catalog
     // ------------------------------------------------------------
@@ -220,7 +375,10 @@ public class AdminHostedTournamentsController : ControllerBase
             .AsNoTracking()
             .Include(t => t.Venue)
             .Include(t => t.Teams).ThenInclude(r => r.LvssTeam)
-            .Include(t => t.Teams).ThenInclude(r => r.InvitedTeam);
+            .Include(t => t.Teams).ThenInclude(r => r.InvitedTeam)
+            .Include(t => t.Teams).ThenInclude(r => r.Tier)
+            .Include(t => t.Tiers)
+            .Include(t => t.Days);
 
     private async Task<HostedTournamentDto> LoadAndMap(int id, CancellationToken ct)
     {
@@ -257,7 +415,18 @@ public class AdminHostedTournamentsController : ControllerBase
                     r.InvitedTeam?.HeadCoachName,
                     r.InvitedTeam?.HeadCoachPhone,
                     r.InvitedTeam?.HeadCoachEmail,
-                    r.Notes, r.CreatedAt))
+                    r.Notes,
+                    r.TierId, r.Tier?.Name,
+                    r.Paid, r.PaidAt, r.PaymentMethod, r.PaymentReference,
+                    r.CreatedAt))
+                .ToList(),
+            t.Tiers
+                .OrderBy(x => x.SortOrder).ThenBy(x => x.Name)
+                .Select(x => new HostedTournamentTierDto(x.Id, x.Name, x.SortOrder, x.Notes, x.CreatedAt))
+                .ToList(),
+            t.Days
+                .OrderBy(x => x.Date)
+                .Select(x => new HostedTournamentDayDto(x.Id, x.Date, x.StartTime, x.EndTime, x.Notes, x.CreatedAt))
                 .ToList());
 
     private static InvitedTeamDto ToInvitedDto(InvitedTeam t) =>

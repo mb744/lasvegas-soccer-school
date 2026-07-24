@@ -228,36 +228,311 @@ function EventDetailPanel({ event, venues, lvssTeams, invitedTeams, onChanged, o
               <th className="py-1 px-2">{t('admin.hostedTeamCol')}</th>
               <th className="py-1 px-2">{t('admin.hostedTeamSourceCol')}</th>
               <th className="py-1 px-2">{t('admin.hostedAgeCol')}</th>
+              <th className="py-1 px-2">{t('admin.hostedTierCol')}</th>
+              <th className="py-1 px-2">{t('admin.hostedPaidCol')}</th>
               <th className="py-1 px-2">{t('admin.hostedContactCol')}</th>
               <th></th>
             </tr>
           </thead>
           <tbody>
             {event.teams.map(r => (
-              <tr key={r.id} className="border-b last:border-0 align-top">
-                <td className="py-1 px-2 font-medium">{r.lvssTeamName ?? r.invitedTeamName ?? <span className="text-slate-400">—</span>}</td>
-                <td className="py-1 px-2 text-xs">
-                  {r.lvssTeamId != null
-                    ? <span className="inline-block bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded uppercase tracking-wide text-[10px]">{t('admin.hostedSourceLvss')}</span>
-                    : <span className="inline-block bg-sky-100 text-sky-800 px-1.5 py-0.5 rounded uppercase tracking-wide text-[10px]">{t('admin.hostedSourceInvited')}</span>}
-                </td>
-                <td className="py-1 px-2 text-xs">{r.ageGroup ?? <span className="text-slate-400">—</span>}</td>
-                <td className="py-1 px-2 text-xs">
-                  {r.headCoachName && <div>{r.headCoachName}</div>}
-                  {r.headCoachPhone && <div className="text-slate-500 font-mono">{r.headCoachPhone}</div>}
-                  {r.headCoachEmail && <div className="text-slate-500 truncate max-w-[16rem]">{r.headCoachEmail}</div>}
-                </td>
-                <td className="py-1 px-2 text-right">
-                  <button onClick={() => removeTeam(r.id)} className="text-xs text-rose-700 hover:underline">{t('common.remove')}</button>
-                </td>
-              </tr>
+              <TeamRow key={r.id} row={r} event={event}
+                onChanged={onChanged}
+                onError={onError}
+                onRemove={() => removeTeam(r.id)} />
             ))}
             {event.teams.length === 0 && (
-              <tr><td colSpan={5} className="py-4 text-center text-xs text-slate-400">{t('admin.hostedNoTeams')}</td></tr>
+              <tr><td colSpan={7} className="py-4 text-center text-xs text-slate-400">{t('admin.hostedNoTeams')}</td></tr>
             )}
           </tbody>
         </table>
       </div>
+
+      <TiersPanel event={event} onChanged={onChanged} onError={onError} onNotice={onNotice} />
+      <DaysPanel event={event} onChanged={onChanged} onError={onError} onNotice={onNotice} />
+    </div>
+  )
+}
+
+function TeamRow({ row, event, onChanged, onError, onRemove }: {
+  row: HostedTournament['teams'][number]
+  event: HostedTournament
+  onChanged: () => Promise<void> | void
+  onError: (e: string) => void
+  onRemove: () => void
+}) {
+  const { t } = useTranslation()
+  const [busy, setBusy] = useState(false)
+  const [editingPay, setEditingPay] = useState(false)
+  const [payMethod, setPayMethod] = useState(row.paymentMethod ?? '')
+  const [payRef, setPayRef] = useState(row.paymentReference ?? '')
+
+  const changeTier = async (tierId: number | null) => {
+    setBusy(true)
+    try { await Api.assignHostedTournamentTeamTier(event.id, row.id, { tierId }); await onChanged() }
+    catch (e: any) { onError(errMsg(e)) }
+    finally { setBusy(false) }
+  }
+  const togglePaid = async () => {
+    if (row.paid) {
+      // Un-pay clears details.
+      setBusy(true)
+      try { await Api.setHostedTournamentTeamPaid(event.id, row.id, { paid: false }); await onChanged() }
+      catch (e: any) { onError(errMsg(e)) }
+      finally { setBusy(false) }
+    } else {
+      setEditingPay(true)
+    }
+  }
+  const savePayment = async () => {
+    setBusy(true)
+    try {
+      await Api.setHostedTournamentTeamPaid(event.id, row.id, {
+        paid: true,
+        paymentMethod: payMethod.trim() || null,
+        paymentReference: payRef.trim() || null,
+      })
+      setEditingPay(false)
+      await onChanged()
+    } catch (e: any) { onError(errMsg(e)) }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <>
+      <tr className="border-b last:border-0 align-top">
+        <td className="py-1 px-2 font-medium">{row.lvssTeamName ?? row.invitedTeamName ?? <span className="text-slate-400">—</span>}</td>
+        <td className="py-1 px-2 text-xs">
+          {row.lvssTeamId != null
+            ? <span className="inline-block bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded uppercase tracking-wide text-[10px]">{t('admin.hostedSourceLvss')}</span>
+            : <span className="inline-block bg-sky-100 text-sky-800 px-1.5 py-0.5 rounded uppercase tracking-wide text-[10px]">{t('admin.hostedSourceInvited')}</span>}
+        </td>
+        <td className="py-1 px-2 text-xs">{row.ageGroup ?? <span className="text-slate-400">—</span>}</td>
+        <td className="py-1 px-2 text-xs">
+          <select value={row.tierId ?? ''}
+            onChange={e => changeTier(e.target.value === '' ? null : Number(e.target.value))}
+            disabled={busy || event.tiers.length === 0}
+            className="border border-slate-300 rounded px-1 py-0.5 text-xs disabled:bg-slate-50 disabled:text-slate-400">
+            <option value="">— {t('admin.hostedNoTier')} —</option>
+            {event.tiers.map(tr => <option key={tr.id} value={tr.id}>{tr.name}</option>)}
+          </select>
+        </td>
+        <td className="py-1 px-2 text-xs">
+          <button onClick={togglePaid} disabled={busy}
+            className={`px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wide ${row.paid ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600 hover:bg-emerald-50'} disabled:opacity-60`}>
+            {row.paid ? t('admin.hostedPaidYes') : t('admin.hostedPaidNo')}
+          </button>
+          {row.paid && row.paymentMethod && (
+            <div className="text-[10px] text-emerald-700 mt-0.5">{row.paymentMethod}{row.paymentReference ? ` · ${row.paymentReference}` : ''}</div>
+          )}
+        </td>
+        <td className="py-1 px-2 text-xs">
+          {row.headCoachName && <div>{row.headCoachName}</div>}
+          {row.headCoachPhone && <div className="text-slate-500 font-mono">{row.headCoachPhone}</div>}
+          {row.headCoachEmail && <div className="text-slate-500 truncate max-w-[16rem]">{row.headCoachEmail}</div>}
+        </td>
+        <td className="py-1 px-2 text-right">
+          <button onClick={onRemove} className="text-xs text-rose-700 hover:underline">{t('common.remove')}</button>
+        </td>
+      </tr>
+      {editingPay && (
+        <tr><td colSpan={7} className="py-2 px-3 bg-emerald-50/50">
+          <div className="flex items-end gap-2 flex-wrap">
+            <label className="text-xs flex-1 min-w-[140px]">
+              <span className="text-slate-700">{t('admin.hostedPayMethod')}</span>
+              <input type="text" value={payMethod} onChange={e => setPayMethod(e.target.value)} maxLength={120}
+                placeholder="Zelle, Cash, Check…"
+                className="mt-1 w-full border border-slate-300 rounded px-2 py-1 text-xs" />
+            </label>
+            <label className="text-xs flex-1 min-w-[140px]">
+              <span className="text-slate-700">{t('admin.hostedPayRef')}</span>
+              <input type="text" value={payRef} onChange={e => setPayRef(e.target.value)} maxLength={120}
+                className="mt-1 w-full border border-slate-300 rounded px-2 py-1 text-xs font-mono" />
+            </label>
+            <button onClick={savePayment} disabled={busy}
+              className="bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded-md hover:bg-emerald-800 disabled:opacity-60">
+              {t('admin.hostedMarkPaid')}
+            </button>
+            <button onClick={() => setEditingPay(false)} disabled={busy}
+              className="text-xs text-slate-600 hover:underline">{t('admin.cancel')}</button>
+          </div>
+        </td></tr>
+      )}
+    </>
+  )
+}
+
+function TiersPanel({ event, onChanged, onError, onNotice }: {
+  event: HostedTournament
+  onChanged: () => Promise<void> | void
+  onError: (e: string) => void
+  onNotice: (n: string) => void
+}) {
+  const { t } = useTranslation()
+  const [showAdd, setShowAdd] = useState(false)
+  const [name, setName] = useState('')
+  const [notes, setNotes] = useState('')
+
+  const add = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!name.trim()) { onError(t('admin.hostedTierNameRequired')); return }
+    try {
+      await Api.addHostedTournamentTier(event.id, {
+        name: name.trim(),
+        sortOrder: event.tiers.length,
+        notes: notes.trim() || null,
+      })
+      setName(''); setNotes(''); setShowAdd(false)
+      await onChanged()
+      onNotice(t('admin.hostedTierSavedNotice'))
+    } catch (err: any) { onError(errMsg(err)) }
+  }
+  const remove = async (tierId: number, tierName: string) => {
+    if (!confirm(t('admin.hostedTierDeleteConfirm', { name: tierName }))) return
+    try { await Api.deleteHostedTournamentTier(event.id, tierId); await onChanged() }
+    catch (err: any) { onError(errMsg(err)) }
+  }
+
+  return (
+    <div className="border-t border-slate-100 pt-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-medium text-slate-700">{t('admin.hostedTiersHeader')}</h3>
+        <button onClick={() => setShowAdd(s => !s)}
+          className="text-xs text-emerald-700 hover:underline">
+          {showAdd ? t('admin.cancel') : '+ ' + t('admin.hostedTierAddNew')}
+        </button>
+      </div>
+      {showAdd && (
+        <form onSubmit={add} className="mt-2 flex items-end gap-2 bg-emerald-50 border border-emerald-200 rounded p-2">
+          <label className="text-xs flex-1">
+            <span className="text-slate-700">{t('admin.hostedTierName')}</span>
+            <input type="text" value={name} onChange={e => setName(e.target.value)} maxLength={80}
+              placeholder="U10 Gold, Boys 12U A…"
+              className="mt-1 w-full border border-slate-300 rounded px-2 py-1 text-sm" />
+          </label>
+          <label className="text-xs flex-1">
+            <span className="text-slate-700">{t('admin.hostedTierNotes')}</span>
+            <input type="text" value={notes} onChange={e => setNotes(e.target.value)} maxLength={500}
+              className="mt-1 w-full border border-slate-300 rounded px-2 py-1 text-sm" />
+          </label>
+          <button type="submit"
+            className="bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded-md hover:bg-emerald-800">
+            {t('admin.save')}
+          </button>
+        </form>
+      )}
+      {event.tiers.length === 0 ? (
+        <p className="text-xs text-slate-400 mt-1">{t('admin.hostedTiersEmpty')}</p>
+      ) : (
+        <ul className="mt-2 space-y-1">
+          {event.tiers.map(tier => {
+            const teamCount = event.teams.filter(t => t.tierId === tier.id).length
+            return (
+              <li key={tier.id} className="flex items-center justify-between text-sm border border-slate-100 rounded px-2 py-1">
+                <div>
+                  <span className="font-medium">{tier.name}</span>
+                  <span className="text-xs text-slate-500 ml-2">{teamCount} {t('admin.hostedTeamCount')}</span>
+                  {tier.notes && <span className="text-xs text-slate-500 ml-2">· {tier.notes}</span>}
+                </div>
+                <button onClick={() => remove(tier.id, tier.name)}
+                  className="text-xs text-rose-700 hover:underline">{t('admin.delete')}</button>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function DaysPanel({ event, onChanged, onError, onNotice }: {
+  event: HostedTournament
+  onChanged: () => Promise<void> | void
+  onError: (e: string) => void
+  onNotice: (n: string) => void
+}) {
+  const { t } = useTranslation()
+  const [showAdd, setShowAdd] = useState(false)
+  const [date, setDate] = useState('')
+  const [startTime, setStartTime] = useState('')
+  const [endTime, setEndTime] = useState('')
+
+  const add = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!date) { onError(t('admin.hostedDayDateRequired')); return }
+    if (startTime && endTime && endTime < startTime) { onError(t('admin.hostedDayTimeRange')); return }
+    try {
+      await Api.addHostedTournamentDay(event.id, {
+        date,
+        startTime: startTime || null,
+        endTime: endTime || null,
+      })
+      setDate(''); setStartTime(''); setEndTime(''); setShowAdd(false)
+      await onChanged()
+      onNotice(t('admin.hostedDaySavedNotice'))
+    } catch (err: any) { onError(errMsg(err)) }
+  }
+  const remove = async (dayId: number, dayDate: string) => {
+    if (!confirm(t('admin.hostedDayDeleteConfirm', { date: dayDate }))) return
+    try { await Api.deleteHostedTournamentDay(event.id, dayId); await onChanged() }
+    catch (err: any) { onError(errMsg(err)) }
+  }
+
+  return (
+    <div className="border-t border-slate-100 pt-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-medium text-slate-700">{t('admin.hostedDaysHeader')}</h3>
+        <button onClick={() => setShowAdd(s => !s)}
+          className="text-xs text-emerald-700 hover:underline">
+          {showAdd ? t('admin.cancel') : '+ ' + t('admin.hostedDayAddNew')}
+        </button>
+      </div>
+      {showAdd && (
+        <form onSubmit={add} className="mt-2 flex items-end gap-2 bg-emerald-50 border border-emerald-200 rounded p-2 flex-wrap">
+          <label className="text-xs">
+            <span className="text-slate-700">{t('admin.hostedDayDate')}</span>
+            <input type="date" value={date} onChange={e => setDate(e.target.value)}
+              className="mt-1 border border-slate-300 rounded px-2 py-1 text-sm" />
+          </label>
+          <label className="text-xs">
+            <span className="text-slate-700">{t('admin.hostedDayStart')}</span>
+            <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)}
+              className="mt-1 border border-slate-300 rounded px-2 py-1 text-sm" />
+          </label>
+          <label className="text-xs">
+            <span className="text-slate-700">{t('admin.hostedDayEnd')}</span>
+            <input type="time" value={endTime} onChange={e => setEndTime(e.target.value)}
+              className="mt-1 border border-slate-300 rounded px-2 py-1 text-sm" />
+          </label>
+          <button type="submit"
+            className="bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded-md hover:bg-emerald-800">
+            {t('admin.save')}
+          </button>
+        </form>
+      )}
+      {event.days.length === 0 ? (
+        <p className="text-xs text-slate-400 mt-1">{t('admin.hostedDaysEmpty')}</p>
+      ) : (
+        <ul className="mt-2 space-y-1">
+          {event.days.map(day => (
+            <li key={day.id} className="flex items-center justify-between text-sm border border-slate-100 rounded px-2 py-1">
+              <div>
+                <span className="font-medium">{day.date}</span>
+                <span className="text-xs text-slate-500 ml-2">
+                  {day.startTime && day.endTime
+                    ? `${day.startTime.slice(0, 5)} – ${day.endTime.slice(0, 5)}`
+                    : day.startTime
+                      ? `from ${day.startTime.slice(0, 5)}`
+                      : t('admin.hostedDayNoTimes')}
+                </span>
+                {day.notes && <span className="text-xs text-slate-500 ml-2">· {day.notes}</span>}
+              </div>
+              <button onClick={() => remove(day.id, day.date)}
+                className="text-xs text-rose-700 hover:underline">{t('admin.delete')}</button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   )
 }

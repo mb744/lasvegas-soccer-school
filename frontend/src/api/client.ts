@@ -119,8 +119,14 @@ import type {
   HostedTournament,
   SaveHostedTournamentRequest,
   AddHostedTournamentTeamRequest,
+  SaveHostedTournamentTierRequest,
+  SaveHostedTournamentDayRequest,
+  AssignTeamTierRequest,
+  SetTeamPaidRequest,
   InvitedTeam,
   SaveInvitedTeamRequest,
+  VenueField,
+  SaveVenueFieldRequest,
   TranslateRequest,
   TranslateResponse,
   UserSummary,
@@ -1083,6 +1089,53 @@ export const Api = {
   async removeHostedTournamentTeam(id: number, teamRowId: number) {
     const r = await api.delete<HostedTournament>(`/admin/hosted-tournaments/${id}/teams/${teamRowId}`)
     return r.data
+  },
+  async assignHostedTournamentTeamTier(id: number, teamRowId: number, payload: AssignTeamTierRequest) {
+    const r = await api.put<HostedTournament>(`/admin/hosted-tournaments/${id}/teams/${teamRowId}/tier`, payload)
+    return r.data
+  },
+  async setHostedTournamentTeamPaid(id: number, teamRowId: number, payload: SetTeamPaidRequest) {
+    const r = await api.put<HostedTournament>(`/admin/hosted-tournaments/${id}/teams/${teamRowId}/paid`, payload)
+    return r.data
+  },
+  async addHostedTournamentTier(id: number, payload: SaveHostedTournamentTierRequest) {
+    const r = await api.post<HostedTournament>(`/admin/hosted-tournaments/${id}/tiers`, payload)
+    return r.data
+  },
+  async updateHostedTournamentTier(id: number, tierId: number, payload: SaveHostedTournamentTierRequest) {
+    const r = await api.put<HostedTournament>(`/admin/hosted-tournaments/${id}/tiers/${tierId}`, payload)
+    return r.data
+  },
+  async deleteHostedTournamentTier(id: number, tierId: number) {
+    const r = await api.delete<HostedTournament>(`/admin/hosted-tournaments/${id}/tiers/${tierId}`)
+    return r.data
+  },
+  async addHostedTournamentDay(id: number, payload: SaveHostedTournamentDayRequest) {
+    const r = await api.post<HostedTournament>(`/admin/hosted-tournaments/${id}/days`, payload)
+    return r.data
+  },
+  async updateHostedTournamentDay(id: number, dayId: number, payload: SaveHostedTournamentDayRequest) {
+    const r = await api.put<HostedTournament>(`/admin/hosted-tournaments/${id}/days/${dayId}`, payload)
+    return r.data
+  },
+  async deleteHostedTournamentDay(id: number, dayId: number) {
+    const r = await api.delete<HostedTournament>(`/admin/hosted-tournaments/${id}/days/${dayId}`)
+    return r.data
+  },
+  async listVenueFields(venueId: number) {
+    const r = await api.get<VenueField[]>(`/venues/${venueId}/fields`)
+    return r.data
+  },
+  async createVenueField(venueId: number, payload: SaveVenueFieldRequest) {
+    const r = await api.post<VenueField>(`/venues/${venueId}/fields`, payload)
+    return r.data
+  },
+  async updateVenueField(venueId: number, fieldId: number, payload: SaveVenueFieldRequest) {
+    const r = await api.put<VenueField>(`/venues/${venueId}/fields/${fieldId}`, payload)
+    return r.data
+  },
+  async deleteVenueField(venueId: number, fieldId: number) {
+    await api.delete(`/venues/${venueId}/fields/${fieldId}`)
   },
   async listInvitedTeams() {
     const r = await api.get<InvitedTeam[]>('/admin/invited-teams')

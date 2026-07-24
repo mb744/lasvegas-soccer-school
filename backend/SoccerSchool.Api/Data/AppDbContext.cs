@@ -83,7 +83,10 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
     public DbSet<Venue> Venues => Set<Venue>();
     public DbSet<HostedTournament> HostedTournaments => Set<HostedTournament>();
     public DbSet<HostedTournamentTeam> HostedTournamentTeams => Set<HostedTournamentTeam>();
+    public DbSet<HostedTournamentTier> HostedTournamentTiers => Set<HostedTournamentTier>();
+    public DbSet<HostedTournamentDay> HostedTournamentDays => Set<HostedTournamentDay>();
     public DbSet<InvitedTeam> InvitedTeams => Set<InvitedTeam>();
+    public DbSet<VenueField> VenueFields => Set<VenueField>();
     public DbSet<MappedField> MappedFields => Set<MappedField>();
 
     /// <summary>Backing store for the ASP.NET Core data-protection key ring (cookie encryption
@@ -523,10 +526,42 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
                 .WithMany()
                 .HasForeignKey(t => t.InvitedTeamId)
                 .OnDelete(DeleteBehavior.ClientSetNull);
+            b.HasOne(t => t.Tier)
+                .WithMany()
+                .HasForeignKey(t => t.TierId)
+                .OnDelete(DeleteBehavior.ClientSetNull);
             // No unique index on (tournament, teamId) — the LVSS and Invited FKs are separate
             // nullable columns and SQL Server ignores nulls in unique indexes only with a
             // filtered index. The controller enforces "one team per tournament" instead.
             b.HasIndex(t => t.HostedTournamentId);
+            b.HasIndex(t => t.TierId);
+        });
+
+        modelBuilder.Entity<HostedTournamentTier>(b =>
+        {
+            b.HasOne(t => t.HostedTournament)
+                .WithMany(h => h.Tiers)
+                .HasForeignKey(t => t.HostedTournamentId)
+                .OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(t => new { t.HostedTournamentId, t.SortOrder });
+        });
+
+        modelBuilder.Entity<HostedTournamentDay>(b =>
+        {
+            b.HasOne(d => d.HostedTournament)
+                .WithMany(h => h.Days)
+                .HasForeignKey(d => d.HostedTournamentId)
+                .OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(d => new { d.HostedTournamentId, d.Date }).IsUnique();
+        });
+
+        modelBuilder.Entity<VenueField>(b =>
+        {
+            b.HasOne(f => f.Venue)
+                .WithMany()
+                .HasForeignKey(f => f.VenueId)
+                .OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(f => new { f.VenueId, f.Name }).IsUnique();
         });
 
         modelBuilder.Entity<MappedField>(b =>

@@ -45,4 +45,6 @@ public class HostedTournament
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
     public List<HostedTournamentTeam> Teams { get; set; } = new();
+    public List<HostedTournamentTier> Tiers { get; set; } = new();
+    public List<HostedTournamentDay> Days { get; set; } = new();
 }

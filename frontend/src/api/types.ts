@@ -1655,6 +1655,31 @@ export interface HostedTournamentTeam {
   headCoachPhone: string | null
   headCoachEmail: string | null
   notes: string | null
+  tierId: number | null
+  tierName: string | null
+  paid: boolean
+  paidAt: string | null
+  paymentMethod: string | null
+  paymentReference: string | null
+  createdAt: string
+}
+
+export interface HostedTournamentTier {
+  id: number
+  name: string
+  sortOrder: number
+  notes: string | null
+  createdAt: string
+}
+
+export interface HostedTournamentDay {
+  id: number
+  /** YYYY-MM-DD */
+  date: string
+  /** HH:mm:ss when set — the browser <input type="time"> uses HH:mm. */
+  startTime: string | null
+  endTime: string | null
+  notes: string | null
   createdAt: string
 }
 
@@ -1673,6 +1698,46 @@ export interface HostedTournament {
   createdAt: string
   updatedAt: string
   teams: HostedTournamentTeam[]
+  tiers: HostedTournamentTier[]
+  days: HostedTournamentDay[]
+}
+
+export interface SaveHostedTournamentTierRequest {
+  name: string
+  sortOrder: number
+  notes?: string | null
+}
+
+export interface SaveHostedTournamentDayRequest {
+  date: string
+  startTime?: string | null
+  endTime?: string | null
+  notes?: string | null
+}
+
+export interface AssignTeamTierRequest {
+  tierId?: number | null
+}
+
+export interface SetTeamPaidRequest {
+  paid: boolean
+  paymentMethod?: string | null
+  paymentReference?: string | null
+}
+
+// Venue fields (playing surfaces under a venue)
+export interface VenueField {
+  id: number
+  venueId: number
+  name: string
+  notes: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface SaveVenueFieldRequest {
+  name: string
+  notes?: string | null
 }
 
 export interface SaveHostedTournamentRequest {

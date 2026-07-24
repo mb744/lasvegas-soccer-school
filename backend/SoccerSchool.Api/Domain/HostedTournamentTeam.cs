@@ -28,5 +28,26 @@ public class HostedTournamentTeam
     [System.ComponentModel.DataAnnotations.MaxLength(500)]
     public string? Notes { get; set; }
 
+    /// <summary>Optional tier / division assignment inside the event. Null means "not yet
+    /// bracketed". SetNull (via ClientSetNull) on tier delete so removing a tier alone doesn't
+    /// pull the team off the event.</summary>
+    public int? TierId { get; set; }
+    public HostedTournamentTier? Tier { get; set; }
+
+    /// <summary>Whether this team has paid the per-team fee. Toggled from the roster row so
+    /// admin can track collection without leaving the Hosted Tournaments page.</summary>
+    public bool Paid { get; set; }
+
+    /// <summary>Stamped when Paid flips to true; cleared when it flips back off.</summary>
+    public DateTime? PaidAt { get; set; }
+
+    /// <summary>Admin-typed "how did they pay" — Zelle, Cash, Check #1234, etc.</summary>
+    [System.ComponentModel.DataAnnotations.MaxLength(120)]
+    public string? PaymentMethod { get; set; }
+
+    /// <summary>Confirmation / check number / Stripe id, optional.</summary>
+    [System.ComponentModel.DataAnnotations.MaxLength(120)]
+    public string? PaymentReference { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
