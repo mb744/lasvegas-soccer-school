@@ -113,7 +113,7 @@ export function TournamentPublicPage() {
         </section>
 
         {data.standings.length > 0 && (
-          <section className="space-y-4">
+          <section className="space-y-3">
             <h2 className="font-bold text-emerald-800">Standings</h2>
             {data.standings.map(s => (
               <StandingsCard key={`${s.tierName ?? 'notier'}-${s.bracketId ?? s.bracketName}`} standings={s} />
@@ -141,7 +141,21 @@ function StandingsCard({ standings }: { standings: BracketStandings }) {
         )}
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        {/* table-fixed + explicit column widths so every stacked bracket table lines up its stat
+            columns identically — otherwise each table sizes cells to its own content and the
+            columns drift left/right between cards. */}
+        <table className="w-full text-sm table-fixed">
+          <colgroup>
+            <col />
+            <col className="w-12" />
+            <col className="w-12" />
+            <col className="w-12" />
+            <col className="w-12" />
+            <col className="w-12" />
+            <col className="w-12" />
+            <col className="w-14" />
+            <col className="w-14" />
+          </colgroup>
           <thead>
             <tr className="text-left text-slate-500 border-b text-xs uppercase tracking-wide">
               <th className="py-1.5 px-2">Team</th>
@@ -158,7 +172,7 @@ function StandingsCard({ standings }: { standings: BracketStandings }) {
           <tbody>
             {standings.rows.map(r => (
               <tr key={r.teamId} className="border-b last:border-0">
-                <td className="py-1.5 px-2 font-medium">{r.teamName}</td>
+                <td className="py-1.5 px-2 font-medium truncate">{r.teamName}</td>
                 <td className="py-1.5 px-2 text-center">{r.gamesPlayed}</td>
                 <td className="py-1.5 px-2 text-center">{r.wins}</td>
                 <td className="py-1.5 px-2 text-center">{r.losses}</td>
