@@ -1785,6 +1785,7 @@ export interface HostedTournament {
   costPerTeam: number | null
   notes: string | null
   rulesOfPlay: string | null
+  scheduleEmailBody: string | null
   publicSlug: string | null
   matchDurationMinutes: number
   halfMinutes: number
@@ -1847,6 +1848,7 @@ export interface SaveHostedTournamentRequest {
   costPerTeam?: number | null
   notes?: string | null
   rulesOfPlay?: string | null
+  scheduleEmailBody?: string | null
   matchDurationMinutes: number
   halfMinutes: number
   halftimeMinutes: number

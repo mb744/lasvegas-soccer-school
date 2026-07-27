@@ -73,6 +73,7 @@ public class AdminHostedTournamentsController : ControllerBase
             CostPerTeam = req.CostPerTeam,
             Notes = string.IsNullOrWhiteSpace(req.Notes) ? null : req.Notes!.Trim(),
             RulesOfPlay = string.IsNullOrWhiteSpace(req.RulesOfPlay) ? null : req.RulesOfPlay,
+            ScheduleEmailBody = string.IsNullOrWhiteSpace(req.ScheduleEmailBody) ? null : req.ScheduleEmailBody,
             MatchDurationMinutes = req.MatchDurationMinutes,
             HalfMinutes = req.HalfMinutes,
             HalftimeMinutes = req.HalftimeMinutes,
@@ -104,6 +105,7 @@ public class AdminHostedTournamentsController : ControllerBase
         t.CostPerTeam = req.CostPerTeam;
         t.Notes = string.IsNullOrWhiteSpace(req.Notes) ? null : req.Notes!.Trim();
         t.RulesOfPlay = string.IsNullOrWhiteSpace(req.RulesOfPlay) ? null : req.RulesOfPlay;
+        t.ScheduleEmailBody = string.IsNullOrWhiteSpace(req.ScheduleEmailBody) ? null : req.ScheduleEmailBody;
         t.MatchDurationMinutes = req.MatchDurationMinutes;
         t.HalfMinutes = req.HalfMinutes;
         t.HalftimeMinutes = req.HalftimeMinutes;
@@ -687,9 +689,15 @@ public class AdminHostedTournamentsController : ControllerBase
             ? $"/tournament/{tournament.PublicSlug}"
             : $"{_app.PublicBaseUrl.TrimEnd('/')}/tournament/{tournament.PublicSlug}";
         var subject = string.IsNullOrWhiteSpace(req?.Subject) ? $"{tournament.Name} — Schedule" : req!.Subject!.Trim();
+        // Prefer the tournament's dedicated ScheduleEmailBody so admin can send a shorter /
+        // friendlier note than the full RulesOfPlay block on the public page. Falls back to
+        // RulesOfPlay for events created before the split so existing sends keep the prior copy.
+        var stored = !string.IsNullOrWhiteSpace(tournament.ScheduleEmailBody)
+            ? tournament.ScheduleEmailBody
+            : tournament.RulesOfPlay;
         var body = new System.Text.StringBuilder();
         if (!string.IsNullOrWhiteSpace(req?.Intro)) body.Append(req!.Intro).Append("\n\n");
-        if (!string.IsNullOrWhiteSpace(tournament.RulesOfPlay)) body.Append(tournament.RulesOfPlay).Append("\n\n");
+        if (!string.IsNullOrWhiteSpace(stored)) body.Append(stored).Append("\n\n");
         body.Append("Schedule + updates: ").Append(link).Append('\n');
 
         var text = body.ToString();
@@ -814,7 +822,7 @@ public class AdminHostedTournamentsController : ControllerBase
             t.Id, t.Name, t.Kind, t.StartDate, t.EndDate,
             t.VenueId, t.Venue?.Name, t.Venue?.Address,
             t.Location, t.CostPerTeam, t.Notes,
-            t.RulesOfPlay, t.PublicSlug, t.MatchDurationMinutes,
+            t.RulesOfPlay, t.ScheduleEmailBody, t.PublicSlug, t.MatchDurationMinutes,
             t.HalfMinutes, t.HalftimeMinutes, t.MinutesBetweenGames,
             t.CreatedAt, t.UpdatedAt,
             t.Teams

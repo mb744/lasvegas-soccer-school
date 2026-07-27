@@ -190,6 +190,7 @@ public record HostedTournamentDto(
     decimal? CostPerTeam,
     string? Notes,
     string? RulesOfPlay,
+    string? ScheduleEmailBody,
     string? PublicSlug,
     int MatchDurationMinutes,
     int HalfMinutes,
@@ -213,9 +214,14 @@ public record SaveHostedTournamentRequest
     [MaxLength(400)] public string? Location { get; init; }
     [Range(0, 1_000_000)] public decimal? CostPerTeam { get; init; }
     [MaxLength(2000)] public string? Notes { get; init; }
-    /// <summary>Free-form body used as the email content when the schedule is sent AND as the
-    /// header text on the public schedule page.</summary>
+    /// <summary>Free-form body shown above the schedule table on the PUBLIC schedule page —
+    /// used for field rules, parking notes, etc. that parents / coaches need on game day.</summary>
     public string? RulesOfPlay { get; init; }
+
+    /// <summary>Body text used as the schedule-email body. Kept separate from
+    /// <see cref="RulesOfPlay"/> so the email can be shorter / friendlier without duplicating
+    /// the entire public-page rules block. Empty falls back to RulesOfPlay at send time.</summary>
+    public string? ScheduleEmailBody { get; init; }
     [Range(10, 240)] public int MatchDurationMinutes { get; init; } = 60;
     /// <summary>Length of one half in minutes. Combined with HalftimeMinutes drives the match
     /// window used by the scheduler.</summary>

@@ -1268,6 +1268,7 @@ function SaveEventForm({ venues, initial, onSaved, onError, onCancel }: {
   const [costPerTeam, setCostPerTeam] = useState(initial?.costPerTeam != null ? String(initial.costPerTeam) : '')
   const [notes, setNotes] = useState(initial?.notes ?? '')
   const [rulesOfPlay, setRulesOfPlay] = useState(initial?.rulesOfPlay ?? '')
+  const [scheduleEmailBody, setScheduleEmailBody] = useState(initial?.scheduleEmailBody ?? '')
   const [matchDuration, setMatchDuration] = useState(String(initial?.matchDurationMinutes ?? 60))
   const [halfMinutes, setHalfMinutes] = useState(String(initial?.halfMinutes ?? 25))
   const [halftimeMinutes, setHalftimeMinutes] = useState(String(initial?.halftimeMinutes ?? 5))
@@ -1300,6 +1301,7 @@ function SaveEventForm({ venues, initial, onSaved, onError, onCancel }: {
         costPerTeam: cost,
         notes: notes.trim() || null,
         rulesOfPlay: rulesOfPlay.trim() || null,
+        scheduleEmailBody: scheduleEmailBody.trim() || null,
         matchDurationMinutes: dur,
         halfMinutes: half,
         halftimeMinutes: halftime,
@@ -1395,6 +1397,13 @@ function SaveEventForm({ venues, initial, onSaved, onError, onCancel }: {
             placeholder={t('admin.hostedRulesPh')}
             className="mt-1 w-full border border-slate-300 rounded-md px-2 py-1 text-sm" />
           <span className="text-[10px] text-slate-500 mt-0.5 block">{t('admin.hostedRulesHelp')}</span>
+        </label>
+        <label className="text-xs sm:col-span-2">
+          <span className="text-slate-700">{t('admin.hostedScheduleEmailBody')}</span>
+          <textarea value={scheduleEmailBody} onChange={e => setScheduleEmailBody(e.target.value)} rows={6}
+            placeholder={t('admin.hostedScheduleEmailBodyPh')}
+            className="mt-1 w-full border border-slate-300 rounded-md px-2 py-1 text-sm" />
+          <span className="text-[10px] text-slate-500 mt-0.5 block">{t('admin.hostedScheduleEmailBodyHelp')}</span>
         </label>
       </div>
       <div className="flex gap-2">

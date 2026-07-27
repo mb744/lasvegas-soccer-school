@@ -41,9 +41,16 @@ public class HostedTournament
     [MaxLength(2000)]
     public string? Notes { get; set; }
 
-    /// <summary>Rich body copy for the "here are the rules + schedule" email. Rendered above
-    /// the schedule table on the public schedule page too, so parents/coaches see the same text.</summary>
+    /// <summary>Rich body copy for the public schedule page — rendered above the schedule table
+    /// so parents / coaches see the field rules alongside the matches.</summary>
     public string? RulesOfPlay { get; set; }
+
+    /// <summary>Body text used in the schedule-email that goes out to coaches. Kept separate from
+    /// <see cref="RulesOfPlay"/> so admin can send a friendlier "here's the link + rules for
+    /// game day" note without duplicating the entire rules text on the public page. Falls back
+    /// to <see cref="RulesOfPlay"/> at send time when null so events created before the split
+    /// keep working.</summary>
+    public string? ScheduleEmailBody { get; set; }
 
     /// <summary>URL slug for the public schedule page (/tournament/{slug}). Generated on
     /// create; admin can regenerate to invalidate an old link.</summary>
