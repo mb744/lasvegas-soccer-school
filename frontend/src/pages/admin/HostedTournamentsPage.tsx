@@ -1229,39 +1229,73 @@ function InvitedTeamsPanel({ teams, events, onChanged, onError, onNotice }: {
             <th className="py-1 px-2">{t('admin.hostedInvitedPhone')}</th>
             <th className="py-1 px-2">{t('admin.hostedInvitedEmail')}</th>
             <th className="py-1 px-2">{t('admin.hostedInvitedAge')}</th>
+            <th className="py-1 px-2">{t('admin.hostedPaidCol')}</th>
             <th></th>
           </tr>
         </thead>
         <tbody>
-          {teams.map(row => (
-            <Fragment key={row.id}>
-              <tr className="border-b last:border-0">
-                <td className="py-1 px-2 font-medium">{row.name}</td>
-                <td className="py-1 px-2">{row.headCoachName ?? <span className="text-slate-400">—</span>}</td>
-                <td className="py-1 px-2 font-mono text-xs">{row.headCoachPhone ?? <span className="text-slate-400">—</span>}</td>
-                <td className="py-1 px-2 text-xs">{row.headCoachEmail ?? <span className="text-slate-400">—</span>}</td>
-                <td className="py-1 px-2 text-xs">{row.ageGroup ?? <span className="text-slate-400">—</span>}</td>
-                <td className="py-1 px-2 text-right text-xs space-x-2">
-                  <button onClick={() => { setBracketsForId(bracketsForId === row.id ? null : row.id); setEditingId(null); setShowAdd(false) }}
-                    className="text-emerald-700 hover:underline">
-                    {bracketsForId === row.id ? t('admin.cancel') : t('admin.hostedTeamBracketsToggle')}
-                  </button>
-                  <button onClick={() => { setEditingId(row.id); setShowAdd(false); setBracketsForId(null) }} className="text-emerald-700 hover:underline">Edit</button>
-                  <button onClick={() => remove(row)} className="text-rose-700 hover:underline">Delete</button>
-                </td>
-              </tr>
-              {bracketsForId === row.id && (
-                <tr><td colSpan={6} className="py-2 px-3 bg-slate-50/70">
-                  <TeamBracketAssignmentsPanel events={events} teamKind="invited" teamId={row.id}
-                    onChanged={onChanged}
-                    onError={onError}
-                    onNotice={onNotice} />
-                </td></tr>
-              )}
-            </Fragment>
-          ))}
+          {teams.map(row => {
+            // Paid is tracked per event-participation, not per invited-team, so summarize
+            // across every event this team is currently in: "2/3 paid" — green when all
+            // paid, amber when partial, slate when zero, dash when the team isn't on any
+            // event yet.
+            const participations = events
+              .flatMap(ev => ev.teams.filter(r => r.invitedTeamId === row.id))
+            const total = participations.length
+            const paid = participations.filter(r => r.paid).length
+            const allPaid = total > 0 && paid === total
+            const somePaid = paid > 0 && paid < total
+            const paidCls = total === 0
+              ? 'bg-slate-100 text-slate-400'
+              : allPaid
+                ? 'bg-emerald-100 text-emerald-800'
+                : somePaid
+                  ? 'bg-amber-100 text-amber-800'
+                  : 'bg-slate-100 text-slate-600'
+            return (
+              <Fragment key={row.id}>
+                <tr className="border-b last:border-0">
+                  <td className="py-1 px-2 font-medium">{row.name}</td>
+                  <td className="py-1 px-2">{row.headCoachName ?? <span className="text-slate-400">—</span>}</td>
+                  <td className="py-1 px-2 font-mono text-xs">{row.headCoachPhone ?? <span className="text-slate-400">—</span>}</td>
+                  <td className="py-1 px-2 text-xs">{row.headCoachEmail ?? <span className="text-slate-400">—</span>}</td>
+                  <td className="py-1 px-2 text-xs">{row.ageGroup ?? <span className="text-slate-400">—</span>}</td>
+                  <td className="py-1 px-2 text-xs">
+                    {total === 0
+                      ? <span className="text-slate-400">—</span>
+                      : (
+                        <button
+                          onClick={() => { setBracketsForId(bracketsForId === row.id ? null : row.id); setEditingId(null); setShowAdd(false) }}
+                          title={t('admin.hostedInvitedPaidTooltip')}
+                          className={`px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wide ${paidCls}`}>
+                          {allPaid
+                            ? t('admin.hostedPaidYes')
+                            : `${paid}/${total} ${t('admin.hostedPaidCol')}`}
+                        </button>
+                      )}
+                  </td>
+                  <td className="py-1 px-2 text-right text-xs space-x-2">
+                    <button onClick={() => { setBracketsForId(bracketsForId === row.id ? null : row.id); setEditingId(null); setShowAdd(false) }}
+                      className="text-emerald-700 hover:underline">
+                      {bracketsForId === row.id ? t('admin.cancel') : t('admin.hostedTeamBracketsToggle')}
+                    </button>
+                    <button onClick={() => { setEditingId(row.id); setShowAdd(false); setBracketsForId(null) }} className="text-emerald-700 hover:underline">Edit</button>
+                    <button onClick={() => remove(row)} className="text-rose-700 hover:underline">Delete</button>
+                  </td>
+                </tr>
+                {bracketsForId === row.id && (
+                  <tr><td colSpan={7} className="py-2 px-3 bg-slate-50/70">
+                    <TeamBracketAssignmentsPanel events={events} teamKind="invited" teamId={row.id}
+                      onChanged={onChanged}
+                      onError={onError}
+                      onNotice={onNotice} />
+                  </td></tr>
+                )}
+              </Fragment>
+            )
+          })}
           {teams.length === 0 && (
-            <tr><td colSpan={6} className="py-4 text-center text-xs text-slate-400">{t('admin.hostedInvitedEmpty')}</td></tr>
+            <tr><td colSpan={7} className="py-4 text-center text-xs text-slate-400">{t('admin.hostedInvitedEmpty')}</td></tr>
           )}
         </tbody>
       </table>

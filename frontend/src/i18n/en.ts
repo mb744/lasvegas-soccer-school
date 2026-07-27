@@ -292,6 +292,7 @@ const en = {
     teamBracketsNoBrackets: 'This tier has no brackets yet — add one on the event page first.',
     teamBracketClear: 'Clear bracket',
     hostedTeamBracketsToggle: 'Brackets',
+    hostedInvitedPaidTooltip: 'Paid status per event — click to expand and toggle per event.',
     hostedBracketDeleteConfirm: 'Delete bracket "{{name}}"? Teams stay on the event but lose the bracket assignment.',
     hostedFieldsHeader: 'Fields for this event',
     hostedFieldAddNew: 'Add field',

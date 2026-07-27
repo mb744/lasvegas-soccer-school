@@ -294,6 +294,7 @@ const es: Translations = {
     teamBracketsNoBrackets: 'Este tier aún no tiene brackets — agréguelos primero en la página del evento.',
     teamBracketClear: 'Quitar bracket',
     hostedTeamBracketsToggle: 'Brackets',
+    hostedInvitedPaidTooltip: 'Estado de pago por evento — clic para expandir y cambiar.',
     hostedBracketDeleteConfirm: '¿Eliminar el bracket "{{name}}"? Los equipos permanecen en el evento sin bracket.',
     hostedFieldsHeader: 'Canchas del evento',
     hostedFieldAddNew: 'Agregar cancha',
