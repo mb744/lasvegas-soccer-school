@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Layout } from '../../components/Layout'
 import { Api } from '../../api/client'
+import { TeamBracketAssignmentsPanel } from '../../components/TeamBracketAssignmentsPanel'
 import type {
   HostedTournament,
   InvitedTeam,
@@ -113,7 +114,7 @@ export function AdminHostedTournamentsPage() {
           </section>
         </div>
 
-        <InvitedTeamsPanel teams={invited}
+        <InvitedTeamsPanel teams={invited} events={events}
           onChanged={refresh}
           onError={(e) => { setError(e); setNotice(null) }}
           onNotice={(n) => { setNotice(n); setError(null) }} />
@@ -1183,8 +1184,9 @@ function SaveEventForm({ venues, initial, onSaved, onError, onCancel }: {
 // Invited teams catalog
 // ------------------------------------------------------------
 
-function InvitedTeamsPanel({ teams, onChanged, onError, onNotice }: {
+function InvitedTeamsPanel({ teams, events, onChanged, onError, onNotice }: {
   teams: InvitedTeam[]
+  events: HostedTournament[]
   onChanged: () => Promise<void> | void
   onError: (e: string) => void
   onNotice: (n: string) => void
@@ -1192,6 +1194,7 @@ function InvitedTeamsPanel({ teams, onChanged, onError, onNotice }: {
   const { t } = useTranslation()
   const [showAdd, setShowAdd] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
+  const [bracketsForId, setBracketsForId] = useState<number | null>(null)
   const editing = editingId ? teams.find(t => t.id === editingId) ?? null : null
 
   const remove = async (t: InvitedTeam) => {
@@ -1230,18 +1233,32 @@ function InvitedTeamsPanel({ teams, onChanged, onError, onNotice }: {
           </tr>
         </thead>
         <tbody>
-          {teams.map(t => (
-            <tr key={t.id} className="border-b last:border-0">
-              <td className="py-1 px-2 font-medium">{t.name}</td>
-              <td className="py-1 px-2">{t.headCoachName ?? <span className="text-slate-400">—</span>}</td>
-              <td className="py-1 px-2 font-mono text-xs">{t.headCoachPhone ?? <span className="text-slate-400">—</span>}</td>
-              <td className="py-1 px-2 text-xs">{t.headCoachEmail ?? <span className="text-slate-400">—</span>}</td>
-              <td className="py-1 px-2 text-xs">{t.ageGroup ?? <span className="text-slate-400">—</span>}</td>
-              <td className="py-1 px-2 text-right text-xs space-x-2">
-                <button onClick={() => { setEditingId(t.id); setShowAdd(false) }} className="text-emerald-700 hover:underline">Edit</button>
-                <button onClick={() => remove(t)} className="text-rose-700 hover:underline">Delete</button>
-              </td>
-            </tr>
+          {teams.map(row => (
+            <Fragment key={row.id}>
+              <tr className="border-b last:border-0">
+                <td className="py-1 px-2 font-medium">{row.name}</td>
+                <td className="py-1 px-2">{row.headCoachName ?? <span className="text-slate-400">—</span>}</td>
+                <td className="py-1 px-2 font-mono text-xs">{row.headCoachPhone ?? <span className="text-slate-400">—</span>}</td>
+                <td className="py-1 px-2 text-xs">{row.headCoachEmail ?? <span className="text-slate-400">—</span>}</td>
+                <td className="py-1 px-2 text-xs">{row.ageGroup ?? <span className="text-slate-400">—</span>}</td>
+                <td className="py-1 px-2 text-right text-xs space-x-2">
+                  <button onClick={() => { setBracketsForId(bracketsForId === row.id ? null : row.id); setEditingId(null); setShowAdd(false) }}
+                    className="text-emerald-700 hover:underline">
+                    {bracketsForId === row.id ? t('admin.cancel') : t('admin.hostedTeamBracketsToggle')}
+                  </button>
+                  <button onClick={() => { setEditingId(row.id); setShowAdd(false); setBracketsForId(null) }} className="text-emerald-700 hover:underline">Edit</button>
+                  <button onClick={() => remove(row)} className="text-rose-700 hover:underline">Delete</button>
+                </td>
+              </tr>
+              {bracketsForId === row.id && (
+                <tr><td colSpan={6} className="py-2 px-3 bg-slate-50/70">
+                  <TeamBracketAssignmentsPanel events={events} teamKind="invited" teamId={row.id}
+                    onChanged={onChanged}
+                    onError={onError}
+                    onNotice={onNotice} />
+                </td></tr>
+              )}
+            </Fragment>
           ))}
           {teams.length === 0 && (
             <tr><td colSpan={6} className="py-4 text-center text-xs text-slate-400">{t('admin.hostedInvitedEmpty')}</td></tr>

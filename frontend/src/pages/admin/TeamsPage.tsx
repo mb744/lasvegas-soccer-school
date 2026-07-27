@@ -8,8 +8,10 @@ import type {
   RosterTeamSummary,
   RosterTeamDetail,
   AvailablePlayer,
+  HostedTournament,
 } from '../../api/types'
 import { TeamCoachEditor } from '../../components/TeamCoachEditor'
+import { TeamBracketAssignmentsPanel } from '../../components/TeamBracketAssignmentsPanel'
 
 function errMsg(e: any): string {
   return e?.response?.data?.title || e?.response?.data || e?.message || 'Error'
@@ -33,6 +35,13 @@ export function AdminTeamsPage() {
   const [bracketFilter, setBracketFilter] = useState('')
   const [picked, setPicked] = useState<Set<number>>(new Set())
 
+  // Hosted tournaments — loaded on mount so the bracket-assignment panel under the selected
+  // team can list every event this team is already in AND offer a picker for new brackets.
+  const [hostedEvents, setHostedEvents] = useState<HostedTournament[]>([])
+  const refreshHostedEvents = async () => {
+    try { setHostedEvents(await Api.listHostedTournaments()) } catch { /* non-fatal */ }
+  }
+
   const vCreate = useRequiredValidation(['newName'])
   const vRename = useRequiredValidation(['renameName'])
 
@@ -41,7 +50,7 @@ export function AdminTeamsPage() {
     catch (e: any) { setError(errMsg(e)) }
   }
 
-  useEffect(() => { refreshTeams() }, [])
+  useEffect(() => { refreshTeams(); refreshHostedEvents() }, [])
 
   const loadTeam = async (id: number) => {
     setError(null); setNotice(null)
@@ -235,6 +244,17 @@ export function AdminTeamsPage() {
                   <CoachesSection team={detail}
                     onError={setError} onNotice={setNotice}
                     onChanged={updated => setDetail(updated)} />
+                </CollapsibleSection>
+
+                {/* Hosted-tournament bracket assignments (reverse flow — from team → event/bracket) */}
+                <CollapsibleSection
+                  title={t('admin.teamBracketsHeader')}
+                  subtitle={t('admin.teamBracketsSummary', {
+                    count: hostedEvents.filter(ev => ev.teams.some(r => r.lvssTeamId === detail.id)).length,
+                  })}>
+                  <TeamBracketAssignmentsPanel events={hostedEvents} teamKind="lvss" teamId={detail.id}
+                    onChanged={refreshHostedEvents}
+                    onError={setError} onNotice={setNotice} />
                 </CollapsibleSection>
 
                 {/* Roster */}
