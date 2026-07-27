@@ -138,23 +138,15 @@ function EventDetailPanel({ event, venues, lvssTeams, invitedTeams, onChanged, o
 }) {
   const { t } = useTranslation()
   const [editing, setEditing] = useState(false)
-  const [addingKind, setAddingKind] = useState<'lvss' | 'invited' | null>(null)
-  const [pickTeamId, setPickTeamId] = useState<number | ''>('')
+  const [showAddTeams, setShowAddTeams] = useState(false)
+  const [pickedLvss, setPickedLvss] = useState<Set<number>>(() => new Set())
+  const [pickedInvited, setPickedInvited] = useState<Set<number>>(() => new Set())
+  const [addingBusy, setAddingBusy] = useState(false)
 
   const remove = async () => {
     if (!confirm(t('admin.hostedDeleteConfirm', { name: event.name }))) return
     try { await Api.deleteHostedTournament(event.id); await onDeleted() }
     catch (e: any) { onError(errMsg(e)) }
-  }
-  const addTeam = async () => {
-    if (pickTeamId === '') return
-    try {
-      if (addingKind === 'lvss') await Api.addHostedTournamentTeam(event.id, { lvssTeamId: Number(pickTeamId) })
-      else await Api.addHostedTournamentTeam(event.id, { invitedTeamId: Number(pickTeamId) })
-      setAddingKind(null); setPickTeamId('')
-      await onChanged()
-      onNotice(t('admin.hostedTeamAddedNotice'))
-    } catch (e: any) { onError(errMsg(e)) }
   }
   const removeTeam = async (rowId: number) => {
     if (!confirm(t('admin.hostedRemoveTeamConfirm'))) return
@@ -164,6 +156,49 @@ function EventDetailPanel({ event, venues, lvssTeams, invitedTeams, onChanged, o
 
   const availableLvss = lvssTeams.filter(t => !event.teams.some(r => r.lvssTeamId === t.id))
   const availableInvited = invitedTeams.filter(t => !event.teams.some(r => r.invitedTeamId === t.id))
+  const totalPicked = pickedLvss.size + pickedInvited.size
+
+  const toggleLvss = (id: number) => {
+    setPickedLvss(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+  const toggleInvited = (id: number) => {
+    setPickedInvited(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+  const resetPicked = () => { setPickedLvss(new Set()); setPickedInvited(new Set()) }
+  const cancelAdd = () => { setShowAddTeams(false); resetPicked() }
+  const submitAdd = async () => {
+    if (totalPicked === 0) return
+    setAddingBusy(true)
+    let ok = 0; let failed: string[] = []
+    try {
+      // Sequential to keep the roster refresh coherent AND to surface conflict errors row-by-row
+      // rather than 5 identical toasts if the whole batch collides on the same duplicate rule.
+      for (const id of pickedLvss) {
+        try { await Api.addHostedTournamentTeam(event.id, { lvssTeamId: id }); ok++ }
+        catch (e: any) { failed.push(errMsg(e)) }
+      }
+      for (const id of pickedInvited) {
+        try { await Api.addHostedTournamentTeam(event.id, { invitedTeamId: id }); ok++ }
+        catch (e: any) { failed.push(errMsg(e)) }
+      }
+      await onChanged()
+      if (failed.length === 0) {
+        onNotice(t('admin.hostedTeamsAddedNotice', { count: ok }))
+        cancelAdd()
+      } else {
+        onError(t('admin.hostedTeamsAddedPartial', { ok, fail: failed.length, message: failed[0] }))
+        resetPicked()
+      }
+    } finally { setAddingBusy(false) }
+  }
 
   if (editing) {
     return <SaveEventForm venues={venues} initial={event}
@@ -197,28 +232,71 @@ function EventDetailPanel({ event, venues, lvssTeams, invitedTeams, onChanged, o
       <div className="border-t border-slate-100 pt-3">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-medium text-slate-700">{t('admin.hostedTeamsHeader')}</h3>
-          <div className="flex gap-2">
-            <button onClick={() => { setAddingKind('lvss'); setPickTeamId('') }}
-              className="text-xs text-emerald-700 hover:underline">+ {t('admin.hostedAddLvssTeam')}</button>
-            <button onClick={() => { setAddingKind('invited'); setPickTeamId('') }}
-              className="text-xs text-emerald-700 hover:underline">+ {t('admin.hostedAddInvitedTeam')}</button>
-          </div>
+          <button onClick={() => (showAddTeams ? cancelAdd() : setShowAddTeams(true))}
+            className="text-xs text-emerald-700 hover:underline">
+            {showAddTeams ? t('admin.cancel') : '+ ' + t('admin.hostedAddTeams')}
+          </button>
         </div>
 
-        {addingKind && (
-          <div className="mt-2 flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded p-2">
-            <select value={pickTeamId} onChange={e => setPickTeamId(e.target.value === '' ? '' : Number(e.target.value))}
-              className="border border-slate-300 rounded-md px-2 py-1 text-sm flex-1">
-              <option value="">— {addingKind === 'lvss' ? t('admin.hostedPickLvss') : t('admin.hostedPickInvited')} —</option>
-              {addingKind === 'lvss'
-                ? availableLvss.map(t => <option key={t.id} value={t.id}>{t.name}</option>)
-                : availableInvited.map(t => <option key={t.id} value={t.id}>{t.name}{t.ageGroup ? ` (${t.ageGroup})` : ''}</option>)}
-            </select>
-            <button onClick={addTeam} disabled={pickTeamId === ''}
-              className="bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded-md hover:bg-emerald-800 disabled:opacity-60">
-              {t('admin.hostedAddTeamSubmit')}
-            </button>
-            <button onClick={() => setAddingKind(null)} className="text-xs text-slate-600 hover:underline">{t('admin.cancel')}</button>
+        {showAddTeams && (
+          <div className="mt-2 bg-emerald-50 border border-emerald-200 rounded p-2 space-y-2">
+            <p className="text-[11px] text-slate-600">{t('admin.hostedAddTeamsBlurb')}</p>
+            <div className="grid sm:grid-cols-2 gap-2">
+              <div>
+                <div className="text-[10px] uppercase tracking-wide text-emerald-800 font-medium mb-1">
+                  {t('admin.hostedSourceLvss')} <span className="text-slate-500">({availableLvss.length})</span>
+                </div>
+                {availableLvss.length === 0 ? (
+                  <p className="text-[11px] text-slate-400">{t('admin.hostedAddTeamsNoLvss')}</p>
+                ) : (
+                  <ul className="max-h-48 overflow-y-auto bg-white border border-slate-200 rounded p-1 space-y-0.5">
+                    {availableLvss.map(tt => (
+                      <li key={tt.id}>
+                        <label className="flex items-center gap-2 text-xs px-1 py-0.5 rounded hover:bg-emerald-50 cursor-pointer">
+                          <input type="checkbox" checked={pickedLvss.has(tt.id)} onChange={() => toggleLvss(tt.id)} />
+                          <span className="flex-1 truncate">{tt.name}</span>
+                        </label>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div>
+                <div className="text-[10px] uppercase tracking-wide text-sky-800 font-medium mb-1">
+                  {t('admin.hostedSourceInvited')} <span className="text-slate-500">({availableInvited.length})</span>
+                </div>
+                {availableInvited.length === 0 ? (
+                  <p className="text-[11px] text-slate-400">{t('admin.hostedAddTeamsNoInvited')}</p>
+                ) : (
+                  <ul className="max-h-48 overflow-y-auto bg-white border border-slate-200 rounded p-1 space-y-0.5">
+                    {availableInvited.map(tt => (
+                      <li key={tt.id}>
+                        <label className="flex items-center gap-2 text-xs px-1 py-0.5 rounded hover:bg-emerald-50 cursor-pointer">
+                          <input type="checkbox" checked={pickedInvited.has(tt.id)} onChange={() => toggleInvited(tt.id)} />
+                          <span className="flex-1 truncate">
+                            {tt.name}{tt.ageGroup ? <span className="text-slate-500 ml-1">({tt.ageGroup})</span> : null}
+                          </span>
+                        </label>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={submitAdd} disabled={addingBusy || totalPicked === 0}
+                className="bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded-md hover:bg-emerald-800 disabled:opacity-60">
+                {addingBusy
+                  ? t('admin.sending')
+                  : t('admin.hostedAddTeamsSubmit', { count: totalPicked })}
+              </button>
+              {totalPicked > 0 && (
+                <button onClick={resetPicked} disabled={addingBusy}
+                  className="text-xs text-slate-600 hover:underline">{t('admin.hostedAddTeamsClear')}</button>
+              )}
+              <button onClick={cancelAdd} disabled={addingBusy}
+                className="text-xs text-slate-600 hover:underline ml-auto">{t('admin.cancel')}</button>
+            </div>
           </div>
         )}
 
@@ -552,22 +630,34 @@ function BracketRow({ event, bracket, members, onChanged, onError, onNotice, onD
   onDelete: () => void
 }) {
   const { t } = useTranslation()
-  const [pickTeamId, setPickTeamId] = useState<number | ''>('')
+  const [picked, setPicked] = useState<Set<number>>(() => new Set())
+  const [showPicker, setShowPicker] = useState(false)
   const [busy, setBusy] = useState(false)
 
   const memberIds = new Set(members.map(m => m.id))
   const eligible = event.teams.filter(tt => !memberIds.has(tt.id))
 
-  const addTeam = async () => {
-    if (pickTeamId === '') return
+  const togglePick = (id: number) => {
+    setPicked(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+  const resetPicker = () => { setShowPicker(false); setPicked(new Set()) }
+  const addPicked = async () => {
+    if (picked.size === 0) return
     setBusy(true)
+    let failed = 0
     try {
-      await Api.assignHostedTournamentTeamBracket(event.id, Number(pickTeamId), { bracketId: bracket.id })
-      setPickTeamId('')
+      for (const id of picked) {
+        try { await Api.assignHostedTournamentTeamBracket(event.id, id, { bracketId: bracket.id }) }
+        catch { failed++ }
+      }
       await onChanged()
-      onNotice(t('admin.hostedBracketTeamAddedNotice'))
-    } catch (e: any) { onError(errMsg(e)) }
-    finally { setBusy(false) }
+      onNotice(t('admin.hostedBracketTeamsAddedNotice', { count: picked.size - failed }))
+      resetPicker()
+    } finally { setBusy(false) }
   }
   const removeTeam = async (teamRowId: number) => {
     setBusy(true)
@@ -616,20 +706,42 @@ function BracketRow({ event, bracket, members, onChanged, onError, onNotice, onD
         </ul>
       )}
       {eligible.length > 0 && (
-        <div className="mt-1 pt-1 border-t border-slate-100 flex items-center gap-2">
-          <select value={pickTeamId} onChange={e => setPickTeamId(e.target.value === '' ? '' : Number(e.target.value))}
-            className="border border-slate-300 rounded px-1 py-0.5 text-xs flex-1">
-            <option value="">+ {t('admin.hostedBracketAddTeam')}</option>
-            {eligible.map(tt => {
-              const label = tt.lvssTeamName ?? tt.invitedTeamName ?? '—'
-              const hint = tt.bracketName ? ` (${t('admin.hostedBracketMoveFrom', { from: tt.bracketName })})` : ''
-              return <option key={tt.id} value={tt.id}>{label}{hint}</option>
-            })}
-          </select>
-          <button onClick={addTeam} disabled={busy || pickTeamId === ''}
-            className="text-xs text-emerald-700 hover:underline disabled:text-slate-400 disabled:no-underline">
-            {t('admin.hostedAddTeamSubmit')}
-          </button>
+        <div className="mt-1 pt-1 border-t border-slate-100">
+          {showPicker ? (
+            <div className="space-y-1">
+              <ul className="max-h-40 overflow-y-auto bg-slate-50 border border-slate-200 rounded p-1 space-y-0.5">
+                {eligible.map(tt => {
+                  const label = tt.lvssTeamName ?? tt.invitedTeamName ?? '—'
+                  const source = tt.lvssTeamId != null ? t('admin.hostedSourceLvss') : t('admin.hostedSourceInvited')
+                  return (
+                    <li key={tt.id}>
+                      <label className="flex items-center gap-2 text-xs px-1 py-0.5 rounded hover:bg-white cursor-pointer">
+                        <input type="checkbox" checked={picked.has(tt.id)} onChange={() => togglePick(tt.id)} />
+                        <span className="flex-1 truncate">
+                          {label}
+                          <span className="text-[10px] uppercase tracking-wide text-slate-500 ml-1">{source}</span>
+                          {tt.bracketName && <span className="text-[10px] text-slate-500 ml-1">({t('admin.hostedBracketMoveFrom', { from: tt.bracketName })})</span>}
+                        </span>
+                      </label>
+                    </li>
+                  )
+                })}
+              </ul>
+              <div className="flex items-center gap-2">
+                <button onClick={addPicked} disabled={busy || picked.size === 0}
+                  className="text-xs bg-emerald-700 text-white font-semibold px-2 py-1 rounded-md hover:bg-emerald-800 disabled:opacity-60">
+                  {t('admin.hostedBracketAddPicked', { count: picked.size })}
+                </button>
+                <button onClick={resetPicker} disabled={busy}
+                  className="text-xs text-slate-600 hover:underline ml-auto">{t('admin.cancel')}</button>
+              </div>
+            </div>
+          ) : (
+            <button onClick={() => setShowPicker(true)}
+              className="text-xs text-emerald-700 hover:underline">
+              + {t('admin.hostedBracketAddTeam')}
+            </button>
+          )}
         </div>
       )}
     </li>
