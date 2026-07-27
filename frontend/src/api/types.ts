@@ -1708,7 +1708,29 @@ export interface HostedTournamentMatch {
   dayDate: string | null
   startTime: string | null
   durationMinutes: number
+  teamAScore: number | null
+  teamBScore: number | null
   notes: string | null
+}
+
+export interface BracketStandingRow {
+  teamId: number
+  teamName: string
+  gamesPlayed: number
+  wins: number
+  draws: number
+  losses: number
+  goalsFor: number
+  goalsAgainst: number
+  goalDifferential: number
+  points: number
+}
+
+export interface BracketStandings {
+  bracketId: number | null
+  bracketName: string
+  tierName: string | null
+  rows: BracketStandingRow[]
 }
 
 export interface SaveHostedTournamentBracketRequest {
@@ -1773,6 +1795,7 @@ export interface PublicScheduleDto {
   days: HostedTournamentDay[]
   fields: HostedTournamentField[]
   matches: HostedTournamentMatch[]
+  standings: BracketStandings[]
 }
 
 export interface HostedTournamentDay {
@@ -1878,6 +1901,9 @@ export interface SaveHostedTournamentMatchRequest {
   /** "HH:mm:ss" (backend TimeOnly). Null unschedules. */
   startTime?: string | null
   durationMinutes?: number | null
+  /** Both must be provided for the match to count toward standings; both null = unplayed. */
+  teamAScore?: number | null
+  teamBScore?: number | null
   notes?: string | null
 }
 

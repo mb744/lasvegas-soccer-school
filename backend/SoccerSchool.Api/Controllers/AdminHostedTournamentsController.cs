@@ -641,6 +641,8 @@ public class AdminHostedTournamentsController : ControllerBase
         match.DayId = req.DayId;
         match.StartTime = req.StartTime;
         if (req.DurationMinutes is int dur) match.DurationMinutes = dur;
+        match.TeamAScore = req.TeamAScore;
+        match.TeamBScore = req.TeamBScore;
         match.Notes = TrimOrNull(req.Notes);
         await _db.SaveChangesAsync(ct);
         return Ok(await LoadAndMap(id, ct));
@@ -904,6 +906,7 @@ public class AdminHostedTournamentsController : ControllerBase
                     m.FieldId, m.Field?.Name,
                     m.DayId, m.Day?.Date,
                     m.StartTime, m.DurationMinutes,
+                    m.TeamAScore, m.TeamBScore,
                     m.Notes))
                 .ToList());
 

@@ -95,6 +95,8 @@ public record HostedTournamentMatchDto(
     DateOnly? DayDate,
     TimeOnly? StartTime,
     int DurationMinutes,
+    int? TeamAScore,
+    int? TeamBScore,
     string? Notes);
 
 public record SaveHostedTournamentBracketRequest
@@ -257,11 +259,38 @@ public record SaveHostedTournamentMatchRequest
     public int? DayId { get; init; }
     public TimeOnly? StartTime { get; init; }
     [Range(10, 240)] public int? DurationMinutes { get; init; }
+    /// <summary>Final score for team A. Both scores must be provided (or both cleared) for
+    /// the match to count toward standings.</summary>
+    [Range(0, 99)] public int? TeamAScore { get; init; }
+    [Range(0, 99)] public int? TeamBScore { get; init; }
     [MaxLength(500)] public string? Notes { get; init; }
 }
 
+/// <summary>One team's row in a bracket standings table. Points scheme = 3 win / 1 draw /
+/// 0 loss — computed server-side from played matches (both scores set).</summary>
+public record BracketStandingRowDto(
+    int TeamId,
+    string TeamName,
+    int GamesPlayed,
+    int Wins,
+    int Draws,
+    int Losses,
+    int GoalsFor,
+    int GoalsAgainst,
+    int GoalDifferential,
+    int Points);
+
+/// <summary>Standings block for one bracket (or the "unbracketed" bucket) on the public
+/// schedule page. Sorted by Points desc → GD desc → GF desc.</summary>
+public record BracketStandingsDto(
+    int? BracketId,
+    string BracketName,
+    string? TierName,
+    IReadOnlyList<BracketStandingRowDto> Rows);
+
 /// <summary>Public-facing schedule payload — safe to return without auth. Includes the
-/// event's headline info, rules body, day windows, fields, and every scheduled match.</summary>
+/// event's headline info, rules body, day windows, fields, every scheduled match, and the
+/// derived standings per bracket so the public page can render tables without extra logic.</summary>
 public record PublicScheduleDto(
     string Name,
     TournamentKind Kind,
@@ -273,7 +302,8 @@ public record PublicScheduleDto(
     string? RulesOfPlay,
     IReadOnlyList<HostedTournamentDayDto> Days,
     IReadOnlyList<HostedTournamentFieldDto> Fields,
-    IReadOnlyList<HostedTournamentMatchDto> Matches);
+    IReadOnlyList<HostedTournamentMatchDto> Matches,
+    IReadOnlyList<BracketStandingsDto> Standings);
 
 public record AddHostedTournamentTeamRequest
 {

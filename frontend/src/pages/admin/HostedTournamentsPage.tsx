@@ -1084,23 +1084,37 @@ function MatchRow({ event, match, onChanged, onError, onNotice }: {
   const [teamAId, setTeamAId] = useState<number | ''>(match.teamAId ?? '')
   const [teamBId, setTeamBId] = useState<number | ''>(match.teamBId ?? '')
   const [startTime, setStartTime] = useState<string>(match.startTime?.slice(0, 5) ?? '')
+  const [scoreA, setScoreA] = useState<string>(match.teamAScore != null ? String(match.teamAScore) : '')
+  const [scoreB, setScoreB] = useState<string>(match.teamBScore != null ? String(match.teamBScore) : '')
   const [notes, setNotes] = useState(match.notes ?? '')
   const [busy, setBusy] = useState(false)
 
   const currentTierId = teamAId !== '' ? event.teams.find(x => x.id === teamAId)?.tierId ?? match.tierId
     : match.tierId
+  const currentScoreA = match.teamAScore != null ? String(match.teamAScore) : ''
+  const currentScoreB = match.teamBScore != null ? String(match.teamBScore) : ''
   const dirty =
     (match.dayId ?? '') !== dayId ||
     (match.fieldId ?? '') !== fieldId ||
     (match.teamAId ?? '') !== teamAId ||
     (match.teamBId ?? '') !== teamBId ||
     (match.startTime?.slice(0, 5) ?? '') !== startTime ||
+    scoreA !== currentScoreA ||
+    scoreB !== currentScoreB ||
     (match.notes ?? '') !== notes
 
   const save = async () => {
     if (teamAId !== '' && teamBId !== '' && teamAId === teamBId) {
       onError(t('admin.hostedMatchSameTeam')); return
     }
+    // Scores must be either both empty (unplayed) or both non-negative numbers (played).
+    // Leaving one side blank is treated as data-entry-in-progress and blocked so standings
+    // don't ingest half-set scores.
+    const parsedA = scoreA.trim() === '' ? null : Number(scoreA)
+    const parsedB = scoreB.trim() === '' ? null : Number(scoreB)
+    if ((parsedA == null) !== (parsedB == null)) { onError(t('admin.hostedMatchScorePair')); return }
+    if (parsedA != null && (!Number.isFinite(parsedA) || parsedA < 0 || parsedA > 99)) { onError(t('admin.hostedMatchScoreRange')); return }
+    if (parsedB != null && (!Number.isFinite(parsedB) || parsedB < 0 || parsedB > 99)) { onError(t('admin.hostedMatchScoreRange')); return }
     setBusy(true)
     try {
       await Api.updateHostedTournamentMatch(event.id, match.id, {
@@ -1110,6 +1124,8 @@ function MatchRow({ event, match, onChanged, onError, onNotice }: {
         fieldId: fieldId === '' ? null : fieldId,
         dayId: dayId === '' ? null : dayId,
         startTime: startTime ? `${startTime}:00` : null,
+        teamAScore: parsedA,
+        teamBScore: parsedB,
         notes: notes.trim() || null,
       })
       await onChanged()
@@ -1155,7 +1171,15 @@ function MatchRow({ event, match, onChanged, onError, onNotice }: {
             <option value="">—</option>
             {event.teams.map(tt => <option key={tt.id} value={tt.id}>{teamLabel(tt)}</option>)}
           </select>
+          <input type="number" min={0} max={99} value={scoreA} onChange={e => setScoreA(e.target.value)}
+            placeholder="–"
+            title={t('admin.hostedMatchScoreA')}
+            className="border border-slate-300 rounded px-1 py-0.5 text-xs font-mono w-[3rem] text-center" />
           <span className="text-slate-400">vs</span>
+          <input type="number" min={0} max={99} value={scoreB} onChange={e => setScoreB(e.target.value)}
+            placeholder="–"
+            title={t('admin.hostedMatchScoreB')}
+            className="border border-slate-300 rounded px-1 py-0.5 text-xs font-mono w-[3rem] text-center" />
           <select value={teamBId} onChange={e => setTeamBId(e.target.value === '' ? '' : Number(e.target.value))}
             className="border border-slate-300 rounded px-1 py-0.5 text-xs max-w-[9rem]">
             <option value="">—</option>

@@ -36,6 +36,14 @@ public class HostedTournamentMatch
     /// <summary>Actual kickoff time inside the day. Null when unscheduled.</summary>
     public TimeOnly? StartTime { get; set; }
 
+    /// <summary>Team A's final score. Null when the match hasn't been played yet — either both
+    /// scores are set (the match counts toward standings) or both are null (still pending). The
+    /// admin flips these on the Schedule page as results come in; standings recompute on load.</summary>
+    public int? TeamAScore { get; set; }
+
+    /// <summary>Team B's final score. Same semantics as <see cref="TeamAScore"/>.</summary>
+    public int? TeamBScore { get; set; }
+
     /// <summary>Length of the match window in minutes; drives the next-slot cursor when
     /// scheduling. Defaults to the event's <see cref="HostedTournament.MatchDurationMinutes"/>.</summary>
     public int DurationMinutes { get; set; } = 60;
