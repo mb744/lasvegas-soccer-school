@@ -192,6 +192,9 @@ public record HostedTournamentDto(
     string? RulesOfPlay,
     string? PublicSlug,
     int MatchDurationMinutes,
+    int HalfMinutes,
+    int HalftimeMinutes,
+    int MinutesBetweenGames,
     DateTime CreatedAt,
     DateTime UpdatedAt,
     IReadOnlyList<HostedTournamentTeamDto> Teams,
@@ -214,6 +217,28 @@ public record SaveHostedTournamentRequest
     /// header text on the public schedule page.</summary>
     public string? RulesOfPlay { get; init; }
     [Range(10, 240)] public int MatchDurationMinutes { get; init; } = 60;
+    /// <summary>Length of one half in minutes. Combined with HalftimeMinutes drives the match
+    /// window used by the scheduler.</summary>
+    [Range(5, 90)] public int HalfMinutes { get; init; } = 25;
+    /// <summary>Break between halves.</summary>
+    [Range(0, 60)] public int HalftimeMinutes { get; init; } = 5;
+    /// <summary>Gap the scheduler leaves between back-to-back matches on the same field.</summary>
+    [Range(0, 60)] public int MinutesBetweenGames { get; init; } = 5;
+}
+
+/// <summary>Admin edit of a single match — re-slot day / field / start time and swap the
+/// participating teams. Null fields on incoming request are treated as "unset" (unschedule
+/// the match) so the admin can drag a match back into the unscheduled pool.</summary>
+public record SaveHostedTournamentMatchRequest
+{
+    public int? TierId { get; init; }
+    public int? TeamAId { get; init; }
+    public int? TeamBId { get; init; }
+    public int? FieldId { get; init; }
+    public int? DayId { get; init; }
+    public TimeOnly? StartTime { get; init; }
+    [Range(10, 240)] public int? DurationMinutes { get; init; }
+    [MaxLength(500)] public string? Notes { get; init; }
 }
 
 /// <summary>Public-facing schedule payload — safe to return without auth. Includes the

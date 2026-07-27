@@ -129,6 +129,7 @@ import type {
   UpdateTierFlagsRequest,
   GenerateScheduleRequest,
   SendScheduleEmailRequest,
+  SaveHostedTournamentMatchRequest,
   SendScheduleEmailResult,
   PublicScheduleDto,
   InvitedTeam,
@@ -1164,6 +1165,14 @@ export const Api = {
   },
   async generateHostedTournamentSchedule(id: number, payload?: GenerateScheduleRequest) {
     const r = await api.post<HostedTournament>(`/admin/hosted-tournaments/${id}/generate-schedule`, payload ?? {})
+    return r.data
+  },
+  async updateHostedTournamentMatch(id: number, matchId: number, payload: SaveHostedTournamentMatchRequest) {
+    const r = await api.put<HostedTournament>(`/admin/hosted-tournaments/${id}/matches/${matchId}`, payload)
+    return r.data
+  },
+  async deleteHostedTournamentMatch(id: number, matchId: number) {
+    const r = await api.delete<HostedTournament>(`/admin/hosted-tournaments/${id}/matches/${matchId}`)
     return r.data
   },
   async sendHostedTournamentScheduleEmail(id: number, payload: SendScheduleEmailRequest) {

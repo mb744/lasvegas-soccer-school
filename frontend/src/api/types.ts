@@ -1787,6 +1787,9 @@ export interface HostedTournament {
   rulesOfPlay: string | null
   publicSlug: string | null
   matchDurationMinutes: number
+  halfMinutes: number
+  halftimeMinutes: number
+  minutesBetweenGames: number
   createdAt: string
   updatedAt: string
   teams: HostedTournamentTeam[]
@@ -1845,6 +1848,21 @@ export interface SaveHostedTournamentRequest {
   notes?: string | null
   rulesOfPlay?: string | null
   matchDurationMinutes: number
+  halfMinutes: number
+  halftimeMinutes: number
+  minutesBetweenGames: number
+}
+
+export interface SaveHostedTournamentMatchRequest {
+  tierId?: number | null
+  teamAId?: number | null
+  teamBId?: number | null
+  fieldId?: number | null
+  dayId?: number | null
+  /** "HH:mm:ss" (backend TimeOnly). Null unschedules. */
+  startTime?: string | null
+  durationMinutes?: number | null
+  notes?: string | null
 }
 
 export interface AddHostedTournamentTeamRequest {

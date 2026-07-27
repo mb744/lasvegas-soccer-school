@@ -1015,32 +1015,143 @@ function SchedulePanel({ event, onChanged, onError, onNotice }: {
       {event.matches.length === 0 ? (
         <p className="text-xs text-slate-400 mt-2">{t('admin.hostedScheduleEmpty')}</p>
       ) : (
-        <table className="w-full text-xs mt-2">
-          <thead>
-            <tr className="text-left text-slate-500 border-b">
-              <th className="py-1 px-2">{t('admin.hostedMatchDay')}</th>
-              <th className="py-1 px-2">{t('admin.hostedMatchTime')}</th>
-              <th className="py-1 px-2">{t('admin.hostedMatchField')}</th>
-              <th className="py-1 px-2">{t('admin.hostedMatchTier')}</th>
-              <th className="py-1 px-2">{t('admin.hostedMatchTeams')}</th>
-              <th className="py-1 px-2">{t('admin.hostedMatchNotes')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {event.matches.map(m => (
-              <tr key={m.id} className="border-b last:border-0">
-                <td className="py-1 px-2">{m.dayDate ?? <span className="text-slate-400">—</span>}</td>
-                <td className="py-1 px-2 font-mono">{m.startTime?.slice(0, 5) ?? '—'}</td>
-                <td className="py-1 px-2">{m.fieldName ?? <span className="text-slate-400">—</span>}</td>
-                <td className="py-1 px-2 text-slate-500">{m.tierName ?? '—'}</td>
-                <td className="py-1 px-2">{m.teamALabel ?? '—'} vs {m.teamBLabel ?? '—'}</td>
-                <td className="py-1 px-2 text-slate-500">{m.notes ?? ''}</td>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs mt-2 min-w-[52rem]">
+            <thead>
+              <tr className="text-left text-slate-500 border-b">
+                <th className="py-1 px-2">{t('admin.hostedMatchDay')}</th>
+                <th className="py-1 px-2">{t('admin.hostedMatchTime')}</th>
+                <th className="py-1 px-2">{t('admin.hostedMatchField')}</th>
+                <th className="py-1 px-2">{t('admin.hostedMatchTier')}</th>
+                <th className="py-1 px-2">{t('admin.hostedMatchTeams')}</th>
+                <th className="py-1 px-2">{t('admin.hostedMatchNotes')}</th>
+                <th className="py-1 px-2"></th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {event.matches.map(m => (
+                <MatchRow key={m.id} event={event} match={m}
+                  onChanged={onChanged} onError={onError} onNotice={onNotice} />
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
+  )
+}
+
+/** Inline editor row for a single scheduled match. Dropdowns + a time input mutate local
+ *  state; a Save button appears when anything is dirty, and Delete removes the row.
+ *  Reuses PUT /matches/{id} — omitting DayId / FieldId / StartTime effectively unschedules
+ *  the match without deleting it. */
+function MatchRow({ event, match, onChanged, onError, onNotice }: {
+  event: HostedTournament
+  match: HostedTournament['matches'][number]
+  onChanged: () => Promise<void> | void
+  onError: (e: string) => void
+  onNotice: (n: string) => void
+}) {
+  const { t } = useTranslation()
+  const [dayId, setDayId] = useState<number | ''>(match.dayId ?? '')
+  const [fieldId, setFieldId] = useState<number | ''>(match.fieldId ?? '')
+  const [teamAId, setTeamAId] = useState<number | ''>(match.teamAId ?? '')
+  const [teamBId, setTeamBId] = useState<number | ''>(match.teamBId ?? '')
+  const [startTime, setStartTime] = useState<string>(match.startTime?.slice(0, 5) ?? '')
+  const [notes, setNotes] = useState(match.notes ?? '')
+  const [busy, setBusy] = useState(false)
+
+  const currentTierId = teamAId !== '' ? event.teams.find(x => x.id === teamAId)?.tierId ?? match.tierId
+    : match.tierId
+  const dirty =
+    (match.dayId ?? '') !== dayId ||
+    (match.fieldId ?? '') !== fieldId ||
+    (match.teamAId ?? '') !== teamAId ||
+    (match.teamBId ?? '') !== teamBId ||
+    (match.startTime?.slice(0, 5) ?? '') !== startTime ||
+    (match.notes ?? '') !== notes
+
+  const save = async () => {
+    if (teamAId !== '' && teamBId !== '' && teamAId === teamBId) {
+      onError(t('admin.hostedMatchSameTeam')); return
+    }
+    setBusy(true)
+    try {
+      await Api.updateHostedTournamentMatch(event.id, match.id, {
+        tierId: currentTierId ?? null,
+        teamAId: teamAId === '' ? null : teamAId,
+        teamBId: teamBId === '' ? null : teamBId,
+        fieldId: fieldId === '' ? null : fieldId,
+        dayId: dayId === '' ? null : dayId,
+        startTime: startTime ? `${startTime}:00` : null,
+        notes: notes.trim() || null,
+      })
+      await onChanged()
+      onNotice(t('admin.hostedMatchSavedNotice'))
+    } catch (e: any) { onError(errMsg(e)) }
+    finally { setBusy(false) }
+  }
+  const remove = async () => {
+    if (!confirm(t('admin.hostedMatchDeleteConfirm'))) return
+    setBusy(true)
+    try { await Api.deleteHostedTournamentMatch(event.id, match.id); await onChanged() }
+    catch (e: any) { onError(errMsg(e)) }
+    finally { setBusy(false) }
+  }
+
+  const teamLabel = (r: HostedTournament['teams'][number]) => r.lvssTeamName ?? r.invitedTeamName ?? '—'
+
+  return (
+    <tr className="border-b last:border-0 align-middle">
+      <td className="py-1 px-2">
+        <select value={dayId} onChange={e => setDayId(e.target.value === '' ? '' : Number(e.target.value))}
+          className="border border-slate-300 rounded px-1 py-0.5 text-xs">
+          <option value="">— {t('admin.hostedMatchDay')} —</option>
+          {event.days.map(d => <option key={d.id} value={d.id}>{d.date}</option>)}
+        </select>
+      </td>
+      <td className="py-1 px-2">
+        <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)}
+          className="border border-slate-300 rounded px-1 py-0.5 text-xs font-mono w-[6.5rem]" />
+      </td>
+      <td className="py-1 px-2">
+        <select value={fieldId} onChange={e => setFieldId(e.target.value === '' ? '' : Number(e.target.value))}
+          className="border border-slate-300 rounded px-1 py-0.5 text-xs">
+          <option value="">— {t('admin.hostedMatchField')} —</option>
+          {event.fields.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+        </select>
+      </td>
+      <td className="py-1 px-2 text-slate-500">{match.tierName ?? '—'}</td>
+      <td className="py-1 px-2">
+        <div className="flex items-center gap-1">
+          <select value={teamAId} onChange={e => setTeamAId(e.target.value === '' ? '' : Number(e.target.value))}
+            className="border border-slate-300 rounded px-1 py-0.5 text-xs max-w-[9rem]">
+            <option value="">—</option>
+            {event.teams.map(tt => <option key={tt.id} value={tt.id}>{teamLabel(tt)}</option>)}
+          </select>
+          <span className="text-slate-400">vs</span>
+          <select value={teamBId} onChange={e => setTeamBId(e.target.value === '' ? '' : Number(e.target.value))}
+            className="border border-slate-300 rounded px-1 py-0.5 text-xs max-w-[9rem]">
+            <option value="">—</option>
+            {event.teams.map(tt => <option key={tt.id} value={tt.id}>{teamLabel(tt)}</option>)}
+          </select>
+        </div>
+      </td>
+      <td className="py-1 px-2">
+        <input type="text" value={notes} onChange={e => setNotes(e.target.value)} maxLength={500}
+          className="border border-slate-300 rounded px-1 py-0.5 text-xs w-full" />
+      </td>
+      <td className="py-1 px-2 text-right whitespace-nowrap">
+        {dirty && (
+          <button onClick={save} disabled={busy}
+            className="text-xs bg-emerald-700 text-white font-semibold px-2 py-0.5 rounded hover:bg-emerald-800 disabled:opacity-60 mr-1">
+            {t('admin.save')}
+          </button>
+        )}
+        <button onClick={remove} disabled={busy}
+          className="text-xs text-rose-700 hover:underline">{t('admin.delete')}</button>
+      </td>
+    </tr>
   )
 }
 
@@ -1158,6 +1269,9 @@ function SaveEventForm({ venues, initial, onSaved, onError, onCancel }: {
   const [notes, setNotes] = useState(initial?.notes ?? '')
   const [rulesOfPlay, setRulesOfPlay] = useState(initial?.rulesOfPlay ?? '')
   const [matchDuration, setMatchDuration] = useState(String(initial?.matchDurationMinutes ?? 60))
+  const [halfMinutes, setHalfMinutes] = useState(String(initial?.halfMinutes ?? 25))
+  const [halftimeMinutes, setHalftimeMinutes] = useState(String(initial?.halftimeMinutes ?? 5))
+  const [minutesBetween, setMinutesBetween] = useState(String(initial?.minutesBetweenGames ?? 5))
   const [busy, setBusy] = useState(false)
 
   const submit = async (e: React.FormEvent) => {
@@ -1168,6 +1282,12 @@ function SaveEventForm({ venues, initial, onSaved, onError, onCancel }: {
     if (cost != null && (!isFinite(cost) || cost < 0)) { onError(t('admin.hostedCostInvalid')); return }
     const dur = Number(matchDuration)
     if (!isFinite(dur) || dur < 10 || dur > 240) { onError(t('admin.hostedDurationInvalid')); return }
+    const half = Number(halfMinutes)
+    const halftime = Number(halftimeMinutes)
+    const gap = Number(minutesBetween)
+    if (!isFinite(half) || half < 5 || half > 90) { onError(t('admin.hostedHalfInvalid')); return }
+    if (!isFinite(halftime) || halftime < 0 || halftime > 60) { onError(t('admin.hostedHalftimeInvalid')); return }
+    if (!isFinite(gap) || gap < 0 || gap > 60) { onError(t('admin.hostedGapInvalid')); return }
     setBusy(true)
     try {
       const payload = {
@@ -1181,6 +1301,9 @@ function SaveEventForm({ venues, initial, onSaved, onError, onCancel }: {
         notes: notes.trim() || null,
         rulesOfPlay: rulesOfPlay.trim() || null,
         matchDurationMinutes: dur,
+        halfMinutes: half,
+        halftimeMinutes: halftime,
+        minutesBetweenGames: gap,
       }
       if (initial) await Api.updateHostedTournament(initial.id, payload)
       else await Api.createHostedTournament(payload)
@@ -1240,6 +1363,25 @@ function SaveEventForm({ venues, initial, onSaved, onError, onCancel }: {
           <span className="text-slate-700">{t('admin.hostedMatchDuration')}</span>
           <input type="number" value={matchDuration} onChange={e => setMatchDuration(e.target.value)}
             min="10" max="240" step="5"
+            className="mt-1 w-full border border-slate-300 rounded-md px-2 py-1 text-sm font-mono" />
+          <span className="text-[10px] text-slate-500 mt-0.5 block">{t('admin.hostedMatchDurationHelp')}</span>
+        </label>
+        <label className="text-xs">
+          <span className="text-slate-700">{t('admin.hostedHalfMinutes')}</span>
+          <input type="number" value={halfMinutes} onChange={e => setHalfMinutes(e.target.value)}
+            min="5" max="90" step="1"
+            className="mt-1 w-full border border-slate-300 rounded-md px-2 py-1 text-sm font-mono" />
+        </label>
+        <label className="text-xs">
+          <span className="text-slate-700">{t('admin.hostedHalftimeMinutes')}</span>
+          <input type="number" value={halftimeMinutes} onChange={e => setHalftimeMinutes(e.target.value)}
+            min="0" max="60" step="1"
+            className="mt-1 w-full border border-slate-300 rounded-md px-2 py-1 text-sm font-mono" />
+        </label>
+        <label className="text-xs">
+          <span className="text-slate-700">{t('admin.hostedMinutesBetween')}</span>
+          <input type="number" value={minutesBetween} onChange={e => setMinutesBetween(e.target.value)}
+            min="0" max="60" step="1"
             className="mt-1 w-full border border-slate-300 rounded-md px-2 py-1 text-sm font-mono" />
         </label>
         <label className="text-xs sm:col-span-2">

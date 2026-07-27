@@ -74,6 +74,9 @@ public class AdminHostedTournamentsController : ControllerBase
             Notes = string.IsNullOrWhiteSpace(req.Notes) ? null : req.Notes!.Trim(),
             RulesOfPlay = string.IsNullOrWhiteSpace(req.RulesOfPlay) ? null : req.RulesOfPlay,
             MatchDurationMinutes = req.MatchDurationMinutes,
+            HalfMinutes = req.HalfMinutes,
+            HalftimeMinutes = req.HalftimeMinutes,
+            MinutesBetweenGames = req.MinutesBetweenGames,
             PublicSlug = await GenerateUniqueSlugAsync(req.Name, ct),
             CreatedAt = now,
             UpdatedAt = now,
@@ -102,6 +105,9 @@ public class AdminHostedTournamentsController : ControllerBase
         t.Notes = string.IsNullOrWhiteSpace(req.Notes) ? null : req.Notes!.Trim();
         t.RulesOfPlay = string.IsNullOrWhiteSpace(req.RulesOfPlay) ? null : req.RulesOfPlay;
         t.MatchDurationMinutes = req.MatchDurationMinutes;
+        t.HalfMinutes = req.HalfMinutes;
+        t.HalftimeMinutes = req.HalftimeMinutes;
+        t.MinutesBetweenGames = req.MinutesBetweenGames;
         // Backfill slug for events created before the public-link feature shipped.
         if (string.IsNullOrWhiteSpace(t.PublicSlug))
             t.PublicSlug = await GenerateUniqueSlugAsync(req.Name, ct);
@@ -497,7 +503,16 @@ public class AdminHostedTournamentsController : ControllerBase
             await _db.SaveChangesAsync(ct);
         }
 
-        var duration = Math.Max(15, tournament.MatchDurationMinutes);
+        // Derive match window from the tournament's half/halftime settings so the admin can tune
+        // scheduling by tweaking those alone. Fall back to the legacy MatchDurationMinutes when
+        // halves are zero (older events that predate the timing fields). MinutesBetweenGames
+        // widens the slot cursor between back-to-back matches on the same field.
+        var halfBased = tournament.HalfMinutes > 0
+            ? (tournament.HalfMinutes * 2) + Math.Max(0, tournament.HalftimeMinutes)
+            : 0;
+        var duration = Math.Max(15, halfBased > 0 ? halfBased : tournament.MatchDurationMinutes);
+        var gap = Math.Max(0, tournament.MinutesBetweenGames);
+        var slotStep = duration + gap;
         var candidates = new List<(int TierId, int TeamAId, int TeamBId)>();
         foreach (var tier in tournament.Tiers)
         {
@@ -540,8 +555,8 @@ public class AdminHostedTournamentsController : ControllerBase
         foreach (var day in days)
         {
             var start = day.StartTime ?? new TimeOnly(9, 0);
-            var end = day.EndTime ?? start.AddMinutes(duration * Math.Max(1, remaining.Count));
-            for (var slot = start; slot.AddMinutes(duration) <= end && remaining.Count > 0; slot = slot.AddMinutes(duration))
+            var end = day.EndTime ?? start.AddMinutes(slotStep * Math.Max(1, remaining.Count));
+            for (var slot = start; slot.AddMinutes(duration) <= end && remaining.Count > 0; slot = slot.AddMinutes(slotStep))
             {
                 var busyThisSlot = new HashSet<int>();
                 foreach (var field in fields)
@@ -586,6 +601,58 @@ public class AdminHostedTournamentsController : ControllerBase
         }
 
         _db.HostedTournamentMatches.AddRange(scheduled);
+        await _db.SaveChangesAsync(ct);
+        return Ok(await LoadAndMap(id, ct));
+    }
+
+    /// <summary>Admin edit of a single scheduled match — swap teams, move day / field / start
+    /// time, tweak duration or notes. Validates FKs belong to the same event so a stray ID
+    /// can't cross-link. Every field is optional; the row keeps its prior value when omitted.
+    /// To unschedule a match (send it back to the "orphan" pool) explicitly pass null for
+    /// DayId / FieldId / StartTime.</summary>
+    [HttpPut("{id:int}/matches/{matchId:int}")]
+    public async Task<ActionResult<HostedTournamentDto>> UpdateMatch(
+        int id, int matchId, [FromBody] SaveHostedTournamentMatchRequest req, CancellationToken ct)
+    {
+        var match = await _db.HostedTournamentMatches
+            .FirstOrDefaultAsync(m => m.Id == matchId && m.HostedTournamentId == id, ct);
+        if (match is null) return NotFound();
+
+        // Validate every FK the admin is trying to set actually belongs to this tournament.
+        if (req.TierId is int tid && !await _db.HostedTournamentTiers.AnyAsync(x => x.Id == tid && x.HostedTournamentId == id, ct))
+            return BadRequest("Tier not found on this tournament.");
+        if (req.TeamAId is int aid && !await _db.HostedTournamentTeams.AnyAsync(x => x.Id == aid && x.HostedTournamentId == id, ct))
+            return BadRequest("Team A not found on this tournament.");
+        if (req.TeamBId is int bid && !await _db.HostedTournamentTeams.AnyAsync(x => x.Id == bid && x.HostedTournamentId == id, ct))
+            return BadRequest("Team B not found on this tournament.");
+        if (req.FieldId is int fid && !await _db.HostedTournamentFields.AnyAsync(x => x.Id == fid && x.HostedTournamentId == id, ct))
+            return BadRequest("Field not found on this tournament.");
+        if (req.DayId is int did && !await _db.HostedTournamentDays.AnyAsync(x => x.Id == did && x.HostedTournamentId == id, ct))
+            return BadRequest("Day not found on this tournament.");
+        if (req.TeamAId.HasValue && req.TeamBId.HasValue && req.TeamAId == req.TeamBId)
+            return BadRequest("Team A and Team B must be different.");
+
+        match.TierId = req.TierId;
+        match.TeamAId = req.TeamAId;
+        match.TeamBId = req.TeamBId;
+        match.FieldId = req.FieldId;
+        match.DayId = req.DayId;
+        match.StartTime = req.StartTime;
+        if (req.DurationMinutes is int dur) match.DurationMinutes = dur;
+        match.Notes = TrimOrNull(req.Notes);
+        await _db.SaveChangesAsync(ct);
+        return Ok(await LoadAndMap(id, ct));
+    }
+
+    /// <summary>Delete a single scheduled match — useful when the admin wants to remove a
+    /// leftover "unscheduled" placeholder or drop a match that shouldn't have been generated.</summary>
+    [HttpDelete("{id:int}/matches/{matchId:int}")]
+    public async Task<ActionResult<HostedTournamentDto>> DeleteMatch(int id, int matchId, CancellationToken ct)
+    {
+        var match = await _db.HostedTournamentMatches
+            .FirstOrDefaultAsync(m => m.Id == matchId && m.HostedTournamentId == id, ct);
+        if (match is null) return NotFound();
+        _db.HostedTournamentMatches.Remove(match);
         await _db.SaveChangesAsync(ct);
         return Ok(await LoadAndMap(id, ct));
     }
@@ -748,6 +815,7 @@ public class AdminHostedTournamentsController : ControllerBase
             t.VenueId, t.Venue?.Name, t.Venue?.Address,
             t.Location, t.CostPerTeam, t.Notes,
             t.RulesOfPlay, t.PublicSlug, t.MatchDurationMinutes,
+            t.HalfMinutes, t.HalftimeMinutes, t.MinutesBetweenGames,
             t.CreatedAt, t.UpdatedAt,
             t.Teams
                 .OrderBy(r => r.LvssTeam?.Name ?? r.InvitedTeam?.Name ?? string.Empty)

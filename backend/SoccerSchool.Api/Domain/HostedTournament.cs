@@ -51,8 +51,20 @@ public class HostedTournament
     public string? PublicSlug { get; set; }
 
     /// <summary>Default per-match window length in minutes. The scheduler advances the slot
-    /// cursor by this amount for each field. Editable per match afterward.</summary>
+    /// cursor by this amount for each field. Editable per match afterward. Kept for backwards
+    /// compat with existing rows — new rows should derive it from Half + Halftime + between.</summary>
     public int MatchDurationMinutes { get; set; } = 60;
+
+    /// <summary>Length of one half in minutes. Two halves plus <see cref="HalftimeMinutes"/>
+    /// make up a single match; the scheduler uses that sum as the play window.</summary>
+    public int HalfMinutes { get; set; } = 25;
+
+    /// <summary>Break between the two halves.</summary>
+    public int HalftimeMinutes { get; set; } = 5;
+
+    /// <summary>Gap the scheduler leaves between back-to-back matches on the same field so
+    /// referees / teams have transition time.</summary>
+    public int MinutesBetweenGames { get; set; } = 5;
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
