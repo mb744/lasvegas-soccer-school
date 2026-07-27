@@ -4,6 +4,18 @@ import { Api } from '../api/client'
 import type { BracketStandings, KnockoutStage, PublicScheduleDto } from '../api/types'
 import { PLAYOFF_SLOT_LABEL } from '../api/types'
 
+/** Convert a backend TimeOnly string ("HH:mm:ss") to a 12-hour display like "2:30 PM".
+ *  Falls back to the raw string when the value isn't a parseable time. */
+function fmt12h(time: string | null | undefined): string | null {
+  if (!time) return null
+  const [hStr, mStr] = time.split(':')
+  const h = Number(hStr); const m = Number(mStr)
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return time
+  const period = h >= 12 ? 'PM' : 'AM'
+  const h12 = h % 12 === 0 ? 12 : h % 12
+  return `${h12}:${String(m).padStart(2, '0')} ${period}`
+}
+
 /** Shareable read-only tournament schedule. Rendered without the Layout chrome so parents /
  *  external coaches don't see the LVSS admin nav. Fetched via /api/public/hosted-tournaments/{slug}
  *  — no auth required. */
@@ -96,7 +108,7 @@ export function TournamentPublicPage() {
                     return (
                       <tr key={m.id} className={`border-b last:border-0 ${slotLabel ? 'bg-emerald-50/40' : ''}`}>
                         <td className="py-1.5 px-2 whitespace-nowrap">{m.dayDate ?? '—'}</td>
-                        <td className="py-1.5 px-2 font-mono whitespace-nowrap">{m.startTime?.slice(0, 5) ?? 'TBD'}</td>
+                        <td className="py-1.5 px-2 font-mono whitespace-nowrap">{fmt12h(m.startTime) ?? 'TBD'}</td>
                         <td className="py-1.5 px-2">{m.fieldName ?? 'TBD'}</td>
                         <td className="py-1.5 px-2 text-slate-500">
                           {slotLabel
