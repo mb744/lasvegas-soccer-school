@@ -327,7 +327,8 @@ function EventDetailPanel({ event, venues, lvssTeams, invitedTeams, onChanged, o
         </table>
       </div>
 
-      <TiersPanel event={event} onChanged={onChanged} onError={onError} onNotice={onNotice} />
+      <TiersPanel event={event} lvssTeams={lvssTeams} invitedTeams={invitedTeams}
+        onChanged={onChanged} onError={onError} onNotice={onNotice} />
       <FieldsPanel event={event} onChanged={onChanged} onError={onError} onNotice={onNotice} />
       <DaysPanel event={event} onChanged={onChanged} onError={onError} onNotice={onNotice} />
       <SchedulePanel event={event} onChanged={onChanged} onError={onError} onNotice={onNotice} />
@@ -445,8 +446,10 @@ function TeamRow({ row, event, onChanged, onError, onRemove }: {
   )
 }
 
-function TiersPanel({ event, onChanged, onError, onNotice }: {
+function TiersPanel({ event, lvssTeams, invitedTeams, onChanged, onError, onNotice }: {
   event: HostedTournament
+  lvssTeams: RosterTeamSummary[]
+  invitedTeams: InvitedTeam[]
   onChanged: () => Promise<void> | void
   onError: (e: string) => void
   onNotice: (n: string) => void
@@ -510,6 +513,7 @@ function TiersPanel({ event, onChanged, onError, onNotice }: {
         <ul className="mt-2 space-y-2">
           {event.tiers.map(tier => (
             <TierCard key={tier.id} event={event} tier={tier}
+              lvssTeams={lvssTeams} invitedTeams={invitedTeams}
               onChanged={onChanged} onError={onError} onNotice={onNotice}
               onDelete={() => remove(tier.id, tier.name)} />
           ))}
@@ -519,9 +523,11 @@ function TiersPanel({ event, onChanged, onError, onNotice }: {
   )
 }
 
-function TierCard({ event, tier, onChanged, onError, onNotice, onDelete }: {
+function TierCard({ event, tier, lvssTeams, invitedTeams, onChanged, onError, onNotice, onDelete }: {
   event: HostedTournament
   tier: HostedTournament['tiers'][number]
+  lvssTeams: RosterTeamSummary[]
+  invitedTeams: InvitedTeam[]
   onChanged: () => Promise<void> | void
   onError: (e: string) => void
   onNotice: (n: string) => void
@@ -606,6 +612,7 @@ function TierCard({ event, tier, onChanged, onError, onNotice, onDelete }: {
             {tier.brackets.map(br => (
               <BracketRow key={br.id} event={event} bracket={br}
                 members={teamsByBracket.get(br.id) ?? []}
+                lvssTeams={lvssTeams} invitedTeams={invitedTeams}
                 onChanged={onChanged} onError={onError} onNotice={onNotice}
                 onDelete={() => removeBracket(br.id, br.name)} />
             ))}
@@ -621,42 +628,77 @@ function TierCard({ event, tier, onChanged, onError, onNotice, onDelete }: {
  *  into this bracket (either unbracketed OR in a different bracket — moving between brackets
  *  is a single click). Works for both LVSS and invited teams; the paid pill uses the same
  *  endpoint as the roster table so state stays in sync. */
-function BracketRow({ event, bracket, members, onChanged, onError, onNotice, onDelete }: {
+function BracketRow({ event, bracket, members, lvssTeams, invitedTeams, onChanged, onError, onNotice, onDelete }: {
   event: HostedTournament
   bracket: HostedTournament['tiers'][number]['brackets'][number]
   members: HostedTournament['teams']
+  lvssTeams: RosterTeamSummary[]
+  invitedTeams: InvitedTeam[]
   onChanged: () => Promise<void> | void
   onError: (e: string) => void
   onNotice: (n: string) => void
   onDelete: () => void
 }) {
   const { t } = useTranslation()
-  const [picked, setPicked] = useState<Set<number>>(() => new Set())
+  // Three parallel picked sets so we can distinguish existing event-team rows (which just
+  // need a bracket assignment) from catalog teams not yet on the event (which need an add
+  // first, then an assign).
+  const [pickedRoster, setPickedRoster] = useState<Set<number>>(() => new Set())
+  const [pickedInvited, setPickedInvited] = useState<Set<number>>(() => new Set())
+  const [pickedLvss, setPickedLvss] = useState<Set<number>>(() => new Set())
   const [showPicker, setShowPicker] = useState(false)
   const [busy, setBusy] = useState(false)
 
   const memberIds = new Set(members.map(m => m.id))
-  const eligible = event.teams.filter(tt => !memberIds.has(tt.id))
+  const rosterEligible = event.teams.filter(tt => !memberIds.has(tt.id))
+  // Catalog pools filtered down to teams not yet on the event roster — picking one adds it
+  // to the event AND to this bracket in a single click.
+  const invitedPool = invitedTeams.filter(it => !event.teams.some(r => r.invitedTeamId === it.id))
+  const lvssPool = lvssTeams.filter(lt => !event.teams.some(r => r.lvssTeamId === lt.id))
+  const totalPicked = pickedRoster.size + pickedInvited.size + pickedLvss.size
 
-  const togglePick = (id: number) => {
-    setPicked(prev => {
+  const toggleFrom = (setter: (u: (p: Set<number>) => Set<number>) => void, id: number) => {
+    setter(prev => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id); else next.add(id)
       return next
     })
   }
-  const resetPicker = () => { setShowPicker(false); setPicked(new Set()) }
+  const resetPicker = () => {
+    setShowPicker(false)
+    setPickedRoster(new Set()); setPickedInvited(new Set()); setPickedLvss(new Set())
+  }
   const addPicked = async () => {
-    if (picked.size === 0) return
+    if (totalPicked === 0) return
     setBusy(true)
-    let failed = 0
+    let ok = 0; let failed = 0
     try {
-      for (const id of picked) {
-        try { await Api.assignHostedTournamentTeamBracket(event.id, id, { bracketId: bracket.id }) }
+      // 1) Existing event-team rows — direct bracket assign.
+      for (const id of pickedRoster) {
+        try { await Api.assignHostedTournamentTeamBracket(event.id, id, { bracketId: bracket.id }); ok++ }
         catch { failed++ }
       }
+      // 2) Invited catalog teams not on event — add + assign.
+      for (const id of pickedInvited) {
+        try {
+          const updated = await Api.addHostedTournamentTeam(event.id, { invitedTeamId: id })
+          const row = updated.teams.find(r => r.invitedTeamId === id)
+          if (!row) { failed++; continue }
+          await Api.assignHostedTournamentTeamBracket(event.id, row.id, { bracketId: bracket.id }); ok++
+        } catch { failed++ }
+      }
+      // 3) LVSS catalog teams not on event — same two-step.
+      for (const id of pickedLvss) {
+        try {
+          const updated = await Api.addHostedTournamentTeam(event.id, { lvssTeamId: id })
+          const row = updated.teams.find(r => r.lvssTeamId === id)
+          if (!row) { failed++; continue }
+          await Api.assignHostedTournamentTeamBracket(event.id, row.id, { bracketId: bracket.id }); ok++
+        } catch { failed++ }
+      }
       await onChanged()
-      onNotice(t('admin.hostedBracketTeamsAddedNotice', { count: picked.size - failed }))
+      onNotice(t('admin.hostedBracketTeamsAddedNotice', { count: ok }))
+      if (failed > 0) onError(t('admin.hostedTeamsAddedPartial', { ok, fail: failed, message: 'see console' }))
       resetPicker()
     } finally { setBusy(false) }
   }
@@ -706,32 +748,77 @@ function BracketRow({ event, bracket, members, onChanged, onError, onNotice, onD
           })}
         </ul>
       )}
-      {eligible.length > 0 && (
+      {(rosterEligible.length > 0 || invitedPool.length > 0 || lvssPool.length > 0) && (
         <div className="mt-1 pt-1 border-t border-slate-100">
           {showPicker ? (
             <div className="space-y-1">
-              <ul className="max-h-40 overflow-y-auto bg-slate-50 border border-slate-200 rounded p-1 space-y-0.5">
-                {eligible.map(tt => {
-                  const label = tt.lvssTeamName ?? tt.invitedTeamName ?? '—'
-                  const source = tt.lvssTeamId != null ? t('admin.hostedSourceLvss') : t('admin.hostedSourceInvited')
-                  return (
-                    <li key={tt.id}>
-                      <label className="flex items-center gap-2 text-xs px-1 py-0.5 rounded hover:bg-white cursor-pointer">
-                        <input type="checkbox" checked={picked.has(tt.id)} onChange={() => togglePick(tt.id)} />
-                        <span className="flex-1 truncate">
-                          {label}
-                          <span className="text-[10px] uppercase tracking-wide text-slate-500 ml-1">{source}</span>
-                          {tt.bracketName && <span className="text-[10px] text-slate-500 ml-1">({t('admin.hostedBracketMoveFrom', { from: tt.bracketName })})</span>}
-                        </span>
-                      </label>
-                    </li>
-                  )
-                })}
-              </ul>
+              <div className="text-[10px] text-slate-500">{t('admin.hostedBracketPickerHint')}</div>
+              <div className="max-h-56 overflow-y-auto bg-slate-50 border border-slate-200 rounded p-1 space-y-1">
+                {rosterEligible.length > 0 && (
+                  <div>
+                    <div className="text-[10px] uppercase tracking-wide text-slate-500 px-1">{t('admin.hostedBracketPickerOnEvent')}</div>
+                    <ul className="space-y-0.5">
+                      {rosterEligible.map(tt => {
+                        const label = tt.lvssTeamName ?? tt.invitedTeamName ?? '—'
+                        const source = tt.lvssTeamId != null ? t('admin.hostedSourceLvss') : t('admin.hostedSourceInvited')
+                        return (
+                          <li key={`r-${tt.id}`}>
+                            <label className="flex items-center gap-2 text-xs px-1 py-0.5 rounded hover:bg-white cursor-pointer">
+                              <input type="checkbox" checked={pickedRoster.has(tt.id)} onChange={() => toggleFrom(setPickedRoster, tt.id)} />
+                              <span className="flex-1 truncate">
+                                {label}
+                                <span className="text-[10px] uppercase tracking-wide text-slate-500 ml-1">{source}</span>
+                                {tt.bracketName && <span className="text-[10px] text-slate-500 ml-1">({t('admin.hostedBracketMoveFrom', { from: tt.bracketName })})</span>}
+                              </span>
+                            </label>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  </div>
+                )}
+                {invitedPool.length > 0 && (
+                  <div>
+                    <div className="text-[10px] uppercase tracking-wide text-sky-800 px-1">
+                      {t('admin.hostedBracketPickerInvitedPool')} <span className="text-slate-500">({invitedPool.length})</span>
+                    </div>
+                    <ul className="space-y-0.5">
+                      {invitedPool.map(it => (
+                        <li key={`i-${it.id}`}>
+                          <label className="flex items-center gap-2 text-xs px-1 py-0.5 rounded hover:bg-white cursor-pointer">
+                            <input type="checkbox" checked={pickedInvited.has(it.id)} onChange={() => toggleFrom(setPickedInvited, it.id)} />
+                            <span className="flex-1 truncate">
+                              {it.name}
+                              {it.ageGroup && <span className="text-[10px] text-slate-500 ml-1">({it.ageGroup})</span>}
+                            </span>
+                          </label>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {lvssPool.length > 0 && (
+                  <div>
+                    <div className="text-[10px] uppercase tracking-wide text-emerald-800 px-1">
+                      {t('admin.hostedBracketPickerLvssPool')} <span className="text-slate-500">({lvssPool.length})</span>
+                    </div>
+                    <ul className="space-y-0.5">
+                      {lvssPool.map(lt => (
+                        <li key={`l-${lt.id}`}>
+                          <label className="flex items-center gap-2 text-xs px-1 py-0.5 rounded hover:bg-white cursor-pointer">
+                            <input type="checkbox" checked={pickedLvss.has(lt.id)} onChange={() => toggleFrom(setPickedLvss, lt.id)} />
+                            <span className="flex-1 truncate">{lt.name}</span>
+                          </label>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
               <div className="flex items-center gap-2">
-                <button onClick={addPicked} disabled={busy || picked.size === 0}
+                <button onClick={addPicked} disabled={busy || totalPicked === 0}
                   className="text-xs bg-emerald-700 text-white font-semibold px-2 py-1 rounded-md hover:bg-emerald-800 disabled:opacity-60">
-                  {t('admin.hostedBracketAddPicked', { count: picked.size })}
+                  {t('admin.hostedBracketAddPicked', { count: totalPicked })}
                 </button>
                 <button onClick={resetPicker} disabled={busy}
                   className="text-xs text-slate-600 hover:underline ml-auto">{t('admin.cancel')}</button>
