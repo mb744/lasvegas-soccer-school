@@ -68,7 +68,95 @@ public class PublicHostedTournamentsController : ControllerBase
                     // Strip admin notes from the public payload — those are internal.
                     null))
                 .ToList(),
-            BuildStandings(t)));
+            BuildStandings(t),
+            BuildKnockout(t)));
+    }
+
+    /// <summary>For every tier that has exactly two brackets, project a Semifinal 1 (A#1 vs B#2),
+    /// Semifinal 2 (B#1 vs A#2), Consolation (A#3 vs B#3), and Final (SF1 winner vs SF2 winner).
+    /// Team names come from the standings when seeds are settled; slots fall back to seed labels
+    /// like "West #1" when the standings haven't converged yet. When a scheduled match exists
+    /// between the resolved teams and both scores are set, the slot pulls those scores + the
+    /// winner.</summary>
+    private static List<KnockoutStageDto> BuildKnockout(HostedTournament t)
+    {
+        var played = t.Matches
+            .Where(m => m.TeamAId.HasValue && m.TeamBId.HasValue && m.TeamAScore.HasValue && m.TeamBScore.HasValue)
+            .ToList();
+        var stages = new List<KnockoutStageDto>();
+        foreach (var tier in t.Tiers.OrderBy(x => x.SortOrder).ThenBy(x => x.Name))
+        {
+            var brackets = tier.Brackets.OrderBy(b => b.SortOrder).ThenBy(b => b.Name).ToList();
+            if (brackets.Count != 2) continue; // knockout template assumes two brackets
+            var a = brackets[0];
+            var b = brackets[1];
+            var aTeams = t.Teams.Where(tt => tt.BracketId == a.Id).ToList();
+            var bTeams = t.Teams.Where(tt => tt.BracketId == b.Id).ToList();
+            var aStandings = ComputeRows(aTeams, played);
+            var bStandings = ComputeRows(bTeams, played);
+
+            // Look up seed → team-name; null when the bracket doesn't have that seed yet.
+            string SeedLabel(HostedTournamentBracket br, IReadOnlyList<BracketStandingRowDto> rows, int seed) =>
+                rows.Count >= seed ? rows[seed - 1].TeamName : $"{br.Name} #{seed}";
+            int? SeedTeamId(IReadOnlyList<BracketStandingRowDto> rows, int seed) =>
+                rows.Count >= seed ? rows[seed - 1].TeamId : null;
+
+            KnockoutMatchDto MakeSlot(string slotName, string labelA, string labelB, int? teamAId, int? teamBId)
+            {
+                int? scoreA = null, scoreB = null;
+                string? winner = null;
+                if (teamAId.HasValue && teamBId.HasValue)
+                {
+                    // Prefer the most recent played match between the two teams so the display
+                    // always reflects the latest result if an admin corrected a score.
+                    var m = played
+                        .Where(x =>
+                            (x.TeamAId == teamAId && x.TeamBId == teamBId) ||
+                            (x.TeamAId == teamBId && x.TeamBId == teamAId))
+                        .OrderByDescending(x => x.Day?.Date).ThenByDescending(x => x.StartTime)
+                        .FirstOrDefault();
+                    if (m != null)
+                    {
+                        var aIsHome = m.TeamAId == teamAId;
+                        scoreA = aIsHome ? m.TeamAScore : m.TeamBScore;
+                        scoreB = aIsHome ? m.TeamBScore : m.TeamAScore;
+                        if (scoreA > scoreB) winner = labelA;
+                        else if (scoreB > scoreA) winner = labelB;
+                        // Draws in knockout have no natural winner; leave null so the frontend
+                        // can render "Tied" and the admin knows to break the tie manually.
+                    }
+                }
+                return new KnockoutMatchDto(slotName, labelA, labelB, scoreA, scoreB, winner);
+            }
+
+            var sf1 = MakeSlot("Semifinal 1",
+                SeedLabel(a, aStandings, 1), SeedLabel(b, bStandings, 2),
+                SeedTeamId(aStandings, 1), SeedTeamId(bStandings, 2));
+            var sf2 = MakeSlot("Semifinal 2",
+                SeedLabel(b, bStandings, 1), SeedLabel(a, aStandings, 2),
+                SeedTeamId(bStandings, 1), SeedTeamId(aStandings, 2));
+            var consolation = MakeSlot("Consolation (3rd place)",
+                SeedLabel(a, aStandings, 3), SeedLabel(b, bStandings, 3),
+                SeedTeamId(aStandings, 3), SeedTeamId(bStandings, 3));
+
+            // Final teams derive from the semifinal winners — only resolvable once both SFs
+            // have real scores. Otherwise show "Winner SF1 / SF2" placeholders.
+            string finalA = sf1.WinnerLabel ?? "Winner Semifinal 1";
+            string finalB = sf2.WinnerLabel ?? "Winner Semifinal 2";
+            // Look up the actual team ids behind those winner labels so a scheduled Final can
+            // still get scores wired in from a real played match.
+            int? finalAId = sf1.WinnerLabel != null
+                ? (sf1.WinnerLabel == sf1.TeamALabel ? SeedTeamId(aStandings, 1) : SeedTeamId(bStandings, 2))
+                : null;
+            int? finalBId = sf2.WinnerLabel != null
+                ? (sf2.WinnerLabel == sf2.TeamALabel ? SeedTeamId(bStandings, 1) : SeedTeamId(aStandings, 2))
+                : null;
+            var final = MakeSlot("Final", finalA, finalB, finalAId, finalBId);
+
+            stages.Add(new KnockoutStageDto(tier.Name, a.Name, b.Name,
+                new[] { sf1, sf2, consolation, final }.ToList()));
+        }
+        return stages;
     }
 
     /// <summary>Group teams by bracket (falling back to the tier's own bucket for teams that

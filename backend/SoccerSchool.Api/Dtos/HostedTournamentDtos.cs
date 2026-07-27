@@ -288,6 +288,29 @@ public record BracketStandingsDto(
     string? TierName,
     IReadOnlyList<BracketStandingRowDto> Rows);
 
+/// <summary>One slot in a projected knockout bracket — semifinal, consolation, or final.
+/// Team labels are seed-based when the actual team isn't known yet ("West #1"), or the
+/// resolved team name when standings + prior knockout results have determined it. Scores +
+/// winner name are filled when a scheduled match between the resolved teams has been
+/// played (both scores set).</summary>
+public record KnockoutMatchDto(
+    string Slot,
+    string TeamALabel,
+    string TeamBLabel,
+    int? TeamAScore,
+    int? TeamBScore,
+    string? WinnerLabel);
+
+/// <summary>Projected knockout stage for a tier that has exactly two brackets. Standings
+/// determine seeds; four slots are always produced: Semifinal 1, Semifinal 2, Consolation
+/// (3rd place), and Final. Emitted on the public schedule page below the round-robin
+/// standings so parents / coaches can see the bracket even before matches are played.</summary>
+public record KnockoutStageDto(
+    string TierName,
+    string BracketAName,
+    string BracketBName,
+    IReadOnlyList<KnockoutMatchDto> Matches);
+
 /// <summary>Public-facing schedule payload — safe to return without auth. Includes the
 /// event's headline info, rules body, day windows, fields, every scheduled match, and the
 /// derived standings per bracket so the public page can render tables without extra logic.</summary>
@@ -303,7 +326,8 @@ public record PublicScheduleDto(
     IReadOnlyList<HostedTournamentDayDto> Days,
     IReadOnlyList<HostedTournamentFieldDto> Fields,
     IReadOnlyList<HostedTournamentMatchDto> Matches,
-    IReadOnlyList<BracketStandingsDto> Standings);
+    IReadOnlyList<BracketStandingsDto> Standings,
+    IReadOnlyList<KnockoutStageDto> Knockout);
 
 public record AddHostedTournamentTeamRequest
 {

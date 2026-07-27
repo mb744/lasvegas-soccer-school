@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { Api } from '../api/client'
-import type { BracketStandings, PublicScheduleDto } from '../api/types'
+import type { BracketStandings, KnockoutStage, PublicScheduleDto } from '../api/types'
 
 /** Shareable read-only tournament schedule. Rendered without the Layout chrome so parents /
  *  external coaches don't see the LVSS admin nav. Fetched via /api/public/hosted-tournaments/{slug}
@@ -121,6 +121,15 @@ export function TournamentPublicPage() {
           </section>
         )}
 
+        {data.knockout.length > 0 && (
+          <section className="space-y-3">
+            <h2 className="font-bold text-emerald-800">Playoffs</h2>
+            {data.knockout.map(k => (
+              <KnockoutCard key={k.tierName} stage={k} />
+            ))}
+          </section>
+        )}
+
         <footer className="text-xs text-slate-400 pt-4">
           Powered by Las Vegas Soccer School
         </footer>
@@ -190,6 +199,50 @@ function StandingsCard({ standings }: { standings: BracketStandings }) {
             )}
           </tbody>
         </table>
+      </div>
+    </div>
+  )
+}
+
+/** Projected knockout bracket for a tier that has exactly two brackets. Four slots come from
+ *  the backend already ordered (SF1, SF2, Consolation, Final). Team labels fall back to seed
+ *  placeholders like "West #1" when standings haven't converged yet; the Final's slots stay
+ *  as "Winner Semifinal 1 / 2" until both semis have real results. */
+function KnockoutCard({ stage }: { stage: KnockoutStage }) {
+  return (
+    <div className="bg-white border border-slate-200 rounded-lg p-4">
+      <div className="flex items-baseline justify-between mb-3 flex-wrap gap-x-3">
+        <h3 className="font-semibold text-slate-800">{stage.tierName}</h3>
+        <span className="text-xs uppercase tracking-wide text-slate-500">
+          {stage.bracketAName} vs {stage.bracketBName}
+        </span>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {stage.matches.map(m => {
+          const played = m.teamAScore != null && m.teamBScore != null
+          const aWins = played && m.winnerLabel === m.teamALabel
+          const bWins = played && m.winnerLabel === m.teamBLabel
+          return (
+            <div key={m.slot} className="border border-slate-200 rounded p-3">
+              <div className="text-[10px] uppercase tracking-wide text-emerald-700 mb-1">{m.slot}</div>
+              <div className="flex items-center justify-between gap-2 text-sm">
+                <span className={`flex-1 truncate ${aWins ? 'font-semibold text-emerald-800' : ''}`}>{m.teamALabel}</span>
+                <span className="font-mono text-slate-700 tabular-nums">
+                  {played ? m.teamAScore : <span className="text-slate-400">–</span>}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-2 text-sm mt-1">
+                <span className={`flex-1 truncate ${bWins ? 'font-semibold text-emerald-800' : ''}`}>{m.teamBLabel}</span>
+                <span className="font-mono text-slate-700 tabular-nums">
+                  {played ? m.teamBScore : <span className="text-slate-400">–</span>}
+                </span>
+              </div>
+              {played && !m.winnerLabel && (
+                <div className="text-[10px] text-amber-700 mt-1">Tied — winner needs a tie-break</div>
+              )}
+            </div>
+          )
+        })}
       </div>
     </div>
   )

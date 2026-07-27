@@ -1733,6 +1733,24 @@ export interface BracketStandings {
   rows: BracketStandingRow[]
 }
 
+/** One slot in the projected knockout bracket. Score + winner are populated when a played
+ *  match between the resolved teams exists; otherwise labels fall back to seed placeholders. */
+export interface KnockoutMatch {
+  slot: string
+  teamALabel: string
+  teamBLabel: string
+  teamAScore: number | null
+  teamBScore: number | null
+  winnerLabel: string | null
+}
+
+export interface KnockoutStage {
+  tierName: string
+  bracketAName: string
+  bracketBName: string
+  matches: KnockoutMatch[]
+}
+
 export interface SaveHostedTournamentBracketRequest {
   name: string
   sortOrder: number
@@ -1796,6 +1814,7 @@ export interface PublicScheduleDto {
   fields: HostedTournamentField[]
   matches: HostedTournamentMatch[]
   standings: BracketStandings[]
+  knockout: KnockoutStage[]
 }
 
 export interface HostedTournamentDay {
