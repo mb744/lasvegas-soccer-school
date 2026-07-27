@@ -12,6 +12,7 @@ import type {
   TournamentKind,
   Venue,
 } from '../../api/types'
+import { PLAYOFF_SLOT_LABEL } from '../../api/types'
 
 function errMsg(e: any): string {
   return e?.response?.data?.title || e?.response?.data || e?.message || 'Error'
@@ -1163,7 +1164,14 @@ function MatchRow({ event, match, onChanged, onError, onNotice }: {
           {event.fields.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
         </select>
       </td>
-      <td className="py-1 px-2 text-slate-500">{match.tierName ?? '—'}</td>
+      <td className="py-1 px-2 text-slate-500">
+        {match.tierName ?? '—'}
+        {match.playoffSlot != null && (
+          <div className="text-[10px] uppercase tracking-wide text-emerald-700 font-medium mt-0.5">
+            {PLAYOFF_SLOT_LABEL[match.playoffSlot]}
+          </div>
+        )}
+      </td>
       <td className="py-1 px-2">
         <div className="flex items-center gap-1">
           <select value={teamAId} onChange={e => setTeamAId(e.target.value === '' ? '' : Number(e.target.value))}

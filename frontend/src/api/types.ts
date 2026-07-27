@@ -1694,6 +1694,17 @@ export interface HostedTournamentField {
   createdAt: string
 }
 
+/** Values map to the backend PlayoffSlot enum:
+ *   1 = Semifinal 1, 2 = Semifinal 2, 3 = Consolation, 4 = Final. Null for group-stage matches. */
+export type PlayoffSlot = 1 | 2 | 3 | 4
+
+export const PLAYOFF_SLOT_LABEL: Record<PlayoffSlot, string> = {
+  1: 'Semifinal 1',
+  2: 'Semifinal 2',
+  3: 'Consolation',
+  4: 'Final',
+}
+
 export interface HostedTournamentMatch {
   id: number
   tierId: number | null
@@ -1711,6 +1722,8 @@ export interface HostedTournamentMatch {
   teamAScore: number | null
   teamBScore: number | null
   notes: string | null
+  /** Non-null on the four projected knockout matches per 2-bracket tier. */
+  playoffSlot: PlayoffSlot | null
 }
 
 export interface BracketStandingRow {

@@ -97,7 +97,11 @@ public record HostedTournamentMatchDto(
     int DurationMinutes,
     int? TeamAScore,
     int? TeamBScore,
-    string? Notes);
+    string? Notes,
+    /// <summary>Non-null on the four projected knockout matches per 2-bracket tier
+    /// (semifinal 1/2, consolation, final). Frontend labels the row with the slot name and
+    /// sorts these after all group-stage matches.</summary>
+    PlayoffSlot? PlayoffSlot);
 
 public record SaveHostedTournamentBracketRequest
 {

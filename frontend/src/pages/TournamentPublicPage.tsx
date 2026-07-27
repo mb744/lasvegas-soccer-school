@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { Api } from '../api/client'
 import type { BracketStandings, KnockoutStage, PublicScheduleDto } from '../api/types'
+import { PLAYOFF_SLOT_LABEL } from '../api/types'
 
 /** Shareable read-only tournament schedule. Rendered without the Layout chrome so parents /
  *  external coaches don't see the LVSS admin nav. Fetched via /api/public/hosted-tournaments/{slug}
@@ -91,12 +92,17 @@ export function TournamentPublicPage() {
                 <tbody>
                   {data.matches.map(m => {
                     const played = m.teamAScore != null && m.teamBScore != null
+                    const slotLabel = m.playoffSlot != null ? PLAYOFF_SLOT_LABEL[m.playoffSlot] : null
                     return (
-                      <tr key={m.id} className="border-b last:border-0">
+                      <tr key={m.id} className={`border-b last:border-0 ${slotLabel ? 'bg-emerald-50/40' : ''}`}>
                         <td className="py-1.5 px-2 whitespace-nowrap">{m.dayDate ?? '—'}</td>
                         <td className="py-1.5 px-2 font-mono whitespace-nowrap">{m.startTime?.slice(0, 5) ?? 'TBD'}</td>
                         <td className="py-1.5 px-2">{m.fieldName ?? 'TBD'}</td>
-                        <td className="py-1.5 px-2 text-slate-500">{m.tierName ?? ''}</td>
+                        <td className="py-1.5 px-2 text-slate-500">
+                          {slotLabel
+                            ? <span className="text-[11px] uppercase tracking-wide text-emerald-700 font-medium">{slotLabel}</span>
+                            : (m.tierName ?? '')}
+                        </td>
                         <td className="py-1.5 px-2 font-medium">{m.teamALabel ?? 'TBD'} <span className="text-slate-400 font-normal">vs</span> {m.teamBLabel ?? 'TBD'}</td>
                         <td className="py-1.5 px-2 font-mono whitespace-nowrap">
                           {played

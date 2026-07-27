@@ -44,6 +44,22 @@ public class PublicHostedTournamentsController : ControllerBase
             .FirstOrDefaultAsync(x => x.PublicSlug == s, ct);
         if (t is null) return NotFound();
 
+        var knockout = BuildKnockout(t);
+        // Build a (tierId, slot) → (labelA, labelB) lookup so playoff matches whose teams
+        // haven't been assigned yet can display the projected seed placeholders — e.g.
+        // "West 1st Place vs East 2nd Place" — instead of empty strings on the public page.
+        var playoffLabels = new Dictionary<(int? TierId, PlayoffSlot Slot), (string A, string B)>();
+        foreach (var stage in knockout)
+        {
+            var tier = t.Tiers.FirstOrDefault(x => x.Name == stage.TierName);
+            var tierId = tier?.Id;
+            for (var i = 0; i < stage.Matches.Count; i++)
+            {
+                var slot = (PlayoffSlot)(i + 1); // matches enum order SF1, SF2, Consolation, Final
+                playoffLabels[(tierId, slot)] = (stage.Matches[i].TeamALabel, stage.Matches[i].TeamBLabel);
+            }
+        }
+
         return Ok(new PublicScheduleDto(
             t.Name, t.Kind, t.StartDate, t.EndDate,
             t.Venue?.Name, t.Venue?.Address, t.Location,
@@ -55,21 +71,39 @@ public class PublicHostedTournamentsController : ControllerBase
                 .Select(f => new HostedTournamentFieldDto(f.Id, f.VenueFieldId, f.Name, f.SortOrder, f.Notes, f.CreatedAt))
                 .ToList(),
             t.Matches
-                .OrderBy(m => m.Day?.Date).ThenBy(m => m.StartTime).ThenBy(m => m.Field?.SortOrder ?? 0)
-                .Select(m => new HostedTournamentMatchDto(
-                    m.Id,
-                    m.TierId, m.Tier?.Name,
-                    m.TeamAId, TeamLabel(m.TeamA),
-                    m.TeamBId, TeamLabel(m.TeamB),
-                    m.FieldId, m.Field?.Name,
-                    m.DayId, m.Day?.Date,
-                    m.StartTime, m.DurationMinutes,
-                    m.TeamAScore, m.TeamBScore,
-                    // Strip admin notes from the public payload — those are internal.
-                    null))
+                // Same sort as the admin projection so the public schedule ends with
+                // SF1 → SF2 → Consolation → Final under any group-stage rows.
+                .OrderBy(m => m.PlayoffSlot.HasValue ? 1 : 0)
+                .ThenBy(m => m.PlayoffSlot)
+                .ThenBy(m => m.Day?.Date).ThenBy(m => m.StartTime).ThenBy(m => m.Field?.SortOrder ?? 0)
+                .Select(m => {
+                    var labelA = TeamLabel(m.TeamA);
+                    var labelB = TeamLabel(m.TeamB);
+                    // For playoff placeholders with null teams, fall through to the projected
+                    // seed labels from the knockout stage so the schedule row shows something
+                    // meaningful ("West 1st Place vs East 2nd Place") instead of "TBD vs TBD".
+                    if (m.PlayoffSlot is PlayoffSlot ps
+                        && playoffLabels.TryGetValue((m.TierId, ps), out var proj))
+                    {
+                        labelA ??= proj.A;
+                        labelB ??= proj.B;
+                    }
+                    return new HostedTournamentMatchDto(
+                        m.Id,
+                        m.TierId, m.Tier?.Name,
+                        m.TeamAId, labelA,
+                        m.TeamBId, labelB,
+                        m.FieldId, m.Field?.Name,
+                        m.DayId, m.Day?.Date,
+                        m.StartTime, m.DurationMinutes,
+                        m.TeamAScore, m.TeamBScore,
+                        // Strip admin notes from the public payload — those are internal.
+                        null,
+                        m.PlayoffSlot);
+                })
                 .ToList(),
             BuildStandings(t),
-            BuildKnockout(t)));
+            knockout));
     }
 
     /// <summary>For every tier that has exactly two brackets, project a Semifinal 1 (A#1 vs B#2),

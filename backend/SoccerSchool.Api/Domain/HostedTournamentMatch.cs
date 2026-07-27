@@ -44,6 +44,12 @@ public class HostedTournamentMatch
     /// <summary>Team B's final score. Same semantics as <see cref="TeamAScore"/>.</summary>
     public int? TeamBScore { get; set; }
 
+    /// <summary>Set when this match is one of the tier's four projected knockout slots
+    /// (semifinal 1/2, consolation, final). Null on regular group-stage round-robin matches.
+    /// Generated during <c>GenerateSchedule</c> for every tier with exactly two brackets;
+    /// teams start null and the admin fills them in once seeds are known.</summary>
+    public PlayoffSlot? PlayoffSlot { get; set; }
+
     /// <summary>Length of the match window in minutes; drives the next-slot cursor when
     /// scheduling. Defaults to the event's <see cref="HostedTournament.MatchDurationMinutes"/>.</summary>
     public int DurationMinutes { get; set; } = 60;

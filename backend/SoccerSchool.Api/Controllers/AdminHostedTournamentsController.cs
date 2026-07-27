@@ -602,6 +602,35 @@ public class AdminHostedTournamentsController : ControllerBase
             });
         }
 
+        // Also generate the four projected knockout matches per tier that has exactly two
+        // brackets — SF1, SF2, Consolation, Final. Teams start null (admin fills them in
+        // once seeds are settled) but the rows exist so the admin can enter scores from the
+        // Schedule table like any other match. Only add them if none exist yet for that
+        // tier + slot so re-generating the group stage doesn't wipe playoff results.
+        foreach (var tier in tournament.Tiers)
+        {
+            var bracketList = tier.Brackets.OrderBy(b => b.SortOrder).ThenBy(b => b.Name).ToList();
+            if (bracketList.Count != 2) continue;
+            foreach (var slot in new[] {
+                PlayoffSlot.SemifinalOne,
+                PlayoffSlot.SemifinalTwo,
+                PlayoffSlot.Consolation,
+                PlayoffSlot.Final })
+            {
+                var alreadyExists = tournament.Matches.Any(m => m.TierId == tier.Id && m.PlayoffSlot == slot)
+                    || scheduled.Any(m => m.TierId == tier.Id && m.PlayoffSlot == slot);
+                if (alreadyExists) continue;
+                scheduled.Add(new HostedTournamentMatch
+                {
+                    HostedTournamentId = id,
+                    TierId = tier.Id,
+                    PlayoffSlot = slot,
+                    DurationMinutes = duration,
+                    CreatedAt = now,
+                });
+            }
+        }
+
         _db.HostedTournamentMatches.AddRange(scheduled);
         await _db.SaveChangesAsync(ct);
         return Ok(await LoadAndMap(id, ct));
@@ -897,7 +926,13 @@ public class AdminHostedTournamentsController : ControllerBase
                 .Select(f => new HostedTournamentFieldDto(f.Id, f.VenueFieldId, f.Name, f.SortOrder, f.Notes, f.CreatedAt))
                 .ToList(),
             t.Matches
-                .OrderBy(m => m.Day?.Date).ThenBy(m => m.StartTime).ThenBy(m => m.Field?.SortOrder ?? 0)
+                // Playoffs land after every group-stage row so the schedule ends with
+                // SF1 → SF2 → Consolation → Final regardless of when the admin scheduled
+                // them. Within each bucket, sort by day/time so the group stage keeps
+                // chronological order.
+                .OrderBy(m => m.PlayoffSlot.HasValue ? 1 : 0)
+                .ThenBy(m => m.PlayoffSlot)
+                .ThenBy(m => m.Day?.Date).ThenBy(m => m.StartTime).ThenBy(m => m.Field?.SortOrder ?? 0)
                 .Select(m => new HostedTournamentMatchDto(
                     m.Id,
                     m.TierId, m.Tier?.Name,
@@ -907,7 +942,8 @@ public class AdminHostedTournamentsController : ControllerBase
                     m.DayId, m.Day?.Date,
                     m.StartTime, m.DurationMinutes,
                     m.TeamAScore, m.TeamBScore,
-                    m.Notes))
+                    m.Notes,
+                    m.PlayoffSlot))
                 .ToList());
 
     private static string? TeamLabel(HostedTournamentTeam? t) =>
