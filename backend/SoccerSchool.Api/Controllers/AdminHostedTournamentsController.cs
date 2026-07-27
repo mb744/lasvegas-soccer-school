@@ -659,6 +659,32 @@ public class AdminHostedTournamentsController : ControllerBase
         return Ok(await LoadAndMap(id, ct));
     }
 
+    /// <summary>Dry-run render of the schedule email — same composition the send path uses,
+    /// but returns the resolved subject / body / recipient list instead of dispatching. Lets
+    /// the admin confirm before hitting Send.</summary>
+    [HttpPost("{id:int}/preview-schedule-email")]
+    public async Task<ActionResult<SchedulePreviewDto>> PreviewScheduleEmail(
+        int id, [FromBody] SendScheduleEmailRequest? req, CancellationToken ct)
+    {
+        var tournament = await LoadTournamentQuery().FirstOrDefaultAsync(t => t.Id == id, ct);
+        if (tournament is null) return NotFound();
+        if (string.IsNullOrWhiteSpace(tournament.PublicSlug))
+        {
+            tournament.PublicSlug = await GenerateUniqueSlugAsync(tournament.Name, ct);
+            await _db.SaveChangesAsync(ct);
+        }
+        var (subject, body, link, recipients) = ComposeScheduleEmail(tournament, req);
+        string? warning = null;
+        if (!_emailSender.IsAvailable) warning = "Email is not configured on this server — sending will fail.";
+        else if (recipients.Count == 0) warning = "No invited teams have a head-coach email on file.";
+        return Ok(new SchedulePreviewDto(
+            Subject: subject,
+            Body: body,
+            PublicUrl: link,
+            Recipients: recipients.Select(r => new SchedulePreviewRecipient(r.Name, r.Email)).ToList(),
+            Warning: warning));
+    }
+
     /// <summary>Send the schedule + rules body to every invited team's head-coach email on file.
     /// LVSS teams don't have coach emails in this domain; those coaches receive the event
     /// through the normal messaging flow instead. Skips recipients without an email.</summary>
@@ -675,16 +701,25 @@ public class AdminHostedTournamentsController : ControllerBase
             tournament.PublicSlug = await GenerateUniqueSlugAsync(tournament.Name, ct);
             await _db.SaveChangesAsync(ct);
         }
-        var recipients = tournament.Teams
-            .Select(t => t.InvitedTeam)
-            .Where(t => t != null && !string.IsNullOrWhiteSpace(t!.HeadCoachEmail))
-            .Select(t => new { Email = t!.HeadCoachEmail!.Trim(), Name = t!.HeadCoachName ?? t.Name })
-            .GroupBy(r => r.Email.ToLowerInvariant())
-            .Select(g => g.First())
-            .ToList();
+
+        var (subject, text, _, recipients) = ComposeScheduleEmail(tournament, req);
         if (recipients.Count == 0)
             return BadRequest(new SendScheduleEmailResult(0, 0, "No invited teams have a head-coach email on file."));
 
+        var sent = 0; var skipped = 0;
+        foreach (var r in recipients)
+        {
+            var res = await _emailSender.SendAsync(r.Email, subject, text, ct);
+            if (res.Success) sent++; else skipped++;
+        }
+        return Ok(new SendScheduleEmailResult(sent, skipped, sent > 0 ? $"Sent to {sent} coach(es)." : "No emails were queued."));
+    }
+
+    /// <summary>Shared composition for the preview + send paths so the two never drift.
+    /// Assumes tournament is loaded (with Teams.InvitedTeam) and PublicSlug is set.</summary>
+    private (string Subject, string Body, string Link, List<(string Name, string Email)> Recipients) ComposeScheduleEmail(
+        HostedTournament tournament, SendScheduleEmailRequest? req)
+    {
         var link = string.IsNullOrWhiteSpace(_app.PublicBaseUrl)
             ? $"/tournament/{tournament.PublicSlug}"
             : $"{_app.PublicBaseUrl.TrimEnd('/')}/tournament/{tournament.PublicSlug}";
@@ -700,14 +735,15 @@ public class AdminHostedTournamentsController : ControllerBase
         if (!string.IsNullOrWhiteSpace(stored)) body.Append(stored).Append("\n\n");
         body.Append("Schedule + updates: ").Append(link).Append('\n');
 
-        var text = body.ToString();
-        var sent = 0; var skipped = 0;
-        foreach (var r in recipients)
-        {
-            var res = await _emailSender.SendAsync(r.Email, subject, text, ct);
-            if (res.Success) sent++; else skipped++;
-        }
-        return Ok(new SendScheduleEmailResult(sent, skipped, sent > 0 ? $"Sent to {sent} coach(es)." : "No emails were queued."));
+        var recipients = tournament.Teams
+            .Select(t => t.InvitedTeam)
+            .Where(t => t != null && !string.IsNullOrWhiteSpace(t!.HeadCoachEmail))
+            .Select(t => (Name: t!.HeadCoachName ?? t.Name, Email: t!.HeadCoachEmail!.Trim()))
+            .GroupBy(r => r.Email.ToLowerInvariant())
+            .Select(g => g.First())
+            .ToList();
+
+        return (subject, body.ToString(), link, recipients);
     }
 
     // ------------------------------------------------------------

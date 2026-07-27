@@ -1747,6 +1747,20 @@ export interface SendScheduleEmailResult {
   message: string | null
 }
 
+export interface SchedulePreviewRecipient {
+  name: string
+  email: string
+}
+
+export interface SchedulePreviewDto {
+  subject: string
+  body: string
+  publicUrl: string
+  recipients: SchedulePreviewRecipient[]
+  /** Non-null when the send path would fail (email not configured OR zero recipients). */
+  warning: string | null
+}
+
 export interface PublicScheduleDto {
   name: string
   kind: TournamentKind

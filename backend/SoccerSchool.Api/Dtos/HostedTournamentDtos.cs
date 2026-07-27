@@ -133,6 +133,19 @@ public record SendScheduleEmailRequest
 
 public record SendScheduleEmailResult(int Sent, int Skipped, string? Message);
 
+/// <summary>One recipient row in the pre-send preview so the admin knows exactly who the
+/// email will hit before hitting Send.</summary>
+public record SchedulePreviewRecipient(string Name, string Email);
+
+/// <summary>Dry-run render of the schedule email — same subject / body composition the send
+/// path uses, plus the resolved recipient list. Nothing is sent.</summary>
+public record SchedulePreviewDto(
+    string Subject,
+    string Body,
+    string PublicUrl,
+    IReadOnlyList<SchedulePreviewRecipient> Recipients,
+    string? Warning);
+
 public record GenerateScheduleRequest
 {
     /// <summary>Wipe existing matches before generating; default true. Setting false lets the

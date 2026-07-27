@@ -8,6 +8,7 @@ import type {
   HostedTournament,
   InvitedTeam,
   RosterTeamSummary,
+  SchedulePreviewDto,
   TournamentKind,
   Venue,
 } from '../../api/types'
@@ -943,6 +944,7 @@ function SchedulePanel({ event, onChanged, onError, onNotice }: {
   const [showEmail, setShowEmail] = useState(false)
   const [emailSubject, setEmailSubject] = useState('')
   const [emailIntro, setEmailIntro] = useState('')
+  const [preview, setPreview] = useState<SchedulePreviewDto | null>(null)
 
   const generate = async () => {
     if (event.matches.length > 0 && !confirm(t('admin.hostedGenConfirm'))) return
@@ -954,19 +956,31 @@ function SchedulePanel({ event, onChanged, onError, onNotice }: {
     } catch (e: any) { onError(errMsg(e)) }
     finally { setBusy(false) }
   }
-  const sendEmail = async (e: React.FormEvent) => {
+  const openPreview = async (e: React.FormEvent) => {
     e.preventDefault()
+    setBusy(true)
+    try {
+      const p = await Api.previewHostedTournamentScheduleEmail(event.id, {
+        subject: emailSubject.trim() || null,
+        intro: emailIntro.trim() || null,
+      })
+      setPreview(p)
+    } catch (err: any) { onError(errMsg(err)) }
+    finally { setBusy(false) }
+  }
+  const confirmSend = async () => {
     setBusy(true)
     try {
       const res = await Api.sendHostedTournamentScheduleEmail(event.id, {
         subject: emailSubject.trim() || null,
         intro: emailIntro.trim() || null,
       })
-      setShowEmail(false)
+      setPreview(null); setShowEmail(false)
       onNotice(res.message ?? `Sent to ${res.sent} coaches.`)
     } catch (err: any) { onError(errMsg(err)) }
     finally { setBusy(false) }
   }
+  const cancelEmail = () => { setShowEmail(false); setPreview(null) }
 
   const publicUrl = event.publicSlug
     ? `${window.location.origin}/tournament/${event.publicSlug}`
@@ -981,7 +995,7 @@ function SchedulePanel({ event, onChanged, onError, onNotice }: {
             className="bg-emerald-700 text-white font-semibold px-3 py-1 rounded-md hover:bg-emerald-800 disabled:opacity-60">
             {busy ? t('admin.sending') : t('admin.hostedGenerate')}
           </button>
-          <button onClick={() => setShowEmail(s => !s)} disabled={busy || event.matches.length === 0}
+          <button onClick={() => (showEmail ? cancelEmail() : setShowEmail(true))} disabled={busy || event.matches.length === 0}
             className="text-emerald-700 hover:underline disabled:text-slate-400 disabled:no-underline">
             {showEmail ? t('admin.cancel') : t('admin.hostedSendSchedule')}
           </button>
@@ -993,7 +1007,7 @@ function SchedulePanel({ event, onChanged, onError, onNotice }: {
         </div>
       )}
       {showEmail && (
-        <form onSubmit={sendEmail} className="mt-2 space-y-2 bg-emerald-50/50 border border-emerald-200 rounded p-2">
+        <form onSubmit={openPreview} className="mt-2 space-y-2 bg-emerald-50/50 border border-emerald-200 rounded p-2">
           <label className="text-xs block">
             <span className="text-slate-700">{t('admin.hostedEmailSubject')}</span>
             <input type="text" value={emailSubject} onChange={e => setEmailSubject(e.target.value)}
@@ -1006,11 +1020,23 @@ function SchedulePanel({ event, onChanged, onError, onNotice }: {
               placeholder={t('admin.hostedEmailIntroPh')}
               className="mt-1 w-full border border-slate-300 rounded px-2 py-1 text-sm" />
           </label>
-          <button type="submit" disabled={busy}
-            className="bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded-md hover:bg-emerald-800 disabled:opacity-60">
-            {t('admin.hostedSendSchedule')}
-          </button>
+          <div className="flex items-center gap-2">
+            <button type="submit" disabled={busy}
+              className="bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded-md hover:bg-emerald-800 disabled:opacity-60">
+              {busy && !preview ? t('admin.sending') : t('admin.hostedPreviewSchedule')}
+            </button>
+            <button type="button" onClick={cancelEmail} disabled={busy}
+              className="text-xs text-slate-600 hover:underline">{t('admin.cancel')}</button>
+          </div>
         </form>
+      )}
+      {preview && (
+        <SchedulePreviewModal
+          preview={preview}
+          eventName={event.name}
+          onConfirm={confirmSend}
+          onCancel={() => setPreview(null)}
+          busy={busy} />
       )}
       {event.matches.length === 0 ? (
         <p className="text-xs text-slate-400 mt-2">{t('admin.hostedScheduleEmpty')}</p>
@@ -1152,6 +1178,72 @@ function MatchRow({ event, match, onChanged, onError, onNotice }: {
           className="text-xs text-rose-700 hover:underline">{t('admin.delete')}</button>
       </td>
     </tr>
+  )
+}
+
+/** Full-page overlay showing the rendered subject / body / resolved recipient list before the
+ *  admin commits to actually sending the schedule email. Warning banner surfaces when the send
+ *  would fail (email not configured / no recipients) so the confirm button stays disabled. */
+function SchedulePreviewModal({ preview, eventName, onConfirm, onCancel, busy }: {
+  preview: SchedulePreviewDto
+  eventName: string
+  onConfirm: () => void | Promise<void>
+  onCancel: () => void
+  busy: boolean
+}) {
+  const { t } = useTranslation()
+  const canSend = !preview.warning && preview.recipients.length > 0
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-start justify-center p-4 overflow-y-auto">
+      <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full mt-10 p-5 space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-bold text-emerald-800">{t('admin.hostedPreviewTitle', { name: eventName })}</h2>
+          <button onClick={onCancel} className="text-sm text-slate-500 hover:text-slate-700">✕</button>
+        </div>
+        <p className="text-xs text-slate-500">{t('admin.hostedPreviewBlurb')}</p>
+
+        {preview.warning && (
+          <div className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md p-2">
+            {preview.warning}
+          </div>
+        )}
+
+        <div className="space-y-1">
+          <div className="text-[10px] uppercase tracking-wide text-slate-500">{t('admin.hostedPreviewSubject')}</div>
+          <div className="text-sm bg-slate-50 border border-slate-200 rounded px-2 py-1">{preview.subject}</div>
+        </div>
+        <div className="space-y-1">
+          <div className="text-[10px] uppercase tracking-wide text-slate-500">{t('admin.hostedPreviewBody')}</div>
+          <pre className="text-xs bg-slate-50 border border-slate-200 rounded px-2 py-2 whitespace-pre-wrap max-h-[16rem] overflow-y-auto">{preview.body}</pre>
+        </div>
+        <div className="space-y-1">
+          <div className="text-[10px] uppercase tracking-wide text-slate-500">
+            {t('admin.hostedPreviewRecipients', { count: preview.recipients.length })}
+          </div>
+          {preview.recipients.length === 0 ? (
+            <p className="text-xs text-slate-400">{t('admin.hostedPreviewNoRecipients')}</p>
+          ) : (
+            <ul className="text-xs bg-slate-50 border border-slate-200 rounded p-2 max-h-40 overflow-y-auto space-y-0.5">
+              {preview.recipients.map(r => (
+                <li key={r.email} className="flex items-center gap-2">
+                  <span className="flex-1 truncate">{r.name}</span>
+                  <span className="text-slate-500 truncate">{r.email}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div className="flex items-center gap-3 pt-2 border-t border-slate-100">
+          <button onClick={() => onConfirm()} disabled={busy || !canSend}
+            className="bg-emerald-700 text-white text-sm font-semibold px-4 py-1.5 rounded-md hover:bg-emerald-800 disabled:opacity-60">
+            {busy ? t('admin.sending') : t('admin.hostedPreviewConfirmSend', { count: preview.recipients.length })}
+          </button>
+          <button onClick={onCancel} disabled={busy}
+            className="text-sm text-slate-600 hover:underline ml-auto">{t('admin.hostedPreviewBack')}</button>
+        </div>
+      </div>
+    </div>
   )
 }
 

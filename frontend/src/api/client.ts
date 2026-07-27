@@ -131,6 +131,7 @@ import type {
   SendScheduleEmailRequest,
   SaveHostedTournamentMatchRequest,
   SendScheduleEmailResult,
+  SchedulePreviewDto,
   PublicScheduleDto,
   InvitedTeam,
   SaveInvitedTeamRequest,
@@ -1177,6 +1178,10 @@ export const Api = {
   },
   async sendHostedTournamentScheduleEmail(id: number, payload: SendScheduleEmailRequest) {
     const r = await api.post<SendScheduleEmailResult>(`/admin/hosted-tournaments/${id}/send-schedule-email`, payload)
+    return r.data
+  },
+  async previewHostedTournamentScheduleEmail(id: number, payload: SendScheduleEmailRequest) {
+    const r = await api.post<SchedulePreviewDto>(`/admin/hosted-tournaments/${id}/preview-schedule-email`, payload)
     return r.data
   },
   async publicHostedTournament(slug: string) {
