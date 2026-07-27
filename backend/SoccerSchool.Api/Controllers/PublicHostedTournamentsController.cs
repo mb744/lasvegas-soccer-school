@@ -95,11 +95,28 @@ public class PublicHostedTournamentsController : ControllerBase
             var aStandings = ComputeRows(aTeams, played);
             var bStandings = ComputeRows(bTeams, played);
 
-            // Look up seed → team-name; null when the bracket doesn't have that seed yet.
-            string SeedLabel(HostedTournamentBracket br, IReadOnlyList<BracketStandingRowDto> rows, int seed) =>
-                rows.Count >= seed ? rows[seed - 1].TeamName : $"{br.Name} #{seed}";
-            int? SeedTeamId(IReadOnlyList<BracketStandingRowDto> rows, int seed) =>
-                rows.Count >= seed ? rows[seed - 1].TeamId : null;
+            // A bracket is "settled" only once every team in it has finished the round-robin
+            // schedule (every team's GamesPlayed hits the expected count). Until then we show
+            // seed placeholders like "West 1st Place" instead of real team names, so the
+            // playoff card doesn't imply a team is locked in before the group stage is done.
+            // Expected games per team depends on whether the tier crosses brackets:
+            //   * CrossBracketPlay=true → each team plays every team in the OTHER bracket
+            //   * CrossBracketPlay=false → each team plays every other team in ITS bracket
+            var aExpected = tier.CrossBracketPlay ? bTeams.Count : Math.Max(0, aTeams.Count - 1);
+            var bExpected = tier.CrossBracketPlay ? aTeams.Count : Math.Max(0, bTeams.Count - 1);
+            var aSettled = aTeams.Count > 0 && aStandings.All(r => r.GamesPlayed >= aExpected);
+            var bSettled = bTeams.Count > 0 && bStandings.All(r => r.GamesPlayed >= bExpected);
+
+            static string Ordinal(int n) => n switch { 1 => "1st", 2 => "2nd", 3 => "3rd", _ => n + "th" };
+            // Placeholder label when the bracket isn't fully played yet.
+            static string Placeholder(HostedTournamentBracket br, int seed) => $"{br.Name} {Ordinal(seed)} Place";
+
+            // Label the slot — real team name only once the source bracket has played every
+            // scheduled match; placeholder otherwise.
+            string SeedLabel(HostedTournamentBracket br, IReadOnlyList<BracketStandingRowDto> rows, int seed, bool settled) =>
+                (settled && rows.Count >= seed) ? rows[seed - 1].TeamName : Placeholder(br, seed);
+            int? SeedTeamId(IReadOnlyList<BracketStandingRowDto> rows, int seed, bool settled) =>
+                (settled && rows.Count >= seed) ? rows[seed - 1].TeamId : null;
 
             KnockoutMatchDto MakeSlot(string slotName, string labelA, string labelB, int? teamAId, int? teamBId)
             {
@@ -130,14 +147,14 @@ public class PublicHostedTournamentsController : ControllerBase
             }
 
             var sf1 = MakeSlot("Semifinal 1",
-                SeedLabel(a, aStandings, 1), SeedLabel(b, bStandings, 2),
-                SeedTeamId(aStandings, 1), SeedTeamId(bStandings, 2));
+                SeedLabel(a, aStandings, 1, aSettled), SeedLabel(b, bStandings, 2, bSettled),
+                SeedTeamId(aStandings, 1, aSettled), SeedTeamId(bStandings, 2, bSettled));
             var sf2 = MakeSlot("Semifinal 2",
-                SeedLabel(b, bStandings, 1), SeedLabel(a, aStandings, 2),
-                SeedTeamId(bStandings, 1), SeedTeamId(aStandings, 2));
+                SeedLabel(b, bStandings, 1, bSettled), SeedLabel(a, aStandings, 2, aSettled),
+                SeedTeamId(bStandings, 1, bSettled), SeedTeamId(aStandings, 2, aSettled));
             var consolation = MakeSlot("Consolation (3rd place)",
-                SeedLabel(a, aStandings, 3), SeedLabel(b, bStandings, 3),
-                SeedTeamId(aStandings, 3), SeedTeamId(bStandings, 3));
+                SeedLabel(a, aStandings, 3, aSettled), SeedLabel(b, bStandings, 3, bSettled),
+                SeedTeamId(aStandings, 3, aSettled), SeedTeamId(bStandings, 3, bSettled));
 
             // Final teams derive from the semifinal winners — only resolvable once both SFs
             // have real scores. Otherwise show "Winner SF1 / SF2" placeholders.
@@ -146,10 +163,10 @@ public class PublicHostedTournamentsController : ControllerBase
             // Look up the actual team ids behind those winner labels so a scheduled Final can
             // still get scores wired in from a real played match.
             int? finalAId = sf1.WinnerLabel != null
-                ? (sf1.WinnerLabel == sf1.TeamALabel ? SeedTeamId(aStandings, 1) : SeedTeamId(bStandings, 2))
+                ? (sf1.WinnerLabel == sf1.TeamALabel ? SeedTeamId(aStandings, 1, aSettled) : SeedTeamId(bStandings, 2, bSettled))
                 : null;
             int? finalBId = sf2.WinnerLabel != null
-                ? (sf2.WinnerLabel == sf2.TeamALabel ? SeedTeamId(bStandings, 1) : SeedTeamId(aStandings, 2))
+                ? (sf2.WinnerLabel == sf2.TeamALabel ? SeedTeamId(bStandings, 1, bSettled) : SeedTeamId(aStandings, 2, aSettled))
                 : null;
             var final = MakeSlot("Final", finalA, finalB, finalAId, finalBId);
 
