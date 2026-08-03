@@ -177,6 +177,8 @@ const es: Translations = {
     hubInvoicesBlurb: 'Facture a los padres por torneos, suscripciones mensuales y otros cargos. Sigue el ciclo Nuevo → Enviado → Pagado → Cerrado con detalles de pago.',
     hubHostedTournaments: 'Torneos anfitriones',
     hubHostedTournamentsBlurb: 'Cree torneos o ligas que LVSS organiza. Agregue equipos LVSS y equipos invitados externos; registre la cuota por equipo.',
+    hubChatGroups: 'Grupos de chat',
+    hubChatGroupsBlurb: 'Cree y gestione chats grupales dentro de la app móvil para padres — cárguelos desde una plantilla, agregue o quite miembros, publique mensajes de admin.',
     hostedTitle: 'Torneos anfitriones',
     hostedSubtitle: 'Administre los eventos que LVSS organiza y el catálogo de equipos externos invitados.',
     hostedAddNew: 'Nuevo evento',

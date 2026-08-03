@@ -15,6 +15,7 @@ import { AdminCoachesPage } from './pages/admin/CoachesPage'
 import { AdminPlayersPage } from './pages/admin/PlayersPage'
 import { AdminInvoicesPage } from './pages/admin/InvoicesPage'
 import { AdminHostedTournamentsPage } from './pages/admin/HostedTournamentsPage'
+import { AdminChatGroupsPage } from './pages/admin/ChatGroupsPage'
 import { TournamentPublicPage } from './pages/TournamentPublicPage'
 import { LoginPage } from './pages/LoginPage'
 import { SignupPage } from './pages/SignupPage'
@@ -98,6 +99,10 @@ export default function App() {
           <Route
             path="/admin/hosted-tournaments"
             element={<RequireAuth adminOnly><AdminHostedTournamentsPage /></RequireAuth>}
+          />
+          <Route
+            path="/admin/chat-groups"
+            element={<RequireAuth adminOnly><AdminChatGroupsPage /></RequireAuth>}
           />
           <Route path="/tournament/:slug" element={<TournamentPublicPage />} />
           <Route path="*" element={<LandingPage />} />
