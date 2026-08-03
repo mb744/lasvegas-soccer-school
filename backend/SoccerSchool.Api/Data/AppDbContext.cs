@@ -92,6 +92,14 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
     public DbSet<VenueField> VenueFields => Set<VenueField>();
     public DbSet<MappedField> MappedFields => Set<MappedField>();
 
+    // Mobile companion app (native React Native, JWT + SignalR):
+    // in-app group chat, Expo push device registry, and mobile refresh tokens.
+    public DbSet<ChatGroup> ChatGroups => Set<ChatGroup>();
+    public DbSet<ChatGroupMember> ChatGroupMembers => Set<ChatGroupMember>();
+    public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
+    public DbSet<DeviceToken> DeviceTokens => Set<DeviceToken>();
+    public DbSet<MobileRefreshToken> MobileRefreshTokens => Set<MobileRefreshToken>();
+
     /// <summary>Backing store for the ASP.NET Core data-protection key ring (cookie encryption
     /// keys). Persisting these in SQL keeps auth cookies valid across container restarts.</summary>
     public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
@@ -652,6 +660,70 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
                 .WithMany()
                 .HasForeignKey(m => m.BroadcastId)
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // -------- Mobile companion app --------
+
+        modelBuilder.Entity<ChatGroup>(b =>
+        {
+            // Team link is informational (see ChatGroup.cs). SetNull so a team delete leaves the
+            // chat + its history intact.
+            b.HasOne(g => g.Team)
+                .WithMany()
+                .HasForeignKey(g => g.TeamId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<ChatGroupMember>(b =>
+        {
+            b.HasOne(m => m.ChatGroup)
+                .WithMany(g => g.Members)
+                .HasForeignKey(m => m.ChatGroupId)
+                .OnDelete(DeleteBehavior.Cascade);
+            // ParentAccountId is nullable (admin/staff members are identified by UserId), so the
+            // cascade here only fires for parent members. Deleting a parent account cascades to
+            // their memberships — that's the intent, they no longer exist to chat.
+            b.HasOne(m => m.ParentAccount)
+                .WithMany()
+                .HasForeignKey(m => m.ParentAccountId)
+                .OnDelete(DeleteBehavior.Cascade);
+            // Prevent adding the same parent to a group twice. Filtered so admin/staff rows
+            // (ParentAccountId null) aren't affected by the uniqueness constraint.
+            b.HasIndex(m => new { m.ChatGroupId, m.ParentAccountId })
+                .IsUnique()
+                .HasFilter("[ParentAccountId] IS NOT NULL");
+            b.HasIndex(m => m.UserId);
+        });
+
+        modelBuilder.Entity<ChatMessage>(b =>
+        {
+            b.HasOne(m => m.ChatGroup)
+                .WithMany(g => g.Messages)
+                .HasForeignKey(m => m.ChatGroupId)
+                .OnDelete(DeleteBehavior.Cascade);
+            // Composite index supports the "history since X, newest first" queries the mobile
+            // client and the unread-count computation both run.
+            b.HasIndex(m => new { m.ChatGroupId, m.Id });
+        });
+
+        modelBuilder.Entity<DeviceToken>(b =>
+        {
+            b.HasOne(d => d.User)
+                .WithMany()
+                .HasForeignKey(d => d.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+            // One row per real device — Expo tokens uniquely identify an install.
+            b.HasIndex(d => d.ExpoPushToken).IsUnique();
+        });
+
+        modelBuilder.Entity<MobileRefreshToken>(b =>
+        {
+            b.HasOne(r => r.User)
+                .WithMany()
+                .HasForeignKey(r => r.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+            // Refresh-token lookup is by hash on every refresh call.
+            b.HasIndex(r => r.TokenHash).IsUnique();
         });
     }
 }

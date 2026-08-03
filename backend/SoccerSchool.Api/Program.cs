@@ -1,13 +1,17 @@
+using System.Text;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 using QuestPDF.Infrastructure;
 using SoccerSchool.Api;
 using SoccerSchool.Api.Data;
 using SoccerSchool.Api.Domain;
+using SoccerSchool.Api.Hubs;
 using SoccerSchool.Api.Options;
 using SoccerSchool.Api.Services;
 
@@ -125,6 +129,44 @@ if (oauth.Facebook.IsConfigured)
     });
 }
 
+// Mobile companion app auth — HMAC-signed JWT bearer scheme registered alongside the web
+// cookie scheme (which stays the default for controllers without an explicit
+// [Authorize(AuthenticationSchemes=...)] attribute). Silently skipped when App:Jwt:SigningKey
+// isn't configured so the deploy still boots — the mobile controllers 401 in that state, which
+// matches MobileTokenService's own no-op behavior.
+var jwt = builder.Configuration.GetSection($"{AppOptions.SectionName}:Jwt").Get<AppOptions.JwtOptions>() ?? new();
+if (jwt.IsConfigured)
+{
+    authBuilder.AddJwtBearer(AuthSchemes.MobileJwt, opts =>
+    {
+        opts.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = jwt.Issuer,
+            ValidAudience = jwt.Audience,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt.SigningKey)),
+            ClockSkew = TimeSpan.FromSeconds(30),
+        };
+        // SignalR's browser/mobile client sends the bearer as an `?access_token=` query param on
+        // the WebSocket upgrade because browsers can't set custom headers on the WS handshake.
+        // Pull it out for the /hubs/* paths so the same JWT works over both REST and SignalR.
+        opts.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = ctx =>
+            {
+                var token = ctx.Request.Query["access_token"];
+                var path = ctx.HttpContext.Request.Path;
+                if (!string.IsNullOrEmpty(token) && path.StartsWithSegments("/hubs"))
+                    ctx.Token = token;
+                return Task.CompletedTask;
+            }
+        };
+    });
+}
+
 builder.Services.AddAuthorization();
 
 builder.Services.AddScoped<IOutreachSender, OutreachSender>();
@@ -148,6 +190,16 @@ builder.Services.AddHostedService<TwilioStatusReconciler>();
 // so there's no captive-scope issue when the BackgroundService wrapper consumes it.
 builder.Services.AddSingleton<ITwilioMessageReconciler, TwilioMessageReconciler>();
 builder.Services.AddHostedService<TwilioMessageReconcilerBackground>();
+
+// Mobile companion app services + background job.
+builder.Services.AddScoped<IMobileTokenService, MobileTokenService>();
+builder.Services.AddScoped<IParentAccountResolver, ParentAccountResolver>();
+builder.Services.AddScoped<IChatService, ChatService>();
+builder.Services.AddSingleton<IPushSender, ExpoPushSender>();
+// Attendance reminder pushes for events 6–48h out; runs every 3h.
+builder.Services.AddHostedService<AttendanceReminderJob>();
+// SignalR powers the real-time chat fan-out on top of the persisted ChatMessages history.
+builder.Services.AddSignalR();
 
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
@@ -195,6 +247,8 @@ app.UseDefaultFiles();
 app.UseStaticFiles();
 
 app.MapControllers();
+// Mobile app real-time chat. Uses the same MobileJwt bearer scheme as the REST controllers.
+app.MapHub<ChatHub>("/hubs/chat");
 app.MapGet("/health", () => Results.Ok(new { status = "ok", time = DateTime.UtcNow }));
 
 // SPA fallback: any non-API request that isn't a static file returns index.html

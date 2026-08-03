@@ -37,4 +37,10 @@ public class EventAttendance
     public AttendanceSource Source { get; set; } = AttendanceSource.ParentReply;
 
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+
+    /// <summary>When the mobile "confirm attendance" push was last sent for this player+event. Null =
+    /// never reminded. The reminder background job creates a Pending row stamped with this the first
+    /// time it nudges a family, so a parent only gets one push per event no matter how often the job
+    /// runs (and the marker survives container restarts, unlike an in-memory set).</summary>
+    public DateTime? ReminderSentAt { get; set; }
 }

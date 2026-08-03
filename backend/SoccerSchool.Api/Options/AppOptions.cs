@@ -12,10 +12,34 @@ public class AppOptions
     public CorsOptions Cors { get; set; } = new();
     public AdminBootstrapOptions Admin { get; set; } = new();
     public OAuthOptions OAuth { get; set; } = new();
+    public JwtOptions Jwt { get; set; } = new();
 
     public class CorsOptions
     {
         public string[] AllowedOrigins { get; set; } = Array.Empty<string>();
+    }
+
+    /// <summary>Signing + lifetime config for the mobile (native app) bearer tokens. Distinct from
+    /// the web cookie auth, which is unaffected. <see cref="SigningKey"/> must be set in
+    /// configuration/secrets for the mobile auth scheme to register; if blank, the mobile API is
+    /// effectively disabled (the JwtBearer handler isn't added).</summary>
+    public class JwtOptions
+    {
+        /// <summary>HMAC-SHA256 signing key. At least 32 bytes. Keep secret; rotating it invalidates
+        /// every outstanding access token (devices silently refresh).</summary>
+        public string SigningKey { get; set; } = string.Empty;
+
+        public string Issuer { get; set; } = "lvss";
+        public string Audience { get; set; } = "lvss-mobile";
+
+        /// <summary>Access-token lifetime in minutes. Short so a leaked token expires fast; the device
+        /// transparently refreshes using its long-lived refresh token.</summary>
+        public int AccessTokenMinutes { get; set; } = 60;
+
+        /// <summary>Refresh-token lifetime in days. Long so parents rarely have to re-enter a password.</summary>
+        public int RefreshTokenDays { get; set; } = 60;
+
+        public bool IsConfigured => !string.IsNullOrWhiteSpace(SigningKey);
     }
 
     public class AdminBootstrapOptions
