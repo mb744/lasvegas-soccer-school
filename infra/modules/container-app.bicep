@@ -60,6 +60,10 @@ param twilioWhatsAppTemplateSid string = ''
 @description('Optional Twilio Conversations Service SID (IS...) for true group chat. Empty uses the account default service.')
 param twilioConversationsServiceSid string = ''
 
+@secure()
+@description('HMAC signing key for mobile JWT access tokens. Any random string >= 32 chars (base64 or hex is fine). When empty the mobile REST endpoints and SignalR hub 401 cleanly (fail-closed); the rest of the app is unaffected because the web uses cookie auth.')
+param jwtSigningKey string = ''
+
 @description('Optional custom domain (e.g. registration.lasvegassoccerschool.org). When set, PublicBaseUrl + OAuth redirect URIs use it instead of the auto-generated Container Apps FQDN. The actual hostname binding (managed cert + ingress.customDomains) is done by a post-Bicep step in deploy.yml because cert provisioning requires the hostname to be already registered on the container app, which Bicep cannot do in a single pass.')
 param customDomain string = ''
 
@@ -72,6 +76,7 @@ var hasFacebook = !empty(facebookOAuthAppId) && !empty(facebookOAuthAppSecret)
 var hasAdminBootstrap = !empty(adminBootstrapEmail) && !empty(adminBootstrapPassword)
 var hasAcs = !empty(acsConnectionString)
 var hasTwilio = !empty(twilioAccountSid) && !empty(twilioAuthToken) && !empty(twilioSmsFromNumber)
+var hasJwt = !empty(jwtSigningKey)
 
 var baseSecrets = [
   { name: 'sql-connection-string', value: sqlConnectionString }
@@ -91,7 +96,10 @@ var acsSecrets = hasAcs ? [
 var twilioSecrets = hasTwilio ? [
   { name: 'twilio-auth-token', value: twilioAuthToken }
 ] : []
-var allSecrets = concat(baseSecrets, googleSecrets, facebookSecrets, adminSecrets, acsSecrets, twilioSecrets)
+var jwtSecrets = hasJwt ? [
+  { name: 'jwt-signing-key', value: jwtSigningKey }
+] : []
+var allSecrets = concat(baseSecrets, googleSecrets, facebookSecrets, adminSecrets, acsSecrets, twilioSecrets, jwtSecrets)
 
 var defaultDomain = reference(environmentId, '2024-03-01').defaultDomain
 var defaultFqdn = '${name}.${defaultDomain}'
@@ -148,7 +156,13 @@ var twilioWhatsAppTemplateEnv = hasTwilio && !empty(twilioWhatsAppTemplateSid) ?
 var twilioConversationsEnv = hasTwilio && !empty(twilioConversationsServiceSid) ? [
   { name: 'Twilio__ConversationsServiceSid', value: twilioConversationsServiceSid }
 ] : []
-var allEnv = concat(baseEnv, googleEnv, facebookEnv, adminEnv, acsEnvCore, acsEnvEmail, acsEnvSms, twilioEnv, twilioWhatsAppEnv, twilioWhatsAppTemplateEnv, twilioConversationsEnv)
+// Mobile JWT: env-var only appears when a signing key is provided so
+// AppOptions.JwtOptions.IsConfigured stays false when unset, and the mobile endpoints
+// fail-closed cleanly. Web cookie auth is unaffected either way.
+var jwtEnv = hasJwt ? [
+  { name: 'App__Jwt__SigningKey', secretRef: 'jwt-signing-key' }
+] : []
+var allEnv = concat(baseEnv, googleEnv, facebookEnv, adminEnv, acsEnvCore, acsEnvEmail, acsEnvSms, twilioEnv, twilioWhatsAppEnv, twilioWhatsAppTemplateEnv, twilioConversationsEnv, jwtEnv)
 
 resource app 'Microsoft.App/containerApps@2024-03-01' = {
   name: name

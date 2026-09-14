@@ -112,6 +112,7 @@ jobs:
             twilioWhatsAppFromNumber=${{ vars.TWILIO_WHATSAPP_FROM_NUMBER }}
             twilioWhatsAppTemplateSid=${{ vars.TWILIO_WHATSAPP_TEMPLATE_SID }}
             twilioConversationsServiceSid=${{ vars.TWILIO_CONVERSATIONS_SERVICE_SID }}
+            jwtSigningKey=${{ secrets.JWT_SIGNING_KEY }}
           deploymentName: lvss-${{ github.run_id }}
           failOnStdErr: false
 

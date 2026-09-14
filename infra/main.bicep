@@ -59,6 +59,10 @@ param twilioWhatsAppTemplateSid string = ''
 @description('Optional Twilio Conversations Service SID (IS...) for true group chat. Empty uses the account default service.')
 param twilioConversationsServiceSid string = ''
 
+@secure()
+@description('HMAC signing key for the mobile companion app JWT bearer scheme. Any random string >= 32 chars. Empty leaves the mobile REST + SignalR endpoints 401ing cleanly; web cookie auth is unaffected.')
+param jwtSigningKey string = ''
+
 @description('Email of the bootstrap admin Identity user. Created (with Admin role) on first start. Leave empty to skip bootstrap.')
 param adminBootstrapEmail string = ''
 
@@ -175,6 +179,7 @@ module containerApp 'modules/container-app.bicep' = {
     twilioWhatsAppFromNumber: twilioWhatsAppFromNumber
     twilioWhatsAppTemplateSid: twilioWhatsAppTemplateSid
     twilioConversationsServiceSid: twilioConversationsServiceSid
+    jwtSigningKey: jwtSigningKey
   }
 }
 
