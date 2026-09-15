@@ -41,7 +41,8 @@
         {
           "color": "#0b3d2e"
         }
-      ]
+      ],
+      "expo-asset"
     ],
     "extra": {
       "apiBaseUrl": "https://registration.lasvegassoccerschool.org",
