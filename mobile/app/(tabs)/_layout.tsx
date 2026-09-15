@@ -1,13 +1,15 @@
 import React, { useEffect } from 'react';
-import { Text } from 'react-native';
+import { Text, type ColorValue } from 'react-native';
 import { Redirect, Tabs } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../src/auth/AuthContext';
 import { startChat, stopChat } from '../../src/chat/signalr';
 import { colors } from '../../src/theme';
 
-/** Simple emoji tab icons keep us dependency-free (no icon font to bundle/configure for v1). */
-function TabIcon({ icon, color }: { icon: string; color: string }) {
+/** Simple emoji tab icons keep us dependency-free (no icon font to bundle/configure for v1).
+ *  `color` is `ColorValue` (not just `string`) because RN 0.86's Tabs tabBarIcon callback types
+ *  it as ColorValue — either a plain color string or a platform-opaque handle. */
+function TabIcon({ icon, color }: { icon: string; color: ColorValue }) {
   return <Text style={{ fontSize: 22, color }}>{icon}</Text>;
 }
 
