@@ -23,7 +23,9 @@
       "adaptiveIcon": {
         "backgroundColor": "#0b3d2e"
       },
-      "permissions": ["NOTIFICATIONS"]
+      "permissions": [
+        "NOTIFICATIONS"
+      ]
     },
     "plugins": [
       "expo-router",
@@ -37,9 +39,13 @@
     ],
     "extra": {
       "apiBaseUrl": "https://registration.lasvegassoccerschool.org",
+      "router": {
+        "origin": false
+      },
       "eas": {
-        "projectId": "REPLACE_WITH_EAS_PROJECT_ID"
+        "projectId": "28207dee-f030-47ec-bf69-ba43dc479836"
       }
-    }
+    },
+    "owner": "las-vegas-soccer-school"
   }
 }
