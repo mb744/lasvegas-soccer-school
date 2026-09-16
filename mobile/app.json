@@ -53,6 +53,12 @@
         "projectId": "28207dee-f030-47ec-bf69-ba43dc479836"
       }
     },
-    "owner": "las-vegas-soccer-school"
+    "owner": "las-vegas-soccer-school",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/28207dee-f030-47ec-bf69-ba43dc479836"
+    }
   }
 }
