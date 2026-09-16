@@ -6,13 +6,7 @@
     "orientation": "portrait",
     "scheme": "lvss",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "icon": "./assets/icon.png",
-    "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#0b3d2e"
-    },
     "web": {
       "favicon": "./assets/favicon.png"
     },
@@ -42,7 +36,15 @@
           "color": "#0b3d2e"
         }
       ],
-      "expo-asset"
+      "expo-asset",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#0b3d2e"
+        }
+      ]
     ],
     "extra": {
       "apiBaseUrl": "https://registration.lasvegassoccerschool.org",
