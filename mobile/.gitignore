@@ -15,6 +15,13 @@ android/
 # Env / secrets
 .env*.local
 
+# iOS signing credentials — private key + provisioning profile + password JSON
+# NEVER commit any of these; they're generated locally per-machine.
+credentials.json
+credentials/
+*.p12
+*.mobileprovision
+
 # macOS
 .DS_Store
 
