@@ -199,7 +199,9 @@ public class ChatAdminController : ControllerBase
     /// <summary>Adds every parent linked to a team's roster as a group member (deduped). For each
     /// player, both the primary parent (via ParentAccount) AND every linked collaborator (mom + dad
     /// both signed up) are added. Owner is a family-linked row; each collaborator is a user-linked
-    /// row with their own display name so their chat sends carry the right sender label.</summary>
+    /// row with their own display name so their chat sends carry the right sender label. Also adds
+    /// every <see cref="TeamCoach"/> whose email matches an existing ApplicationUser as an admin
+    /// member — coaches without an account are skipped (send them an invite from the Coaches page).</summary>
     private async Task SeedFromTeamAsync(int groupId, int teamId, CancellationToken ct)
     {
         var families = await _db.TeamPlayers
@@ -210,10 +212,59 @@ public class ChatAdminController : ControllerBase
                 tp.Player.ParentAccount.LastName))
             .Distinct()
             .ToListAsync(ct);
-        if (families.Count == 0) return;
 
-        await AddFamilyMembersAsync(groupId, families, ct);
+        if (families.Count > 0)
+            await AddFamilyMembersAsync(groupId, families, ct);
+
+        await AddTeamCoachesAsync(groupId, teamId, ct);
         await _db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>Adds each <see cref="TeamCoach"/> for the team as an Admin member of the group.
+    /// Matches on email → ApplicationUser; coaches without an email or without a signed-up
+    /// account are skipped (their message would have no <c>SenderUserId</c> to attribute to).
+    /// Caller saves changes.</summary>
+    private async Task AddTeamCoachesAsync(int groupId, int teamId, CancellationToken ct)
+    {
+        var coaches = await _db.TeamCoaches
+            .Where(tc => tc.TeamId == teamId && tc.Email != null && tc.Email != "")
+            .Select(tc => new { tc.Name, tc.Email })
+            .ToListAsync(ct);
+        if (coaches.Count == 0) return;
+
+        // Normalize email lookups against Identity's NormalizedEmail column (uppercase invariant)
+        // so a "Coach@Example.com" TeamCoach still matches "coach@example.com" on ApplicationUser.
+        var normalized = coaches
+            .Select(c => c.Email!.Trim().ToUpperInvariant())
+            .Where(e => !string.IsNullOrEmpty(e))
+            .Distinct()
+            .ToList();
+        var byNormalized = await _db.Users
+            .Where(u => u.NormalizedEmail != null && normalized.Contains(u.NormalizedEmail))
+            .Select(u => new { u.Id, u.NormalizedEmail })
+            .ToListAsync(ct);
+        var idByEmail = byNormalized.ToDictionary(x => x.NormalizedEmail!, x => x.Id);
+
+        var existingUserIds = new HashSet<string>(
+            await _db.ChatGroupMembers
+                .Where(m => m.ChatGroupId == groupId && m.UserId != null)
+                .Select(m => m.UserId!)
+                .ToListAsync(ct));
+
+        foreach (var tc in coaches)
+        {
+            var key = tc.Email!.Trim().ToUpperInvariant();
+            if (!idByEmail.TryGetValue(key, out var userId)) continue;
+            if (!existingUserIds.Add(userId)) continue;
+
+            _db.ChatGroupMembers.Add(new ChatGroupMember
+            {
+                ChatGroupId = groupId,
+                UserId = userId,
+                DisplayName = string.IsNullOrWhiteSpace(tc.Name) ? "Coach" : tc.Name.Trim(),
+                Role = ChatMemberRole.Admin,
+            });
+        }
     }
 
     /// <summary>Adds one family-linked member row per family plus one user-linked row for each of
