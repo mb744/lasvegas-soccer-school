@@ -47,6 +47,15 @@ public class ParentAccount
     /// those are explicit one-off sends from an admin in response to the family contacting us.</summary>
     public bool NoCommunications { get; set; }
 
+    /// <summary>
+    /// Non-null on ParentAccounts whose owning login was deleted from the mobile app. Holds a
+    /// one-way hash of the original email address so a future signup with the same email can be
+    /// auto-linked back to the family — see <see cref="Services.IReclaimHasher"/> and
+    /// <c>AuthController.Signup</c>. Cleared when the ParentAccount is claimed by a fresh login.
+    /// </summary>
+    [MaxLength(128)]
+    public string? ReclaimEmailHash { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public List<Player> Players { get; set; } = new();

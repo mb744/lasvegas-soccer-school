@@ -20,6 +20,7 @@ public class AuthController : ControllerBase
     private readonly SignInManager<ApplicationUser> _signIn;
     private readonly AppDbContext _db;
     private readonly AppOptions _app;
+    private readonly IReclaimHasher _reclaim;
     private readonly ILogger<AuthController> _logger;
 
     public AuthController(
@@ -27,12 +28,14 @@ public class AuthController : ControllerBase
         SignInManager<ApplicationUser> signIn,
         AppDbContext db,
         IOptions<AppOptions> app,
+        IReclaimHasher reclaim,
         ILogger<AuthController> logger)
     {
         _users = users;
         _signIn = signIn;
         _db = db;
         _app = app.Value;
+        _reclaim = reclaim;
         _logger = logger;
     }
 
@@ -64,15 +67,38 @@ public class AuthController : ControllerBase
         if (!create.Succeeded)
             return BadRequest(string.Join(" ", create.Errors.Select(e => e.Description)));
 
-        var account = new ParentAccount
+        // Auto-reclaim: if this email previously belonged to a mobile account that was deleted,
+        // its ParentAccount was anonymized and stamped with a one-way ReclaimEmailHash pointing
+        // back to this address. Repoint that ghost account (players, registrations, invoices)
+        // to the fresh login instead of creating an empty new family.
+        var reclaimHash = _reclaim.Hash(req.Email);
+        ParentAccount? account = reclaimHash is null
+            ? null
+            : await _db.ParentAccounts.FirstOrDefaultAsync(p => p.ReclaimEmailHash == reclaimHash, ct);
+
+        if (account is not null)
         {
-            UserId = user.Id,
-            FirstName = req.FirstName.Trim(),
-            LastName = req.LastName.Trim(),
-            CellPhone = PhoneNormalizer.Normalize(req.Phone),
-            Language = req.Language
-        };
-        _db.ParentAccounts.Add(account);
+            account.UserId = user.Id;
+            account.FirstName = req.FirstName.Trim();
+            account.LastName = req.LastName.Trim();
+            account.CellPhone = PhoneNormalizer.Normalize(req.Phone);
+            account.Language = req.Language;
+            account.NoCommunications = false;
+            account.ReclaimEmailHash = null;
+            _logger.LogInformation("Reunited signup {Email} with previously-deleted family {AccountId}.", req.Email, account.Id);
+        }
+        else
+        {
+            account = new ParentAccount
+            {
+                UserId = user.Id,
+                FirstName = req.FirstName.Trim(),
+                LastName = req.LastName.Trim(),
+                CellPhone = PhoneNormalizer.Normalize(req.Phone),
+                Language = req.Language
+            };
+            _db.ParentAccounts.Add(account);
+        }
         await _db.SaveChangesAsync(ct);
 
         await AttributeOutreachAsync(req.Email, req.Phone, account.Id, OutreachStatus.AccountCreated, ct);

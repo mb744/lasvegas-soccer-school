@@ -35,10 +35,7 @@ public record MobileMeResponse(
     string? Phone,
     Language Language,
     bool IsAdmin,
-    IReadOnlyList<MobilePlayerDto> Players,
-    DateTime? PendingDeletionAt);
-
-public record MobileScheduleDeletionResponse(DateTime PendingDeletionAt);
+    IReadOnlyList<MobilePlayerDto> Players);
 
 // ---- Players ----
 

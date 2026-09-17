@@ -28,12 +28,18 @@ public class AccountDeletionService : IAccountDeletionService
 {
     private readonly AppDbContext _db;
     private readonly UserManager<ApplicationUser> _users;
+    private readonly IReclaimHasher _reclaim;
     private readonly ILogger<AccountDeletionService> _logger;
 
-    public AccountDeletionService(AppDbContext db, UserManager<ApplicationUser> users, ILogger<AccountDeletionService> logger)
+    public AccountDeletionService(
+        AppDbContext db,
+        UserManager<ApplicationUser> users,
+        IReclaimHasher reclaim,
+        ILogger<AccountDeletionService> logger)
     {
         _db = db;
         _users = users;
+        _reclaim = reclaim;
         _logger = logger;
     }
 
@@ -83,6 +89,10 @@ public class AccountDeletionService : IAccountDeletionService
                 .ToListAsync(ct);
             _db.ParentAccountCollaborators.RemoveRange(collaborators);
 
+            // Stamp the reclaim hash BEFORE scrubbing — the plaintext email is only available
+            // for one more moment. A future signup with the same address will be auto-linked
+            // back to this family (see AuthController.Signup).
+            account.ReclaimEmailHash = _reclaim.Hash(user.Email);
             account.FirstName = "Deleted";
             account.LastName = "User";
             account.CellPhone = null;

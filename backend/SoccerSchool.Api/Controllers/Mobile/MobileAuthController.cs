@@ -2,11 +2,9 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 using SoccerSchool.Api.Data;
 using SoccerSchool.Api.Domain;
 using SoccerSchool.Api.Dtos;
-using SoccerSchool.Api.Options;
 using SoccerSchool.Api.Services;
 
 namespace SoccerSchool.Api.Controllers.Mobile;
@@ -23,21 +21,21 @@ public class MobileAuthController : ControllerBase
     private readonly UserManager<ApplicationUser> _users;
     private readonly SignInManager<ApplicationUser> _signIn;
     private readonly IMobileTokenService _tokens;
+    private readonly IAccountDeletionService _deletion;
     private readonly AppDbContext _db;
-    private readonly AppOptions.AccountDeletionOptions _deletionOptions;
 
     public MobileAuthController(
         UserManager<ApplicationUser> users,
         SignInManager<ApplicationUser> signIn,
         IMobileTokenService tokens,
-        AppDbContext db,
-        IOptions<AppOptions> app)
+        IAccountDeletionService deletion,
+        AppDbContext db)
     {
         _users = users;
         _signIn = signIn;
         _tokens = tokens;
+        _deletion = deletion;
         _db = db;
-        _deletionOptions = app.Value.AccountDeletion;
     }
 
     [HttpPost("login")]
@@ -91,61 +89,22 @@ public class MobileAuthController : ControllerBase
     }
 
     /// <summary>
-    /// Schedules the user's account for deletion after a configurable grace window (default 30 days,
-    /// see <see cref="AppOptions.AccountDeletionOptions"/>). Immediately revokes every refresh token
-    /// and deletes every push device so the "signed out on every device" contract holds, but leaves
-    /// the login and PII intact so the user can sign back in and cancel with
-    /// <c>POST cancel-deletion</c>. When the window elapses, <see cref="AccountPurgeJob"/> runs the
-    /// hard anonymization via <see cref="IAccountDeletionService.PurgeAsync"/>. Required by App
-    /// Store Guideline 5.1.1(v).
+    /// In-app account deletion, required by App Store Guideline 5.1.1(v). Runs the full teardown
+    /// via <see cref="IAccountDeletionService.PurgeAsync"/>: revoke tokens, delete push devices,
+    /// drop chat memberships, anonymize authored messages, scrub PII on ApplicationUser and (if
+    /// owned) ParentAccount, permanently lock the login. Player and registration records stay
+    /// intact as legitimate school business records. Before scrubbing, PurgeAsync also stamps a
+    /// one-way reclaim hash on the ParentAccount so a future signup with the same email can be
+    /// auto-linked to the same family (see <c>AuthController.Signup</c>).
     /// </summary>
     [HttpDelete("me")]
     [Authorize(AuthenticationSchemes = AuthSchemes.MobileJwt)]
-    public async Task<ActionResult<MobileScheduleDeletionResponse>> DeleteMe(CancellationToken ct)
-    {
-        var user = await _users.GetUserAsync(User);
-        if (user is null) return Unauthorized();
-        var userId = user.Id;
-
-        // Idempotent: if a deletion is already pending, return the existing timestamp without
-        // resetting the window (otherwise repeated taps would keep pushing the effective date out).
-        if (user.PendingDeletionAt is DateTime existing)
-        {
-            return Ok(new MobileScheduleDeletionResponse(existing));
-        }
-
-        var graceDays = Math.Max(1, _deletionOptions.GraceDays);
-        var pendingAt = DateTime.UtcNow.AddDays(graceDays);
-        user.PendingDeletionAt = pendingAt;
-        await _users.UpdateAsync(user);
-
-        // Sign the user out on every device immediately — Apple expects the "signed out" contract
-        // to hold from the moment they tap Delete, even though the anonymization waits.
-        var refreshes = await _db.MobileRefreshTokens.Where(r => r.UserId == userId && r.RevokedAt == null).ToListAsync(ct);
-        var revokedAt = DateTime.UtcNow;
-        foreach (var r in refreshes) r.RevokedAt = revokedAt;
-
-        // Stop sending push notifications right away — the account is on its way out.
-        var devices = await _db.DeviceTokens.Where(d => d.UserId == userId).ToListAsync(ct);
-        _db.DeviceTokens.RemoveRange(devices);
-
-        await _db.SaveChangesAsync(ct);
-        return Ok(new MobileScheduleDeletionResponse(pendingAt));
-    }
-
-    /// <summary>Cancels a pending account deletion. Must be called before the grace window elapses;
-    /// after the AccountPurgeJob has run the login is anonymized and can no longer sign in.</summary>
-    [HttpPost("cancel-deletion")]
-    [Authorize(AuthenticationSchemes = AuthSchemes.MobileJwt)]
-    public async Task<IActionResult> CancelDeletion(CancellationToken ct)
+    public async Task<IActionResult> DeleteMe(CancellationToken ct)
     {
         var user = await _users.GetUserAsync(User);
         if (user is null) return Unauthorized();
 
-        if (user.PendingDeletionAt is null) return NoContent();
-
-        user.PendingDeletionAt = null;
-        await _users.UpdateAsync(user);
+        await _deletion.PurgeAsync(user.Id, ct);
         return NoContent();
     }
 
@@ -183,8 +142,7 @@ public class MobileAuthController : ControllerBase
             account?.CellPhone,
             account?.Language ?? Language.English,
             roles.Contains(Roles.Admin),
-            players,
-            user.PendingDeletionAt);
+            players);
     }
 
     /// <summary>Pulls the <c>sub</c> claim out of a freshly-minted access token without re-validating

@@ -196,11 +196,10 @@ builder.Services.AddScoped<IMobileTokenService, MobileTokenService>();
 builder.Services.AddScoped<IParentAccountResolver, ParentAccountResolver>();
 builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddScoped<IAccountDeletionService, AccountDeletionService>();
+builder.Services.AddSingleton<IReclaimHasher, ReclaimHasher>();
 builder.Services.AddSingleton<IPushSender, ExpoPushSender>();
 // Attendance reminder pushes for events 6–48h out; runs every 3h.
 builder.Services.AddHostedService<AttendanceReminderJob>();
-// Finalizes scheduled account deletions (mobile "Delete account" grace window); runs hourly.
-builder.Services.AddHostedService<AccountPurgeJob>();
 // SignalR powers the real-time chat fan-out on top of the persisted ChatMessages history.
 builder.Services.AddSignalR();
 

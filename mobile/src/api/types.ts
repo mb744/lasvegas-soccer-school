@@ -46,12 +46,6 @@ export interface Me {
   language: Language;
   isAdmin: boolean;
   players: Player[];
-  /** ISO timestamp when this account will be permanently purged; null when no deletion is scheduled. */
-  pendingDeletionAt?: string | null;
-}
-
-export interface ScheduleDeletionResponse {
-  pendingDeletionAt: string;
 }
 
 export interface TokenResponse {

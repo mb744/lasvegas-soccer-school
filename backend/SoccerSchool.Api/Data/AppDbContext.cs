@@ -121,6 +121,9 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
         modelBuilder.Entity<ParentAccount>(b =>
         {
             b.HasIndex(p => p.UserId).IsUnique();
+            // Filtered so only the small "was-deleted, awaiting reclaim" subset is indexed. Lookups
+            // happen once per new signup (see AuthController.Signup) — cheap.
+            b.HasIndex(p => p.ReclaimEmailHash).HasFilter("[ReclaimEmailHash] IS NOT NULL");
         });
 
         modelBuilder.Entity<ParentAccountCollaborator>(b =>
