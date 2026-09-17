@@ -157,3 +157,12 @@ public record AddChatGroupMemberRequest
     [Required]
     public int ParentAccountId { get; init; }
 }
+
+/// <summary>Result row for the admin chat-group parent picker. Distinct from
+/// <c>InboxParentDto</c> because chat is in-app: we don't require a phone number and we don't
+/// exclude families flagged NoCommunications (that opt-out is for SMS/WhatsApp bulk sends only).</summary>
+public record ChatParentSearchDto(
+    int ParentAccountId,
+    string Name,
+    string? Email,
+    string? Phone);

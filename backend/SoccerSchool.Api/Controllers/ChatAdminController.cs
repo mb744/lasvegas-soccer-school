@@ -83,6 +83,41 @@ public class ChatAdminController : ControllerBase
         return NoContent();
     }
 
+    /// <summary>Parent picker for the chat-groups admin page. Matches on first name, last name, the
+    /// full "First Last" concatenation, or email — case-insensitive substring. Unlike the messaging
+    /// inbox picker, there is no phone-required filter and NoCommunications parents are included:
+    /// chat is in-app, not SMS. Anonymized (deleted) accounts are filtered out.</summary>
+    [HttpGet("search-parents")]
+    public async Task<ActionResult<IEnumerable<ChatParentSearchDto>>> SearchParents(
+        [FromQuery] string? q, [FromQuery] int limit = 20, CancellationToken ct = default)
+    {
+        var cap = Math.Clamp(limit, 1, 100);
+        // Anonymized accounts get FirstName="Deleted", LastName="User" — hide them from the picker.
+        var query = _db.ParentAccounts
+            .Where(p => p.ReclaimEmailHash == null);
+
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var needle = q.Trim();
+            query = query.Where(p =>
+                EF.Functions.Like(p.FirstName, $"%{needle}%")
+                || EF.Functions.Like(p.LastName, $"%{needle}%")
+                || EF.Functions.Like(p.FirstName + " " + p.LastName, $"%{needle}%")
+                || (p.User != null && p.User.Email != null && EF.Functions.Like(p.User.Email, $"%{needle}%")));
+        }
+
+        var rows = await query
+            .OrderBy(p => p.LastName).ThenBy(p => p.FirstName)
+            .Take(cap)
+            .Select(p => new ChatParentSearchDto(
+                p.Id,
+                (p.FirstName + " " + p.LastName).Trim(),
+                p.User != null ? p.User.Email : null,
+                p.CellPhone))
+            .ToListAsync(ct);
+        return Ok(rows);
+    }
+
     [HttpPost("{id:int}/members")]
     public async Task<ActionResult<ChatGroupAdminDto>> AddMember(int id, [FromBody] AddChatGroupMemberRequest req, CancellationToken ct)
     {

@@ -1470,6 +1470,13 @@ export interface InboxParent {
   hasReplied: boolean
 }
 
+export interface ChatParentSearch {
+  parentAccountId: number
+  name: string
+  email: string | null
+  phone: string | null
+}
+
 export interface ThreadDetail {
   phone: string
   name: string | null

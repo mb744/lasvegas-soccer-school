@@ -77,6 +77,7 @@ import type {
   ChargeTypeDto,
   SaveChargeTypeRequest,
   InboxParent,
+  ChatParentSearch,
   ThreadDetail,
   ThreadMessage,
   SendThreadReplyRequest,
@@ -635,6 +636,15 @@ export const Api = {
     if (opts?.unrepliedOnly) params.set('unrepliedOnly', 'true')
     if (opts?.limit) params.set('limit', String(opts.limit))
     const r = await api.get<InboxParent[]>(`/messaging/parents-search?${params.toString()}`)
+    return r.data
+  },
+  /** Parent picker for the admin chat-groups page. Matches on first name, last name, full name,
+   *  or email — no phone requirement (chat is in-app). */
+  async searchChatParents(query: string, opts?: { limit?: number }) {
+    const params = new URLSearchParams()
+    if (query) params.set('q', query)
+    if (opts?.limit) params.set('limit', String(opts.limit))
+    const r = await api.get<ChatParentSearch[]>(`/admin/chat-groups/search-parents?${params.toString()}`)
     return r.data
   },
   async getThread(phone: string) {

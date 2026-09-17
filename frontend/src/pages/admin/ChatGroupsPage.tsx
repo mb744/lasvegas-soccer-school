@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Layout } from '../../components/Layout'
 import { Api } from '../../api/client'
-import type { ChatGroupAdmin, InboxParent, TeamSummary } from '../../api/types'
+import type { ChatGroupAdmin, ChatParentSearch, TeamSummary } from '../../api/types'
 
 /**
  * Admin management of the native in-app chat groups parents use in the mobile app. Create a group
@@ -149,7 +149,7 @@ function GroupCard({
   onError: (e: string | null) => void
 }) {
   const [search, setSearch] = useState('')
-  const [results, setResults] = useState<InboxParent[]>([])
+  const [results, setResults] = useState<ChatParentSearch[]>([])
   const [searching, setSearching] = useState(false)
   const [message, setMessage] = useState('')
   const [posting, setPosting] = useState(false)
@@ -159,7 +159,7 @@ function GroupCard({
     if (!search.trim()) return
     setSearching(true)
     try {
-      setResults(await Api.searchInboxParents(search.trim(), { limit: 10 }))
+      setResults(await Api.searchChatParents(search.trim(), { limit: 20 }))
     } catch (e: any) {
       onError(e?.response?.data?.title || e?.message || 'Error')
     } finally {
@@ -244,7 +244,7 @@ function GroupCard({
             <form onSubmit={doSearch} className="flex gap-2">
               <input
                 className="flex-1 border border-slate-300 rounded px-3 py-1.5 text-sm"
-                placeholder="Search parents by name or phone…"
+                placeholder="Search parents by first name, last name, or email…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -256,7 +256,11 @@ function GroupCard({
               <ul className="mt-2 border border-slate-200 rounded divide-y divide-slate-100">
                 {results.map((p) => (
                   <li key={p.parentAccountId} className="flex items-center justify-between px-3 py-1.5">
-                    <span className="text-sm text-slate-700">{p.name} <span className="text-slate-400">{p.phone}</span></span>
+                    <span className="text-sm text-slate-700">
+                      {p.name}
+                      {p.email && <span className="ml-2 text-slate-400">{p.email}</span>}
+                      {p.phone && <span className="ml-2 text-slate-400">{p.phone}</span>}
+                    </span>
                     <button onClick={() => addMember(p.parentAccountId)} className="text-xs text-emerald-700 hover:underline">
                       Add
                     </button>
