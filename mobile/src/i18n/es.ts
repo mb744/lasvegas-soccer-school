@@ -74,7 +74,7 @@ export const es: Translations = {
     deleteAccount: 'Eliminar cuenta',
     deletePromptTitle: '¿Eliminar su cuenta permanentemente?',
     deletePromptMessage:
-      'Su inicio de sesión de LV Soccer School y su historial de chat serán eliminados y se cerrará sesión en todos los dispositivos. Los registros de inscripción de sus jugadores permanecen con la escuela según nuestro programa. Esto no se puede deshacer.',
+      'Su inicio de sesión de LV Soccer School y su historial de chat serán eliminados y se cerrará sesión en todos los dispositivos. Los registros de inscripción de sus jugadores permanecen con la escuela según nuestro programa. Esto no se puede deshacer.\n\nSi regresa a LVSS en el futuro, contáctenos y vincularemos los registros de sus jugadores a su nueva cuenta.',
     deleteConfirm: 'Eliminar',
     deleteErrorTitle: 'No se pudo eliminar la cuenta',
     deleteErrorMessage: 'Por favor intente de nuevo o contacte a soporte.',

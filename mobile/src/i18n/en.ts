@@ -72,7 +72,7 @@ export const en = {
     deleteAccount: 'Delete account',
     deletePromptTitle: 'Permanently delete your account?',
     deletePromptMessage:
-      'Your LV Soccer School login and chat history will be removed and you will be signed out on every device. Your player enrollment records stay with the school as required by our program. This cannot be undone.',
+      'Your LV Soccer School login and chat history will be removed and you will be signed out on every device. Your player enrollment records stay with the school as required by our program. This cannot be undone.\n\nIf you rejoin LVSS in the future, contact us and we will link your player records to your new account.',
     deleteConfirm: 'Delete',
     deleteErrorTitle: 'Could not delete account',
     deleteErrorMessage: 'Please try again in a moment or contact support.',
