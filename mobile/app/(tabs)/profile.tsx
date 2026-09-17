@@ -1,14 +1,43 @@
-import React from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useState } from 'react';
+import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../src/auth/AuthContext';
+import { deleteAccount } from '../../src/api/endpoints';
 import { colors, radius, spacing } from '../../src/theme';
 
 export default function ProfileScreen() {
   const { t } = useTranslation();
   const { me, signOut } = useAuth();
+  const [deleting, setDeleting] = useState(false);
 
   if (!me) return null;
+
+  const onDelete = () => {
+    Alert.alert(
+      t('profile.deletePromptTitle'),
+      t('profile.deletePromptMessage'),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('profile.deleteConfirm'),
+          style: 'destructive',
+          onPress: async () => {
+            setDeleting(true);
+            try {
+              await deleteAccount();
+              // Backend has revoked tokens, anonymized the user, and locked the account.
+              // Clear local session so the app returns to the sign-in screen.
+              await signOut();
+            } catch {
+              setDeleting(false);
+              Alert.alert(t('profile.deleteErrorTitle'), t('profile.deleteErrorMessage'));
+            }
+          },
+        },
+      ],
+      { cancelable: true },
+    );
+  };
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ padding: spacing.lg }}>
@@ -40,8 +69,12 @@ export default function ProfileScreen() {
         ))
       )}
 
-      <TouchableOpacity style={styles.signOut} onPress={signOut}>
+      <TouchableOpacity style={styles.signOut} onPress={signOut} disabled={deleting}>
         <Text style={styles.signOutText}>{t('profile.signOut')}</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.deleteAccount} onPress={onDelete} disabled={deleting}>
+        <Text style={styles.deleteAccountText}>{t('profile.deleteAccount')}</Text>
       </TouchableOpacity>
     </ScrollView>
   );
@@ -89,4 +122,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   signOutText: { color: colors.danger, fontSize: 16, fontWeight: '800' },
+  deleteAccount: {
+    marginTop: spacing.md,
+    backgroundColor: colors.danger,
+    borderRadius: radius.md,
+    paddingVertical: spacing.lg,
+    alignItems: 'center',
+  },
+  deleteAccountText: { color: colors.white, fontSize: 16, fontWeight: '800' },
 });

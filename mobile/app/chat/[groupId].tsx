@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  ActionSheetIOS,
   ActivityIndicator,
+  Alert,
   FlatList,
   KeyboardAvoidingView,
   Platform,
@@ -13,10 +15,17 @@ import {
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { fetchChatMessages, markChatRead, sendChatMessage } from '../../src/api/endpoints';
+import {
+  blockChatUser,
+  fetchChatBlocks,
+  fetchChatMessages,
+  markChatRead,
+  reportChatMessage,
+  sendChatMessage,
+} from '../../src/api/endpoints';
 import { onMessage, sendViaHub } from '../../src/chat/signalr';
 import { useAuth } from '../../src/auth/AuthContext';
-import type { ChatGroup, ChatMessage } from '../../src/api/types';
+import type { BlockedUser, ChatGroup, ChatMessage } from '../../src/api/types';
 import { messageTime } from '../../src/format';
 import { colors, radius, spacing } from '../../src/theme';
 
@@ -40,13 +49,27 @@ export default function ChatThreadScreen() {
     queryFn: () => fetchChatMessages(groupId),
   });
 
-  const messages = data ?? [];
+  // Blocked-user list is cached app-wide so both the message-list filter and the live SignalR
+  // filter can read from the same source. Server enforces on REST; this handles the live stream.
+  const { data: blocks } = useQuery({
+    queryKey: ['chatBlocks'],
+    queryFn: fetchChatBlocks,
+    staleTime: 60_000,
+  });
+  const blockedIds = useMemo(() => new Set((blocks ?? []).map((b: BlockedUser) => b.userId)), [blocks]);
 
-  // Append live messages for this group to the cache (newest-first, deduped).
+  const messages = useMemo(
+    () => (data ?? []).filter((m) => !blockedIds.has(m.senderUserId)),
+    [data, blockedIds],
+  );
+
+  // Append live messages for this group to the cache (newest-first, deduped). Drop messages from
+  // blocked senders so a mute is instant even before the next REST refresh.
   useEffect(
     () =>
       onMessage((msg) => {
         if (msg.groupId !== groupId) return;
+        if (blockedIds.has(msg.senderUserId)) return;
         qc.setQueryData<ChatMessage[]>(['chatMessages', groupId], (old: ChatMessage[] | undefined) => {
           if (old?.some((m) => m.id === msg.id)) return old;
           return [msg, ...(old ?? [])];
@@ -54,7 +77,7 @@ export default function ChatThreadScreen() {
         void markChatRead(groupId, msg.id);
         void qc.invalidateQueries({ queryKey: ['chatGroups'] });
       }),
-    [groupId, qc],
+    [groupId, qc, blockedIds],
   );
 
   // Mark the latest history message read on open.
@@ -90,6 +113,96 @@ export default function ChatThreadScreen() {
     }
   }, [text, sending, groupId, qc]);
 
+  const onReport = useCallback(
+    (message: ChatMessage) => {
+      Alert.alert(
+        t('chat.reportPromptTitle'),
+        t('chat.reportPromptMessage'),
+        [
+          { text: t('common.cancel'), style: 'cancel' },
+          {
+            text: t('chat.reportSubmit'),
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                await reportChatMessage(message.id);
+                Alert.alert(t('chat.reportedTitle'), t('chat.reportedMessage'));
+              } catch {
+                // Silent — user can retry.
+              }
+            },
+          },
+        ],
+        { cancelable: true },
+      );
+    },
+    [t],
+  );
+
+  const onBlock = useCallback(
+    (message: ChatMessage) => {
+      Alert.alert(
+        t('chat.blockPromptTitle'),
+        t('chat.blockPromptMessage'),
+        [
+          { text: t('common.cancel'), style: 'cancel' },
+          {
+            text: t('chat.blockConfirm'),
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                await blockChatUser(message.senderUserId);
+                await qc.invalidateQueries({ queryKey: ['chatBlocks'] });
+              } catch {
+                // Silent — user can retry.
+              }
+            },
+          },
+        ],
+        { cancelable: true },
+      );
+    },
+    [t, qc],
+  );
+
+  const onLongPressMessage = useCallback(
+    (message: ChatMessage) => {
+      // Don't offer moderation actions on your own messages.
+      if (message.senderUserId === me?.userId) return;
+
+      const cancel = t('common.cancel');
+      const report = t('chat.report');
+      const block = t('chat.block');
+
+      if (Platform.OS === 'ios') {
+        ActionSheetIOS.showActionSheetWithOptions(
+          {
+            title: t('chat.messageActions'),
+            options: [cancel, report, block],
+            cancelButtonIndex: 0,
+            destructiveButtonIndex: 2,
+          },
+          (index) => {
+            if (index === 1) onReport(message);
+            else if (index === 2) onBlock(message);
+          },
+        );
+      } else {
+        Alert.alert(
+          t('chat.messageActions'),
+          '',
+          [
+            { text: cancel, style: 'cancel' },
+            { text: report, onPress: () => onReport(message) },
+            { text: block, style: 'destructive', onPress: () => onBlock(message) },
+          ],
+          { cancelable: true },
+        );
+      }
+    },
+    [me?.userId, onBlock, onReport, t],
+  );
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -108,7 +221,13 @@ export default function ChatThreadScreen() {
           data={messages}
           inverted
           keyExtractor={(m) => String(m.id)}
-          renderItem={({ item }) => <Bubble message={item} mine={item.senderUserId === me?.userId} />}
+          renderItem={({ item }) => (
+            <Bubble
+              message={item}
+              mine={item.senderUserId === me?.userId}
+              onLongPress={() => onLongPressMessage(item)}
+            />
+          )}
         />
       )}
 
@@ -133,9 +252,22 @@ export default function ChatThreadScreen() {
   );
 }
 
-function Bubble({ message, mine }: { message: ChatMessage; mine: boolean }) {
+function Bubble({
+  message,
+  mine,
+  onLongPress,
+}: {
+  message: ChatMessage;
+  mine: boolean;
+  onLongPress: () => void;
+}) {
   return (
-    <View style={[styles.bubbleRow, mine ? styles.rowMine : styles.rowTheirs]}>
+    <TouchableOpacity
+      activeOpacity={0.8}
+      onLongPress={onLongPress}
+      delayLongPress={350}
+      style={[styles.bubbleRow, mine ? styles.rowMine : styles.rowTheirs]}
+    >
       <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs]}>
         {!mine ? (
           <Text style={[styles.sender, message.isFromAdmin && styles.senderAdmin]}>{message.senderName}</Text>
@@ -143,7 +275,7 @@ function Bubble({ message, mine }: { message: ChatMessage; mine: boolean }) {
         <Text style={[styles.body, mine && styles.bodyMine]}>{message.body}</Text>
         <Text style={[styles.time, mine && styles.timeMine]}>{messageTime(message.sentAt)}</Text>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 

@@ -1,6 +1,7 @@
 import { api } from './client';
 import type {
   AttendanceStatus,
+  BlockedUser,
   ChatGroup,
   ChatMessage,
   DevicePlatform,
@@ -24,6 +25,10 @@ export async function fetchMe(): Promise<Me> {
 
 export async function logout(refreshToken: string): Promise<void> {
   await api.post('/mobile/auth/logout', { refreshToken });
+}
+
+export async function deleteAccount(): Promise<void> {
+  await api.delete('/mobile/auth/me');
 }
 
 // ---- Players ----
@@ -69,6 +74,23 @@ export async function sendChatMessage(groupId: number, body: string): Promise<Ch
 
 export async function markChatRead(groupId: number, messageId: number): Promise<void> {
   await api.post(`/mobile/chat/groups/${groupId}/read`, null, { params: { messageId } });
+}
+
+export async function reportChatMessage(messageId: number, reason?: string): Promise<void> {
+  await api.post(`/mobile/chat/messages/${messageId}/report`, { reason: reason ?? null });
+}
+
+export async function fetchChatBlocks(): Promise<BlockedUser[]> {
+  const { data } = await api.get<BlockedUser[]>('/mobile/chat/blocks');
+  return data;
+}
+
+export async function blockChatUser(targetUserId: string): Promise<void> {
+  await api.post(`/mobile/chat/blocks/${encodeURIComponent(targetUserId)}`);
+}
+
+export async function unblockChatUser(targetUserId: string): Promise<void> {
+  await api.delete(`/mobile/chat/blocks/${encodeURIComponent(targetUserId)}`);
 }
 
 // ---- Push devices ----

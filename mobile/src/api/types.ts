@@ -100,3 +100,8 @@ export interface ChatMessage {
   body: string;
   sentAt: string;
 }
+
+export interface BlockedUser {
+  userId: string;
+  blockedAt: string;
+}

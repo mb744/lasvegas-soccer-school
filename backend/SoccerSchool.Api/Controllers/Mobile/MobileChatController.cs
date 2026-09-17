@@ -87,7 +87,8 @@ public class MobileChatController : ControllerBase
     }
 
     /// <summary>Message history for a group, newest-first, paginated with <c>before</c> (a message id;
-    /// returns messages with a smaller id). Up to 50 per page.</summary>
+    /// returns messages with a smaller id). Up to 50 per page. Messages authored by any user the
+    /// caller has blocked are filtered out server-side.</summary>
     [HttpGet("groups/{groupId:int}/messages")]
     public async Task<ActionResult<IEnumerable<MobileChatMessageDto>>> Messages(
         int groupId, CancellationToken ct, [FromQuery] int? before = null, [FromQuery] int limit = 50)
@@ -97,8 +98,14 @@ public class MobileChatController : ControllerBase
         if (!await _chat.IsMemberAsync(groupId, userId, ct)) return Forbid();
 
         limit = Math.Clamp(limit, 1, 100);
+        var blocked = await _db.ChatUserBlocks
+            .Where(x => x.BlockerUserId == userId)
+            .Select(x => x.BlockedUserId)
+            .ToListAsync(ct);
+
         var q = _db.ChatMessages.Where(m => m.ChatGroupId == groupId);
         if (before is int b) q = q.Where(m => m.Id < b);
+        if (blocked.Count > 0) q = q.Where(m => !blocked.Contains(m.SenderUserId));
 
         var rows = await q
             .OrderByDescending(m => m.Id)
@@ -108,6 +115,91 @@ public class MobileChatController : ControllerBase
             .ToListAsync(ct);
 
         return Ok(rows);
+    }
+
+    /// <summary>Flag a chat message for admin review (App Store Guideline 1.2). Any group member
+    /// may report any message; multiple reports on the same message stack in the admin queue.</summary>
+    [HttpPost("messages/{messageId:int}/report")]
+    public async Task<IActionResult> Report(int messageId, [FromBody] MobileReportMessageRequest req, CancellationToken ct)
+    {
+        var userId = _users.GetUserId(User);
+        if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+        var message = await _db.ChatMessages.FirstOrDefaultAsync(m => m.Id == messageId, ct);
+        if (message is null) return NotFound();
+        if (!await _chat.IsMemberAsync(message.ChatGroupId, userId, ct)) return Forbid();
+
+        var account = await _accounts.ResolveByUserIdAsync(userId, ct);
+        var reporterName = account is null
+            ? (await _users.FindByIdAsync(userId))?.Email ?? "Unknown"
+            : $"{account.FirstName} {account.LastName}".Trim();
+
+        _db.ChatMessageReports.Add(new ChatMessageReport
+        {
+            ChatMessageId = messageId,
+            ReporterUserId = userId,
+            ReporterName = reporterName,
+            Reason = string.IsNullOrWhiteSpace(req.Reason) ? null : req.Reason.Trim(),
+            ReportedAt = DateTime.UtcNow,
+        });
+        await _db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
+    /// <summary>Return the user ids the caller has muted; the client applies this filter to live
+    /// SignalR messages so a blocked sender never surfaces even before the next REST refresh.</summary>
+    [HttpGet("blocks")]
+    public async Task<ActionResult<IEnumerable<MobileBlockedUserDto>>> Blocks(CancellationToken ct)
+    {
+        var userId = _users.GetUserId(User);
+        if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+        var rows = await _db.ChatUserBlocks
+            .Where(x => x.BlockerUserId == userId)
+            .OrderByDescending(x => x.BlockedAt)
+            .Select(x => new MobileBlockedUserDto(x.BlockedUserId, x.BlockedAt))
+            .ToListAsync(ct);
+        return Ok(rows);
+    }
+
+    /// <summary>Mute a user — their messages disappear from history and the live stream. Idempotent.</summary>
+    [HttpPost("blocks/{targetUserId}")]
+    public async Task<IActionResult> Block(string targetUserId, CancellationToken ct)
+    {
+        var userId = _users.GetUserId(User);
+        if (string.IsNullOrEmpty(userId)) return Unauthorized();
+        if (string.IsNullOrWhiteSpace(targetUserId) || targetUserId == userId) return BadRequest();
+
+        var existing = await _db.ChatUserBlocks
+            .FirstOrDefaultAsync(x => x.BlockerUserId == userId && x.BlockedUserId == targetUserId, ct);
+        if (existing is null)
+        {
+            _db.ChatUserBlocks.Add(new ChatUserBlock
+            {
+                BlockerUserId = userId,
+                BlockedUserId = targetUserId,
+                BlockedAt = DateTime.UtcNow,
+            });
+            await _db.SaveChangesAsync(ct);
+        }
+        return NoContent();
+    }
+
+    /// <summary>Unblock — the muted user's messages become visible again on next refresh.</summary>
+    [HttpDelete("blocks/{targetUserId}")]
+    public async Task<IActionResult> Unblock(string targetUserId, CancellationToken ct)
+    {
+        var userId = _users.GetUserId(User);
+        if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+        var existing = await _db.ChatUserBlocks
+            .FirstOrDefaultAsync(x => x.BlockerUserId == userId && x.BlockedUserId == targetUserId, ct);
+        if (existing is not null)
+        {
+            _db.ChatUserBlocks.Remove(existing);
+            await _db.SaveChangesAsync(ct);
+        }
+        return NoContent();
     }
 
     /// <summary>Send via REST (fallback when the websocket is down). Goes through the same path as

@@ -85,6 +85,95 @@ public class MobileAuthController : ControllerBase
         return Ok(await BuildMeAsync(user, ct));
     }
 
+    /// <summary>
+    /// In-app account deletion, required by App Store Guideline 5.1.1(v) for any app with sign-in.
+    /// Revokes every refresh token, deletes every push-notification device, drops chat memberships
+    /// (their messages remain but the sender label is anonymized), permanently locks the login, and
+    /// scrubs personal identifiers (email, name, phone) from the ApplicationUser and, if the caller
+    /// owns a family, its ParentAccount. Player rosters, registrations, and invoices are retained
+    /// as legitimate school business records.
+    /// </summary>
+    [HttpDelete("me")]
+    [Authorize(AuthenticationSchemes = AuthSchemes.MobileJwt)]
+    public async Task<IActionResult> DeleteMe(CancellationToken ct)
+    {
+        var user = await _users.GetUserAsync(User);
+        if (user is null) return Unauthorized();
+        var userId = user.Id;
+
+        // 1. Revoke every active refresh token so the current session and any others die immediately.
+        var refreshes = await _db.MobileRefreshTokens.Where(r => r.UserId == userId && r.RevokedAt == null).ToListAsync(ct);
+        var revokedAt = DateTime.UtcNow;
+        foreach (var r in refreshes) r.RevokedAt = revokedAt;
+
+        // 2. Delete every push device — no more notifications after account deletion.
+        var devices = await _db.DeviceTokens.Where(d => d.UserId == userId).ToListAsync(ct);
+        _db.DeviceTokens.RemoveRange(devices);
+
+        // 3. Drop chat memberships. Message history stays (other users saw those messages), but
+        //    anonymize the sender name on messages authored by this user.
+        var account = await _db.ParentAccounts.FirstOrDefaultAsync(p => p.UserId == userId, ct);
+        var memberships = await _db.ChatGroupMembers
+            .Where(m => m.UserId == userId || (account != null && m.ParentAccountId == account.Id))
+            .ToListAsync(ct);
+        _db.ChatGroupMembers.RemoveRange(memberships);
+
+        var authored = await _db.ChatMessages.Where(m => m.SenderUserId == userId).ToListAsync(ct);
+        foreach (var m in authored) m.SenderName = "Deleted user";
+
+        // 4. Delete any pending block/report rows the user created — we don't retain them under a
+        //    ghost identity.
+        var blocks = await _db.ChatUserBlocks
+            .Where(b => b.BlockerUserId == userId || b.BlockedUserId == userId)
+            .ToListAsync(ct);
+        _db.ChatUserBlocks.RemoveRange(blocks);
+
+        // 5. If this user owns a family, anonymize the ParentAccount PII. Player + registration
+        //    records intentionally survive (they're LVSS business records the family agreed to on
+        //    enrollment). Collaborator rows are dropped so linked logins lose access.
+        if (account is not null)
+        {
+            var collaborators = await _db.ParentAccountCollaborators
+                .Where(c => c.ParentAccountId == account.Id)
+                .ToListAsync(ct);
+            _db.ParentAccountCollaborators.RemoveRange(collaborators);
+
+            account.FirstName = "Deleted";
+            account.LastName = "User";
+            account.CellPhone = null;
+            account.AddressLine1 = null;
+            account.AddressLine2 = null;
+            account.City = null;
+            account.PostalCode = null;
+            account.NoCommunications = true;
+        }
+        else
+        {
+            // Collaborator (linked to someone else's family) — just drop the link.
+            var collabLinks = await _db.ParentAccountCollaborators.Where(c => c.UserId == userId).ToListAsync(ct);
+            _db.ParentAccountCollaborators.RemoveRange(collabLinks);
+        }
+
+        await _db.SaveChangesAsync(ct);
+
+        // 6. Anonymize the ApplicationUser and permanently lock it out. Overwriting the email with
+        //    a namespaced sentinel prevents the address colliding with a future sign-up and stops
+        //    any password-reset flow from re-activating this login.
+        var sentinel = $"deleted-{userId}@removed.lvss.local";
+        user.Email = sentinel;
+        user.NormalizedEmail = _users.NormalizeEmail(sentinel);
+        user.UserName = sentinel;
+        user.NormalizedUserName = _users.NormalizeName(sentinel);
+        user.PhoneNumber = null;
+        user.PhoneNumberConfirmed = false;
+        user.EmailConfirmed = false;
+        user.LockoutEnabled = true;
+        user.LockoutEnd = DateTimeOffset.MaxValue;
+        await _users.UpdateAsync(user);
+
+        return NoContent();
+    }
+
     private async Task<MobileTokenResponse> BuildTokenResponseAsync(ApplicationUser user, TokenPair pair, CancellationToken ct)
     {
         var me = await BuildMeAsync(user, ct);

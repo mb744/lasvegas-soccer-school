@@ -97,6 +97,8 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
     public DbSet<ChatGroup> ChatGroups => Set<ChatGroup>();
     public DbSet<ChatGroupMember> ChatGroupMembers => Set<ChatGroupMember>();
     public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
+    public DbSet<ChatMessageReport> ChatMessageReports => Set<ChatMessageReport>();
+    public DbSet<ChatUserBlock> ChatUserBlocks => Set<ChatUserBlock>();
     public DbSet<DeviceToken> DeviceTokens => Set<DeviceToken>();
     public DbSet<MobileRefreshToken> MobileRefreshTokens => Set<MobileRefreshToken>();
 
@@ -704,6 +706,25 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
             // Composite index supports the "history since X, newest first" queries the mobile
             // client and the unread-count computation both run.
             b.HasIndex(m => new { m.ChatGroupId, m.Id });
+        });
+
+        modelBuilder.Entity<ChatMessageReport>(b =>
+        {
+            b.HasOne(r => r.ChatMessage)
+                .WithMany()
+                .HasForeignKey(r => r.ChatMessageId)
+                .OnDelete(DeleteBehavior.Cascade);
+            // Admin queue filter — pending reports, oldest first.
+            b.HasIndex(r => new { r.ResolvedAt, r.ReportedAt });
+            b.HasIndex(r => r.ChatMessageId);
+        });
+
+        modelBuilder.Entity<ChatUserBlock>(b =>
+        {
+            // A blocker can block a given user at most once.
+            b.HasIndex(x => new { x.BlockerUserId, x.BlockedUserId }).IsUnique();
+            // The message-list filter reads by blocker.
+            b.HasIndex(x => x.BlockerUserId);
         });
 
         modelBuilder.Entity<DeviceToken>(b =>

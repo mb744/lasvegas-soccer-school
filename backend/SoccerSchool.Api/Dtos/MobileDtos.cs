@@ -106,6 +106,14 @@ public record MobileSendMessageRequest
     public string Body { get; init; } = string.Empty;
 }
 
+public record MobileReportMessageRequest
+{
+    [MaxLength(1000)]
+    public string? Reason { get; init; }
+}
+
+public record MobileBlockedUserDto(string UserId, DateTime BlockedAt);
+
 // ---- Push devices ----
 
 public record RegisterDeviceRequest

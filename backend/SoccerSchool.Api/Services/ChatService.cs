@@ -109,7 +109,16 @@ public class ChatService : IChatService
         await _hub.Clients.Group(ChatHub.GroupName(groupId)).SendAsync(ChatHub.ReceiveMessage, dto, ct);
 
         // Push every other member (offline ones get the notification; foreground apps suppress it).
+        // Anyone who has blocked the sender is skipped — no notification for muted content.
         var recipientUserIds = (await GetMemberUserIdsAsync(groupId, ct)).Where(id => id != userId).ToList();
+        if (recipientUserIds.Count > 0)
+        {
+            var blockedBy = await _db.ChatUserBlocks
+                .Where(b => b.BlockedUserId == userId && recipientUserIds.Contains(b.BlockerUserId))
+                .Select(b => b.BlockerUserId)
+                .ToListAsync(ct);
+            if (blockedBy.Count > 0) recipientUserIds = recipientUserIds.Except(blockedBy).ToList();
+        }
         if (recipientUserIds.Count > 0)
         {
             var title = await _db.ChatGroups.Where(g => g.Id == groupId).Select(g => g.Title).FirstOrDefaultAsync(ct) ?? "New message";
