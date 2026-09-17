@@ -127,18 +127,8 @@ public class ChatAdminController : ControllerBase
         var account = await _db.ParentAccounts.FirstOrDefaultAsync(a => a.Id == req.ParentAccountId, ct);
         if (account is null) return BadRequest("Parent account not found.");
 
-        var already = await _db.ChatGroupMembers.AnyAsync(m => m.ChatGroupId == id && m.ParentAccountId == req.ParentAccountId, ct);
-        if (!already)
-        {
-            _db.ChatGroupMembers.Add(new ChatGroupMember
-            {
-                ChatGroupId = id,
-                ParentAccountId = account.Id,
-                DisplayName = $"{account.FirstName} {account.LastName}".Trim(),
-                Role = ChatMemberRole.Parent,
-            });
-            await _db.SaveChangesAsync(ct);
-        }
+        await AddFamilyMembersAsync(id, new[] { new FamilyRosterEntry(account.Id, account.FirstName, account.LastName) }, ct);
+        await _db.SaveChangesAsync(ct);
         return Ok(await SummarizeAsync(id, ct));
     }
 
@@ -171,39 +161,88 @@ public class ChatAdminController : ControllerBase
         return dto is null ? StatusCode(500, "Could not post message.") : Ok(dto);
     }
 
-    /// <summary>Adds every parent on a team's roster as a group member (deduped). Used at create-time
-    /// when <c>SeedFromTeamId</c> is set.</summary>
+    private record FamilyRosterEntry(int ParentAccountId, string FirstName, string LastName);
+
+    /// <summary>Adds every parent linked to a team's roster as a group member (deduped). For each
+    /// player, both the primary parent (via ParentAccount) AND every linked collaborator (mom + dad
+    /// both signed up) are added. Owner is a family-linked row; each collaborator is a user-linked
+    /// row with their own display name so their chat sends carry the right sender label.</summary>
     private async Task SeedFromTeamAsync(int groupId, int teamId, CancellationToken ct)
     {
-        var parents = await _db.TeamPlayers
+        var families = await _db.TeamPlayers
             .Where(tp => tp.TeamId == teamId)
-            .Select(tp => new
-            {
+            .Select(tp => new FamilyRosterEntry(
                 tp.Player!.ParentAccountId,
                 tp.Player.ParentAccount!.FirstName,
-                tp.Player.ParentAccount.LastName,
-            })
+                tp.Player.ParentAccount.LastName))
             .Distinct()
             .ToListAsync(ct);
+        if (families.Count == 0) return;
 
-        var existing = await _db.ChatGroupMembers
-            .Where(m => m.ChatGroupId == groupId && m.ParentAccountId != null)
-            .Select(m => m.ParentAccountId!.Value)
-            .ToListAsync(ct);
-        var have = new HashSet<int>(existing);
+        await AddFamilyMembersAsync(groupId, families, ct);
+        await _db.SaveChangesAsync(ct);
+    }
 
-        foreach (var p in parents)
+    /// <summary>Adds one family-linked member row per family plus one user-linked row for each of
+    /// the family's <see cref="ParentAccountCollaborator"/> logins. Idempotent — existing rows for
+    /// the same (group, family) or (group, user) pair are skipped. Caller saves changes.</summary>
+    private async Task AddFamilyMembersAsync(int groupId, IReadOnlyCollection<FamilyRosterEntry> families, CancellationToken ct)
+    {
+        if (families.Count == 0) return;
+        var familyIds = families.Select(f => f.ParentAccountId).Distinct().ToList();
+
+        var existingFamilyIds = new HashSet<int>(
+            await _db.ChatGroupMembers
+                .Where(m => m.ChatGroupId == groupId && m.ParentAccountId != null)
+                .Select(m => m.ParentAccountId!.Value)
+                .ToListAsync(ct));
+        var existingUserIds = new HashSet<string>(
+            await _db.ChatGroupMembers
+                .Where(m => m.ChatGroupId == groupId && m.UserId != null)
+                .Select(m => m.UserId!)
+                .ToListAsync(ct));
+
+        // Family (owner) rows. The family row implicitly covers the ParentAccount.UserId login;
+        // collaborator logins are added separately below so each one has its own display name.
+        foreach (var f in families)
         {
-            if (!have.Add(p.ParentAccountId)) continue;
+            if (!existingFamilyIds.Add(f.ParentAccountId)) continue;
             _db.ChatGroupMembers.Add(new ChatGroupMember
             {
                 ChatGroupId = groupId,
-                ParentAccountId = p.ParentAccountId,
-                DisplayName = $"{p.FirstName} {p.LastName}".Trim(),
+                ParentAccountId = f.ParentAccountId,
+                DisplayName = $"{f.FirstName} {f.LastName}".Trim(),
                 Role = ChatMemberRole.Parent,
             });
         }
-        await _db.SaveChangesAsync(ct);
+
+        // Collaborator rows. Look up each collaborator's own ParentAccount so their display name
+        // is their own, not the owning family's. Fall back to email when they have no account yet.
+        var collaborators = await _db.ParentAccountCollaborators
+            .Where(c => familyIds.Contains(c.ParentAccountId))
+            .Select(c => new
+            {
+                c.UserId,
+                OwnFirst = _db.ParentAccounts.Where(p => p.UserId == c.UserId).Select(p => p.FirstName).FirstOrDefault(),
+                OwnLast = _db.ParentAccounts.Where(p => p.UserId == c.UserId).Select(p => p.LastName).FirstOrDefault(),
+                Email = c.User != null ? c.User.Email : null,
+            })
+            .ToListAsync(ct);
+
+        foreach (var c in collaborators)
+        {
+            if (string.IsNullOrEmpty(c.UserId) || !existingUserIds.Add(c.UserId)) continue;
+            var name = !string.IsNullOrWhiteSpace(c.OwnFirst)
+                ? $"{c.OwnFirst} {c.OwnLast}".Trim()
+                : (c.Email ?? "Parent");
+            _db.ChatGroupMembers.Add(new ChatGroupMember
+            {
+                ChatGroupId = groupId,
+                UserId = c.UserId,
+                DisplayName = name,
+                Role = ChatMemberRole.Parent,
+            });
+        }
     }
 
     private async Task<ChatGroupAdminDto> SummarizeAsync(int id, CancellationToken ct)
