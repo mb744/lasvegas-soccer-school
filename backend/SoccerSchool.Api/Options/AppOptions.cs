@@ -13,6 +13,7 @@ public class AppOptions
     public AdminBootstrapOptions Admin { get; set; } = new();
     public OAuthOptions OAuth { get; set; } = new();
     public JwtOptions Jwt { get; set; } = new();
+    public AccountDeletionOptions AccountDeletion { get; set; } = new();
 
     public class CorsOptions
     {
@@ -40,6 +41,14 @@ public class AppOptions
         public int RefreshTokenDays { get; set; } = 60;
 
         public bool IsConfigured => !string.IsNullOrWhiteSpace(SigningKey);
+    }
+
+    /// <summary>Grace period between the user tapping Delete account and the actual purge running.
+    /// During this window they can sign back in and cancel; after it, the AccountPurgeJob runs the
+    /// full anonymization and the account is unrecoverable.</summary>
+    public class AccountDeletionOptions
+    {
+        public int GraceDays { get; set; } = 30;
     }
 
     public class AdminBootstrapOptions

@@ -2,17 +2,20 @@ import React, { useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../src/auth/AuthContext';
-import { deleteAccount } from '../../src/api/endpoints';
+import { cancelAccountDeletion, deleteAccount } from '../../src/api/endpoints';
+import { longDate } from '../../src/format';
 import { colors, radius, spacing } from '../../src/theme';
 
 export default function ProfileScreen() {
   const { t } = useTranslation();
-  const { me, signOut } = useAuth();
-  const [deleting, setDeleting] = useState(false);
+  const { me, signOut, refreshMe } = useAuth();
+  const [busy, setBusy] = useState(false);
 
   if (!me) return null;
 
-  const onDelete = () => {
+  const pendingDeletion = me.pendingDeletionAt ?? null;
+
+  const onSchedule = () => {
     Alert.alert(
       t('profile.deletePromptTitle'),
       t('profile.deletePromptMessage'),
@@ -22,15 +25,45 @@ export default function ProfileScreen() {
           text: t('profile.deleteConfirm'),
           style: 'destructive',
           onPress: async () => {
-            setDeleting(true);
+            setBusy(true);
             try {
-              await deleteAccount();
-              // Backend has revoked tokens, anonymized the user, and locked the account.
-              // Clear local session so the app returns to the sign-in screen.
-              await signOut();
+              const res = await deleteAccount();
+              const when = longDate(res.pendingDeletionAt);
+              Alert.alert(
+                t('profile.deleteScheduledTitle'),
+                t('profile.deleteScheduledMessage', { date: when }),
+                [{ text: t('common.ok'), onPress: () => void signOut() }],
+                { cancelable: false },
+              );
             } catch {
-              setDeleting(false);
+              setBusy(false);
               Alert.alert(t('profile.deleteErrorTitle'), t('profile.deleteErrorMessage'));
+            }
+          },
+        },
+      ],
+      { cancelable: true },
+    );
+  };
+
+  const onCancelDeletion = () => {
+    Alert.alert(
+      t('profile.cancelDeletionConfirmTitle'),
+      t('profile.cancelDeletionConfirmMessage'),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('profile.cancelDeletionConfirm'),
+          onPress: async () => {
+            setBusy(true);
+            try {
+              await cancelAccountDeletion();
+              await refreshMe();
+              Alert.alert(t('profile.cancelDeletionSuccessTitle'), t('profile.cancelDeletionSuccessMessage'));
+            } catch {
+              Alert.alert(t('profile.cancelDeletionErrorTitle'), t('profile.cancelDeletionErrorMessage'));
+            } finally {
+              setBusy(false);
             }
           },
         },
@@ -53,6 +86,18 @@ export default function ProfileScreen() {
         <Text style={styles.email}>{me.email}</Text>
       </View>
 
+      {pendingDeletion ? (
+        <View style={styles.deletionBanner}>
+          <Text style={styles.deletionBannerTitle}>{t('profile.deleteBannerTitle')}</Text>
+          <Text style={styles.deletionBannerBody}>
+            {t('profile.deleteBannerBody', { date: longDate(pendingDeletion) })}
+          </Text>
+          <TouchableOpacity style={styles.cancelDeletionBtn} onPress={onCancelDeletion} disabled={busy}>
+            <Text style={styles.cancelDeletionBtnText}>{t('profile.cancelDeletion')}</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
       <Text style={styles.sectionTitle}>{t('profile.players')}</Text>
       {me.players.length === 0 ? (
         <Text style={styles.muted}>—</Text>
@@ -69,13 +114,15 @@ export default function ProfileScreen() {
         ))
       )}
 
-      <TouchableOpacity style={styles.signOut} onPress={signOut} disabled={deleting}>
+      <TouchableOpacity style={styles.signOut} onPress={signOut} disabled={busy}>
         <Text style={styles.signOutText}>{t('profile.signOut')}</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity style={styles.deleteAccount} onPress={onDelete} disabled={deleting}>
-        <Text style={styles.deleteAccountText}>{t('profile.deleteAccount')}</Text>
-      </TouchableOpacity>
+      {!pendingDeletion ? (
+        <TouchableOpacity style={styles.deleteAccount} onPress={onSchedule} disabled={busy}>
+          <Text style={styles.deleteAccountText}>{t('profile.deleteAccount')}</Text>
+        </TouchableOpacity>
+      ) : null}
     </ScrollView>
   );
 }
@@ -130,4 +177,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   deleteAccountText: { color: colors.white, fontSize: 16, fontWeight: '800' },
+  deletionBanner: {
+    backgroundColor: '#fff5f2',
+    borderWidth: 1,
+    borderColor: colors.danger,
+    borderRadius: radius.md,
+    padding: spacing.lg,
+    marginBottom: spacing.xl,
+  },
+  deletionBannerTitle: { fontSize: 15, fontWeight: '800', color: colors.danger, marginBottom: spacing.xs },
+  deletionBannerBody: { fontSize: 14, color: colors.text, marginBottom: spacing.md },
+  cancelDeletionBtn: {
+    backgroundColor: colors.danger,
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+  },
+  cancelDeletionBtnText: { color: colors.white, fontSize: 15, fontWeight: '800' },
 });

@@ -9,6 +9,8 @@ interface AuthState {
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
+  /** Refetches the current profile (e.g. after scheduling / cancelling account deletion). */
+  refreshMe: () => Promise<void>;
   /** Latest refresh token, exposed so logout can revoke it server-side. */
   getRefreshToken: () => string | null;
 }
@@ -64,6 +66,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setMe(res.user);
   }, []);
 
+  const refreshMe = useCallback(async () => {
+    try {
+      const profile = await fetchMe();
+      setMe(profile);
+    } catch {
+      // A 401 here just means the token expired between reads; the client's silent-refresh
+      // will kick in on the next call.
+    }
+  }, []);
+
   const signOut = useCallback(async () => {
     const rt = refreshToken;
     setMe(null);
@@ -80,8 +92,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [refreshToken]);
 
   const value = useMemo<AuthState>(
-    () => ({ me, loading, signIn, signOut, getRefreshToken: () => refreshToken }),
-    [me, loading, signIn, signOut, refreshToken],
+    () => ({ me, loading, signIn, signOut, refreshMe, getRefreshToken: () => refreshToken }),
+    [me, loading, signIn, signOut, refreshMe, refreshToken],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

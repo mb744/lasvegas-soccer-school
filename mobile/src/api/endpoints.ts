@@ -7,6 +7,7 @@ import type {
   DevicePlatform,
   Me,
   Player,
+  ScheduleDeletionResponse,
   ScheduleEvent,
   TokenResponse,
 } from './types';
@@ -27,8 +28,13 @@ export async function logout(refreshToken: string): Promise<void> {
   await api.post('/mobile/auth/logout', { refreshToken });
 }
 
-export async function deleteAccount(): Promise<void> {
-  await api.delete('/mobile/auth/me');
+export async function deleteAccount(): Promise<ScheduleDeletionResponse> {
+  const { data } = await api.delete<ScheduleDeletionResponse>('/mobile/auth/me');
+  return data;
+}
+
+export async function cancelAccountDeletion(): Promise<void> {
+  await api.post('/mobile/auth/cancel-deletion');
 }
 
 // ---- Players ----

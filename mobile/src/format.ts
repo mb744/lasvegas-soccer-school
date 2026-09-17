@@ -21,6 +21,11 @@ export function shortDateTime(iso: string): string {
   });
 }
 
+export function longDate(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+}
+
 export function messageTime(iso: string): string {
   const d = new Date(iso);
   const today = new Date();
