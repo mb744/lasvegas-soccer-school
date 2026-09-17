@@ -55,6 +55,7 @@ public class ChatAdminController : ControllerBase
         _db.ChatGroups.Add(group);
         await _db.SaveChangesAsync(ct);
 
+        await AddCreatingAdminAsync(group.Id, ct);
         if (req.SeedFromTeamId is int teamId)
             await SeedFromTeamAsync(group.Id, teamId, ct);
 
@@ -159,6 +160,38 @@ public class ChatAdminController : ControllerBase
 
         var dto = await _chat.PostMessageAsync(id, userId, req.Body, ct, overrideName: adminName, asAdmin: true);
         return dto is null ? StatusCode(500, "Could not post message.") : Ok(dto);
+    }
+
+    /// <summary>Adds the admin who created the group as an admin member so they show up in the
+    /// roster and their SignalR sends resolve to their own row (with an Admin role tag). No-op if
+    /// they're already a member (e.g. re-run against an existing group).</summary>
+    private async Task AddCreatingAdminAsync(int groupId, CancellationToken ct)
+    {
+        var userId = _users.GetUserId(User);
+        if (string.IsNullOrEmpty(userId)) return;
+
+        var already = await _db.ChatGroupMembers.AnyAsync(
+            m => m.ChatGroupId == groupId && m.UserId == userId, ct);
+        if (already) return;
+
+        var name = await _db.ParentAccounts
+            .Where(a => a.UserId == userId)
+            .Select(a => (a.FirstName + " " + a.LastName).Trim())
+            .FirstOrDefaultAsync(ct);
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            var user = await _users.FindByIdAsync(userId);
+            name = user?.Email ?? "Coach";
+        }
+
+        _db.ChatGroupMembers.Add(new ChatGroupMember
+        {
+            ChatGroupId = groupId,
+            UserId = userId,
+            DisplayName = name!,
+            Role = ChatMemberRole.Admin,
+        });
+        await _db.SaveChangesAsync(ct);
     }
 
     private record FamilyRosterEntry(int ParentAccountId, string FirstName, string LastName);
