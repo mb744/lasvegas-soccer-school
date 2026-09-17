@@ -1348,6 +1348,11 @@ export interface SendRegistrationInviteResult {
   message: string
 }
 
+export interface SendCoachInviteResult {
+  success: boolean
+  message: string
+}
+
 /** Invoice lifecycle state — admin moves through New → Sent → Paid → Closed. Matches the
  *  backend enum (numeric). */
 export type InvoiceStatus = 0 | 1 | 2 | 3

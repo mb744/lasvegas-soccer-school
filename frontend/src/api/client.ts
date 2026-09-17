@@ -68,6 +68,7 @@ import type {
   AdminUpdatePlayerRequest,
   SendRegistrationInviteRequest,
   SendRegistrationInviteResult,
+  SendCoachInviteResult,
   InvoiceDto,
   InvoiceStatus,
   InvoiceSummaryDto,
@@ -1044,6 +1045,10 @@ export const Api = {
   },
   async deleteCoach(id: number) {
     await api.delete(`/coaches/${id}`)
+  },
+  async sendCoachInvite(id: number) {
+    const r = await api.post<SendCoachInviteResult>(`/coaches/${id}/send-invite`)
+    return r.data
   },
   async addCoachCertification(id: number, payload: SaveCoachCertificationRequest) {
     const r = await api.post<Coach>(`/coaches/${id}/certifications`, payload)

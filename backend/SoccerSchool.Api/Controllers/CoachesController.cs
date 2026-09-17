@@ -1,9 +1,11 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using SoccerSchool.Api.Data;
 using SoccerSchool.Api.Domain;
 using SoccerSchool.Api.Dtos;
+using SoccerSchool.Api.Options;
 using SoccerSchool.Api.Services;
 
 namespace SoccerSchool.Api.Controllers;
@@ -19,8 +21,15 @@ namespace SoccerSchool.Api.Controllers;
 public class CoachesController : ControllerBase
 {
     private readonly AppDbContext _db;
+    private readonly IEmailSender _email;
+    private readonly AppOptions _app;
 
-    public CoachesController(AppDbContext db) { _db = db; }
+    public CoachesController(AppDbContext db, IEmailSender email, IOptions<AppOptions> app)
+    {
+        _db = db;
+        _email = email;
+        _app = app.Value;
+    }
 
     [HttpGet]
     public async Task<ActionResult<IEnumerable<CoachSummary>>> List(CancellationToken ct)
@@ -78,6 +87,50 @@ public class CoachesController : ControllerBase
         _db.Coaches.Remove(c);  // Certifications cascade-delete via the FK config.
         await _db.SaveChangesAsync(ct);
         return NoContent();
+    }
+
+    /// <summary>Emails the coach a link to sign up for a login. Their signup uses the standard
+    /// /signup form; matching them back to this Coach row happens by email after the fact.</summary>
+    [HttpPost("{id:int}/send-invite")]
+    public async Task<ActionResult<SendCoachInviteResult>> SendInvite(int id, CancellationToken ct)
+    {
+        var c = await _db.Coaches.FindAsync(new object?[] { id }, ct);
+        if (c is null) return NotFound(new SendCoachInviteResult(false, "Coach not found."));
+        if (string.IsNullOrWhiteSpace(c.Email))
+            return BadRequest(new SendCoachInviteResult(false, "Coach has no email on file. Add one before sending an invite."));
+
+        var baseUrl = (_app.PublicBaseUrl ?? string.Empty).TrimEnd('/');
+        var link = string.IsNullOrEmpty(baseUrl) ? "/signup" : $"{baseUrl}/signup";
+
+        var isSpanish = c.Language == Language.Spanish;
+        var firstName = string.IsNullOrWhiteSpace(c.FirstName) ? (isSpanish ? "Entrenador" : "Coach") : c.FirstName.Trim();
+
+        string subject, body;
+        if (isSpanish)
+        {
+            subject = "Su cuenta de entrenador — Las Vegas Soccer School";
+            body =
+                $"Hola {firstName},\n\n" +
+                "Las Vegas Soccer School le invita a crear una cuenta para acceder a la aplicación móvil y a los chats de equipo.\n\n" +
+                $"Regístrese aquí con este correo electrónico:\n{link}\n\n" +
+                "Una vez creada su cuenta, un administrador le agregará a los chats de sus equipos.\n\n" +
+                "Gracias,\nLas Vegas Soccer School";
+        }
+        else
+        {
+            subject = "Your coach account — Las Vegas Soccer School";
+            body =
+                $"Hi {firstName},\n\n" +
+                "Las Vegas Soccer School is inviting you to create an account so you can access the mobile app and team chats.\n\n" +
+                $"Sign up here using this email address:\n{link}\n\n" +
+                "Once your account is created, an admin will add you to your teams' chats.\n\n" +
+                "Thanks,\nLas Vegas Soccer School";
+        }
+
+        var send = await _email.SendAsync(c.Email!, subject, body, ct);
+        return send.Success
+            ? Ok(new SendCoachInviteResult(true, $"Invite sent to {c.Email}."))
+            : StatusCode(502, new SendCoachInviteResult(false, $"Email send failed: {send.Message}"));
     }
 
     // --- Certifications (nested) ---

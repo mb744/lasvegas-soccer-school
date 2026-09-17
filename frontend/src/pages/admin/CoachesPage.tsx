@@ -285,10 +285,27 @@ function CoachDetail({
   onNotice: (n: string) => void
 }) {
   const { t } = useTranslation()
+  const [sendingInvite, setSendingInvite] = useState(false)
   const fullName = `${detail.firstName} ${detail.lastName}`.trim()
   const addressLines = [detail.addressLine1, detail.addressLine2,
     [detail.city, detail.state, detail.postalCode].filter(Boolean).join(', ')]
     .filter(Boolean) as string[]
+
+  const sendInvite = async () => {
+    if (!detail.email) return
+    if (!confirm(`Send a signup invite to ${detail.email}?`)) return
+    onError('')
+    setSendingInvite(true)
+    try {
+      const res = await Api.sendCoachInvite(detail.id)
+      if (res.success) onNotice(res.message)
+      else onError(res.message)
+    } catch (e: any) {
+      onError(e?.response?.data?.message || e?.response?.data?.title || e?.message || 'Error')
+    } finally {
+      setSendingInvite(false)
+    }
+  }
 
   return (
     <>
@@ -302,6 +319,14 @@ function CoachDetail({
           </div>
           <div className="text-sm whitespace-nowrap">
             <button onClick={onEdit} className="text-emerald-700 hover:underline">{t('admin.edit')}</button>
+            {detail.email && (
+              <>
+                <span className="mx-2 text-slate-300">|</span>
+                <button onClick={sendInvite} disabled={sendingInvite} className="text-emerald-700 hover:underline disabled:opacity-60">
+                  {sendingInvite ? t('admin.sending') : 'Send account invite'}
+                </button>
+              </>
+            )}
             <span className="mx-2 text-slate-300">|</span>
             <button onClick={onDelete} className="text-rose-700 hover:underline">{t('admin.delete')}</button>
           </div>

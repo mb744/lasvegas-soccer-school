@@ -24,6 +24,8 @@ public record CoachDto(
     DateTime UpdatedAt,
     IReadOnlyList<CoachCertificationDto> Certifications);
 
+public record SendCoachInviteResult(bool Success, string Message);
+
 public record CoachCertificationDto(
     int Id,
     int CoachId,
