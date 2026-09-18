@@ -19,6 +19,9 @@ param adminBootstrapPassword string = ''
 @description('Google OAuth Client ID. Empty disables Google login.')
 param googleOAuthClientId string = ''
 
+@description('Additional Google OAuth Client IDs (comma-separated) accepted as id_token audience for mobile sign-in. Typically the iOS and Android native client IDs from the same Google Cloud project.')
+param googleOAuthMobileClientIds string = ''
+
 @secure()
 param googleOAuthClientSecret string = ''
 
@@ -121,6 +124,12 @@ var googleEnv = hasGoogle ? [
   { name: 'App__OAuth__Google__ClientId', value: googleOAuthClientId }
   { name: 'App__OAuth__Google__ClientSecret', secretRef: 'google-oauth-secret' }
 ] : []
+// Optional mobile client IDs — plumbed independently of hasGoogle so the mobile Google flow can
+// be enabled even in a hypothetical setup where the web Google flow isn't (though normally they
+// share the same OAuth consent screen and both are on together).
+var googleMobileEnv = !empty(googleOAuthMobileClientIds) ? [
+  { name: 'App__OAuth__Google__MobileClientIds', value: googleOAuthMobileClientIds }
+] : []
 var facebookEnv = hasFacebook ? [
   { name: 'App__OAuth__Facebook__AppId', value: facebookOAuthAppId }
   { name: 'App__OAuth__Facebook__AppSecret', secretRef: 'facebook-oauth-secret' }
@@ -162,7 +171,7 @@ var twilioConversationsEnv = hasTwilio && !empty(twilioConversationsServiceSid) 
 var jwtEnv = hasJwt ? [
   { name: 'App__Jwt__SigningKey', secretRef: 'jwt-signing-key' }
 ] : []
-var allEnv = concat(baseEnv, googleEnv, facebookEnv, adminEnv, acsEnvCore, acsEnvEmail, acsEnvSms, twilioEnv, twilioWhatsAppEnv, twilioWhatsAppTemplateEnv, twilioConversationsEnv, jwtEnv)
+var allEnv = concat(baseEnv, googleEnv, googleMobileEnv, facebookEnv, adminEnv, acsEnvCore, acsEnvEmail, acsEnvSms, twilioEnv, twilioWhatsAppEnv, twilioWhatsAppTemplateEnv, twilioConversationsEnv, jwtEnv)
 
 resource app 'Microsoft.App/containerApps@2024-03-01' = {
   name: name

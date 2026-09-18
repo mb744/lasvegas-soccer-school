@@ -73,6 +73,9 @@ param adminBootstrapPassword string = ''
 @description('Google OAuth Client ID. Leave empty to disable Google login.')
 param googleOAuthClientId string = ''
 
+@description('Additional Google OAuth Client IDs (comma-separated) accepted as valid id_token audience for mobile sign-in — typically the iOS and Android native client IDs from the same Google Cloud project as googleOAuthClientId.')
+param googleOAuthMobileClientIds string = ''
+
 @secure()
 param googleOAuthClientSecret string = ''
 
@@ -175,6 +178,7 @@ module containerApp 'modules/container-app.bicep' = {
     adminBootstrapPassword: adminBootstrapPassword
     googleOAuthClientId: googleOAuthClientId
     googleOAuthClientSecret: googleOAuthClientSecret
+    googleOAuthMobileClientIds: googleOAuthMobileClientIds
     facebookOAuthAppId: facebookOAuthAppId
     facebookOAuthAppSecret: facebookOAuthAppSecret
     acsConnectionString: enableAcs ? acs!.outputs.connectionString : ''
