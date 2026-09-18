@@ -97,8 +97,15 @@ var commonTags = {
 }
 
 // ----- Modules -----
+// Nested-module names are the deployment names ARM records at the resource-group scope.
+// If two workflow runs overlap (GitHub Actions queueing while a previous run's ARM ops are
+// still finalizing), reused module names collide — "The deployment ... cannot be saved,
+// because this would overwrite an existing deployment which is still active." Suffixing every
+// module name with the top-level deployment name (which the workflow already stamps with
+// github.run_id) makes each concurrent run's nested deployments distinct.
+var deploySuffix = deployment().name
 module logAnalytics 'modules/log-analytics.bicep' = {
-  name: 'logAnalytics'
+  name: 'logAnalytics-${deploySuffix}'
   params: {
     name: logAnalyticsName
     location: location
@@ -107,7 +114,7 @@ module logAnalytics 'modules/log-analytics.bicep' = {
 }
 
 module managedIdentity 'modules/managed-identity.bicep' = {
-  name: 'managedIdentity'
+  name: 'managedIdentity-${deploySuffix}'
   params: {
     name: managedIdentityName
     location: location
@@ -116,7 +123,7 @@ module managedIdentity 'modules/managed-identity.bicep' = {
 }
 
 module sql 'modules/sql.bicep' = {
-  name: 'sql'
+  name: 'sql-${deploySuffix}'
   params: {
     serverName: sqlServerName
     databaseName: sqlDatabaseName
@@ -131,7 +138,7 @@ module sql 'modules/sql.bicep' = {
 }
 
 module containerEnv 'modules/container-apps-env.bicep' = {
-  name: 'containerEnv'
+  name: 'containerEnv-${deploySuffix}'
   params: {
     name: containerAppEnvName
     location: location
@@ -142,7 +149,7 @@ module containerEnv 'modules/container-apps-env.bicep' = {
 }
 
 module acs 'modules/acs.bicep' = if (enableAcs) {
-  name: 'acs'
+  name: 'acs-${deploySuffix}'
   params: {
     appName: appName
     tags: commonTags
@@ -152,7 +159,7 @@ module acs 'modules/acs.bicep' = if (enableAcs) {
 }
 
 module containerApp 'modules/container-app.bicep' = {
-  name: 'containerApp'
+  name: 'containerApp-${deploySuffix}'
   params: {
     name: containerAppName
     location: location
