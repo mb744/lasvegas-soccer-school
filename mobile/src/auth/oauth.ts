@@ -38,13 +38,20 @@ export function facebookConfigured(): boolean {
  * Runs the Google OAuth flow in the system browser, exchanges the returned id_token with the LVSS
  * backend, and resolves with the app's own JWT + refresh token pair. Throws on cancel or error —
  * the login screen catches and shows a message.
+ *
+ * Google's iOS OAuth 2.0 client rejects arbitrary custom-scheme redirects; the redirect URI must
+ * use the reversed-client-ID scheme it hands out at credential-creation time (registered on the
+ * app side via CFBundleURLTypes in app.json). We derive it here from the configured client ID so
+ * the caller doesn't have to keep the two in sync manually.
  */
 export async function signInWithGoogle(): Promise<TokenResponse> {
   const cfg = readConfig();
   const clientId = cfg.googleIosClientId || cfg.googleWebClientId || cfg.googleAndroidClientId;
   if (!clientId) throw new Error('google-not-configured');
 
-  const redirectUri = AuthSession.makeRedirectUri({ scheme: 'lvss', path: 'oauth' });
+  const reversed = 'com.googleusercontent.apps.' + clientId.replace(/\.apps\.googleusercontent\.com$/, '');
+  const redirectUri = `${reversed}:/oauth2redirect`;
+
   const discovery = await AuthSession.fetchDiscoveryAsync('https://accounts.google.com');
 
   const request = new AuthSession.AuthRequest({
@@ -67,14 +74,14 @@ export async function signInWithGoogle(): Promise<TokenResponse> {
 
 /**
  * Runs Facebook OAuth in the system browser, forwards the access token to the LVSS backend, and
- * resolves with the app's tokens. The backend re-verifies the token via Facebook's debug_token
- * endpoint (checks it belongs to our app + is unexpired) before minting an LVSS session.
+ * resolves with the app's tokens. Uses the fb<APPID>://authorize redirect scheme registered on
+ * the Facebook Developer console when the iOS platform was added.
  */
 export async function signInWithFacebook(): Promise<TokenResponse> {
   const cfg = readConfig();
   if (!cfg.facebookAppId) throw new Error('facebook-not-configured');
 
-  const redirectUri = AuthSession.makeRedirectUri({ scheme: 'lvss', path: 'oauth' });
+  const redirectUri = `fb${cfg.facebookAppId}://authorize`;
   const discovery = {
     authorizationEndpoint: 'https://www.facebook.com/v18.0/dialog/oauth',
     tokenEndpoint: 'https://graph.facebook.com/v18.0/oauth/access_token',

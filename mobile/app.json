@@ -14,7 +14,25 @@
       "supportsTablet": true,
       "bundleIdentifier": "org.lasvegassoccerschool.app",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLSchemes": [
+              "com.googleusercontent.apps.10228158424-ck054vcu69hkjmcvjjp6cg411bvnltap"
+            ]
+          },
+          {
+            "CFBundleURLSchemes": [
+              "fb1659218045358325"
+            ]
+          }
+        ],
+        "LSApplicationQueriesSchemes": [
+          "fbapi",
+          "fb-messenger-share-api",
+          "fbauth2",
+          "fbshareextension"
+        ]
       }
     },
     "android": {
@@ -56,10 +74,10 @@
         "projectId": "28207dee-f030-47ec-bf69-ba43dc479836"
       },
       "oauth": {
-        "googleIosClientId": "",
+        "googleIosClientId": "10228158424-ck054vcu69hkjmcvjjp6cg411bvnltap.apps.googleusercontent.com",
         "googleAndroidClientId": "",
-        "googleWebClientId": "",
-        "facebookAppId": ""
+        "googleWebClientId": "10228158424-ip9qesq1kpgvfj4vs9is6gcv9693blob.apps.googleusercontent.com",
+        "facebookAppId": "1659218045358325"
       }
     },
     "owner": "las-vegas-soccer-school",
