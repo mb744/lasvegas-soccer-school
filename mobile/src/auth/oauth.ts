@@ -1,0 +1,98 @@
+import Constants from 'expo-constants';
+import * as AuthSession from 'expo-auth-session';
+import * as WebBrowser from 'expo-web-browser';
+import { api } from '../api/client';
+import type { TokenResponse } from '../api/types';
+
+// Ends any lingering system browser sessions once auth completes (Expo docs' recommended call).
+WebBrowser.maybeCompleteAuthSession();
+
+interface OAuthConfig {
+  googleIosClientId?: string;
+  googleAndroidClientId?: string;
+  googleWebClientId?: string;
+  facebookAppId?: string;
+}
+
+function readConfig(): OAuthConfig {
+  const extra = (Constants.expoConfig?.extra ?? {}) as Record<string, unknown>;
+  const oauth = (extra.oauth ?? {}) as Record<string, unknown>;
+  return {
+    googleIosClientId: oauth.googleIosClientId as string | undefined,
+    googleAndroidClientId: oauth.googleAndroidClientId as string | undefined,
+    googleWebClientId: oauth.googleWebClientId as string | undefined,
+    facebookAppId: oauth.facebookAppId as string | undefined,
+  };
+}
+
+export function googleConfigured(): boolean {
+  const c = readConfig();
+  return !!(c.googleIosClientId || c.googleAndroidClientId || c.googleWebClientId);
+}
+
+export function facebookConfigured(): boolean {
+  return !!readConfig().facebookAppId;
+}
+
+/**
+ * Runs the Google OAuth flow in the system browser, exchanges the returned id_token with the LVSS
+ * backend, and resolves with the app's own JWT + refresh token pair. Throws on cancel or error —
+ * the login screen catches and shows a message.
+ */
+export async function signInWithGoogle(): Promise<TokenResponse> {
+  const cfg = readConfig();
+  const clientId = cfg.googleIosClientId || cfg.googleWebClientId || cfg.googleAndroidClientId;
+  if (!clientId) throw new Error('google-not-configured');
+
+  const redirectUri = AuthSession.makeRedirectUri({ scheme: 'lvss', path: 'oauth' });
+  const discovery = await AuthSession.fetchDiscoveryAsync('https://accounts.google.com');
+
+  const request = new AuthSession.AuthRequest({
+    clientId,
+    redirectUri,
+    responseType: AuthSession.ResponseType.IdToken,
+    scopes: ['openid', 'email', 'profile'],
+    extraParams: { nonce: Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2) },
+    usePKCE: false,
+  });
+
+  const result = await request.promptAsync(discovery);
+  if (result.type !== 'success') throw new Error(result.type);
+  const idToken = result.params.id_token;
+  if (!idToken) throw new Error('no-id-token');
+
+  const { data } = await api.post<TokenResponse>('/mobile/auth/google', { token: idToken });
+  return data;
+}
+
+/**
+ * Runs Facebook OAuth in the system browser, forwards the access token to the LVSS backend, and
+ * resolves with the app's tokens. The backend re-verifies the token via Facebook's debug_token
+ * endpoint (checks it belongs to our app + is unexpired) before minting an LVSS session.
+ */
+export async function signInWithFacebook(): Promise<TokenResponse> {
+  const cfg = readConfig();
+  if (!cfg.facebookAppId) throw new Error('facebook-not-configured');
+
+  const redirectUri = AuthSession.makeRedirectUri({ scheme: 'lvss', path: 'oauth' });
+  const discovery = {
+    authorizationEndpoint: 'https://www.facebook.com/v18.0/dialog/oauth',
+    tokenEndpoint: 'https://graph.facebook.com/v18.0/oauth/access_token',
+  };
+
+  const request = new AuthSession.AuthRequest({
+    clientId: cfg.facebookAppId,
+    redirectUri,
+    responseType: AuthSession.ResponseType.Token,
+    scopes: ['email', 'public_profile'],
+    usePKCE: false,
+  });
+
+  const result = await request.promptAsync(discovery);
+  if (result.type !== 'success') throw new Error(result.type);
+  const accessToken = result.params.access_token;
+  if (!accessToken) throw new Error('no-access-token');
+
+  const { data } = await api.post<TokenResponse>('/mobile/auth/facebook', { token: accessToken });
+  return data;
+}

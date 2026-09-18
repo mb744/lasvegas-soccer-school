@@ -197,6 +197,7 @@ builder.Services.AddScoped<IParentAccountResolver, ParentAccountResolver>();
 builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddScoped<IAccountDeletionService, AccountDeletionService>();
 builder.Services.AddSingleton<IReclaimHasher, ReclaimHasher>();
+builder.Services.AddHttpClient<IExternalIdentityService, ExternalIdentityService>();
 builder.Services.AddSingleton<IPushSender, ExpoPushSender>();
 // Attendance reminder pushes for events 6–48h out; runs every 3h.
 builder.Services.AddHostedService<AttendanceReminderJob>();

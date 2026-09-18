@@ -44,7 +44,8 @@
           "resizeMode": "contain",
           "backgroundColor": "#0b3d2e"
         }
-      ]
+      ],
+      "expo-web-browser"
     ],
     "extra": {
       "apiBaseUrl": "https://registration.lasvegassoccerschool.org",
@@ -53,6 +54,12 @@
       },
       "eas": {
         "projectId": "28207dee-f030-47ec-bf69-ba43dc479836"
+      },
+      "oauth": {
+        "googleIosClientId": "",
+        "googleAndroidClientId": "",
+        "googleWebClientId": "",
+        "facebookAppId": ""
       }
     },
     "owner": "las-vegas-soccer-school",

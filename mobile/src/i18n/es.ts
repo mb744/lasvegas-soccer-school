@@ -16,6 +16,10 @@ export const es: Translations = {
     password: 'Contraseña',
     signIn: 'Iniciar sesión',
     error: 'Correo o contraseña inválidos.',
+    errorSocial: 'No se pudo iniciar sesión. Intente de nuevo.',
+    or: 'O',
+    continueWithGoogle: 'Continuar con Google',
+    continueWithFacebook: 'Continuar con Facebook',
   },
   tabs: {
     schedule: 'Calendario',

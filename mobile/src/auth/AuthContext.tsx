@@ -1,13 +1,15 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { fetchMe, login as apiLogin, logout as apiLogout } from '../api/endpoints';
 import { registerTokenListener, setTokens } from '../api/client';
-import type { Me } from '../api/types';
+import type { Me, TokenResponse } from '../api/types';
 import { clearTokens, loadTokens, saveTokens } from './storage';
 
 interface AuthState {
   me: Me | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
+  /** Adopts a token pair the caller already obtained (e.g. from a Google/Facebook exchange). */
+  signInWithTokens: (res: TokenResponse) => Promise<void>;
   signOut: () => Promise<void>;
   /** Latest refresh token, exposed so logout can revoke it server-side. */
   getRefreshToken: () => string | null;
@@ -55,14 +57,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })();
   }, []);
 
-  const signIn = useCallback(async (email: string, password: string) => {
-    const res = await apiLogin(email, password);
+  const adoptTokens = useCallback(async (res: TokenResponse) => {
     const tokens = { accessToken: res.accessToken, refreshToken: res.refreshToken };
     setTokens(tokens);
     setRefreshToken(res.refreshToken);
     await saveTokens(tokens);
     setMe(res.user);
   }, []);
+
+  const signIn = useCallback(async (email: string, password: string) => {
+    const res = await apiLogin(email, password);
+    await adoptTokens(res);
+  }, [adoptTokens]);
+
+  const signInWithTokens = useCallback(async (res: TokenResponse) => {
+    await adoptTokens(res);
+  }, [adoptTokens]);
 
   const signOut = useCallback(async () => {
     const rt = refreshToken;
@@ -80,8 +90,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [refreshToken]);
 
   const value = useMemo<AuthState>(
-    () => ({ me, loading, signIn, signOut, getRefreshToken: () => refreshToken }),
-    [me, loading, signIn, signOut, refreshToken],
+    () => ({ me, loading, signIn, signInWithTokens, signOut, getRefreshToken: () => refreshToken }),
+    [me, loading, signIn, signInWithTokens, signOut, refreshToken],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

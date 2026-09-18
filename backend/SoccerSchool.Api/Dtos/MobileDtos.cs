@@ -20,6 +20,15 @@ public record MobileRefreshRequest
     public string RefreshToken { get; init; } = string.Empty;
 }
 
+/// <summary>Request body for the Google / Facebook mobile OAuth exchange endpoints. Carries the
+/// third-party token the app obtained via expo-auth-session (Google id_token, Facebook user
+/// access token). Server verifies the token with the provider before minting LVSS tokens.</summary>
+public record MobileExternalTokenRequest
+{
+    [Required]
+    public string Token { get; init; } = string.Empty;
+}
+
 public record MobileTokenResponse(
     string AccessToken,
     DateTime AccessTokenExpiresAt,

@@ -14,6 +14,10 @@ export const en = {
     password: 'Password',
     signIn: 'Sign in',
     error: 'Invalid email or password.',
+    errorSocial: 'Sign-in failed. Please try again.',
+    or: 'OR',
+    continueWithGoogle: 'Continue with Google',
+    continueWithFacebook: 'Continue with Facebook',
   },
   tabs: {
     schedule: 'Schedule',

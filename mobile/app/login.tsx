@@ -13,11 +13,17 @@ import { Redirect } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../src/auth/AuthContext';
 import { registerForPush } from '../src/push/register';
+import {
+  facebookConfigured,
+  googleConfigured,
+  signInWithFacebook,
+  signInWithGoogle,
+} from '../src/auth/oauth';
 import { colors, radius, spacing } from '../src/theme';
 
 export default function LoginScreen() {
   const { t } = useTranslation();
-  const { me, signIn } = useAuth();
+  const { me, signIn, signInWithTokens } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -30,7 +36,6 @@ export default function LoginScreen() {
     setBusy(true);
     try {
       await signIn(email.trim(), password);
-      // Register for push right after a successful login (best-effort).
       void registerForPush();
     } catch {
       setError(t('login.error'));
@@ -38,6 +43,41 @@ export default function LoginScreen() {
       setBusy(false);
     }
   };
+
+  const onGoogle = async () => {
+    setError(null);
+    setBusy(true);
+    try {
+      const res = await signInWithGoogle();
+      await signInWithTokens(res);
+      void registerForPush();
+    } catch (e: any) {
+      // 'cancel'/'dismiss' means the user closed the browser — don't scare them with an error.
+      const msg = String(e?.message ?? '');
+      if (msg !== 'cancel' && msg !== 'dismiss') setError(t('login.errorSocial'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onFacebook = async () => {
+    setError(null);
+    setBusy(true);
+    try {
+      const res = await signInWithFacebook();
+      await signInWithTokens(res);
+      void registerForPush();
+    } catch (e: any) {
+      const msg = String(e?.message ?? '');
+      if (msg !== 'cancel' && msg !== 'dismiss') setError(t('login.errorSocial'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const showGoogle = googleConfigured();
+  const showFacebook = facebookConfigured();
+  const showAnySocial = showGoogle || showFacebook;
 
   return (
     <KeyboardAvoidingView
@@ -81,6 +121,27 @@ export default function LoginScreen() {
             <Text style={styles.buttonText}>{t('login.signIn')}</Text>
           )}
         </TouchableOpacity>
+
+        {showAnySocial && (
+          <>
+            <View style={styles.dividerRow}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>{t('login.or')}</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            {showGoogle && (
+              <TouchableOpacity style={styles.socialBtn} onPress={onGoogle} disabled={busy}>
+                <Text style={styles.socialText}>{t('login.continueWithGoogle')}</Text>
+              </TouchableOpacity>
+            )}
+            {showFacebook && (
+              <TouchableOpacity style={[styles.socialBtn, styles.facebookBtn]} onPress={onFacebook} disabled={busy}>
+                <Text style={styles.socialTextFacebook}>{t('login.continueWithFacebook')}</Text>
+              </TouchableOpacity>
+            )}
+          </>
+        )}
       </View>
     </KeyboardAvoidingView>
   );
@@ -111,4 +172,17 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: { opacity: 0.6 },
   buttonText: { color: colors.brand, fontSize: 17, fontWeight: '800' },
+  dividerRow: { flexDirection: 'row', alignItems: 'center', marginVertical: spacing.lg },
+  dividerLine: { flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.25)' },
+  dividerText: { color: '#cfe0d8', paddingHorizontal: spacing.md, fontSize: 13, fontWeight: '700' },
+  socialBtn: {
+    backgroundColor: colors.white,
+    borderRadius: radius.md,
+    paddingVertical: spacing.lg,
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  socialText: { color: colors.text, fontSize: 15, fontWeight: '700' },
+  facebookBtn: { backgroundColor: '#1877F2' },
+  socialTextFacebook: { color: colors.white, fontSize: 15, fontWeight: '700' },
 });

@@ -22,20 +22,29 @@ public class MobileAuthController : ControllerBase
     private readonly SignInManager<ApplicationUser> _signIn;
     private readonly IMobileTokenService _tokens;
     private readonly IAccountDeletionService _deletion;
+    private readonly IExternalIdentityService _external;
+    private readonly IReclaimHasher _reclaim;
     private readonly AppDbContext _db;
+    private readonly ILogger<MobileAuthController> _logger;
 
     public MobileAuthController(
         UserManager<ApplicationUser> users,
         SignInManager<ApplicationUser> signIn,
         IMobileTokenService tokens,
         IAccountDeletionService deletion,
-        AppDbContext db)
+        IExternalIdentityService external,
+        IReclaimHasher reclaim,
+        AppDbContext db,
+        ILogger<MobileAuthController> logger)
     {
         _users = users;
         _signIn = signIn;
         _tokens = tokens;
         _deletion = deletion;
+        _external = external;
+        _reclaim = reclaim;
         _db = db;
+        _logger = logger;
     }
 
     [HttpPost("login")]
@@ -77,6 +86,101 @@ public class MobileAuthController : ControllerBase
     {
         await _tokens.RevokeAsync(req.RefreshToken, ct);
         return NoContent();
+    }
+
+    /// <summary>Exchange a Google id_token (obtained by the mobile app via expo-auth-session) for
+    /// LVSS mobile tokens. New Google logins are matched to an existing ApplicationUser by email,
+    /// or a new user + ParentAccount is created; the ReclaimEmailHash reunion still fires.</summary>
+    [HttpPost("google")]
+    public async Task<ActionResult<MobileTokenResponse>> Google([FromBody] MobileExternalTokenRequest req, CancellationToken ct)
+    {
+        var identity = await _external.VerifyGoogleAsync(req.Token, ct);
+        if (identity is null) return Unauthorized("Google sign-in failed.");
+        return await SignInExternalAsync("Google", identity, ct);
+    }
+
+    /// <summary>Exchange a Facebook user access token for LVSS mobile tokens. Same
+    /// find-or-create semantics as the Google endpoint.</summary>
+    [HttpPost("facebook")]
+    public async Task<ActionResult<MobileTokenResponse>> Facebook([FromBody] MobileExternalTokenRequest req, CancellationToken ct)
+    {
+        var identity = await _external.VerifyFacebookAsync(req.Token, ct);
+        if (identity is null) return Unauthorized("Facebook sign-in failed.");
+        return await SignInExternalAsync("Facebook", identity, ct);
+    }
+
+    private async Task<ActionResult<MobileTokenResponse>> SignInExternalAsync(
+        string provider, ExternalIdentity identity, CancellationToken ct)
+    {
+        // 1. Existing external link? Sign that user in directly.
+        var user = await _users.FindByLoginAsync(provider, identity.ProviderKey);
+
+        // 2. Otherwise match by email — an existing password-login user, or a reclaim-eligible
+        //    ghost family, can be reconnected without spawning a duplicate.
+        if (user is null && !string.IsNullOrWhiteSpace(identity.Email))
+        {
+            user = await _users.FindByEmailAsync(identity.Email);
+        }
+
+        // 3. Nothing yet — mint a fresh user + parent record (with reunion of any deleted family).
+        if (user is null)
+        {
+            user = new ApplicationUser
+            {
+                UserName = identity.Email,
+                Email = identity.Email,
+                EmailConfirmed = true,
+            };
+            var create = await _users.CreateAsync(user);
+            if (!create.Succeeded)
+            {
+                _logger.LogWarning("Mobile external create failed: {Errors}", string.Join(",", create.Errors.Select(e => e.Description)));
+                return Unauthorized("Could not create account.");
+            }
+
+            var reclaimHash = _reclaim.Hash(identity.Email);
+            var account = reclaimHash is null
+                ? null
+                : await _db.ParentAccounts.FirstOrDefaultAsync(p => p.ReclaimEmailHash == reclaimHash, ct);
+
+            if (account is not null)
+            {
+                account.UserId = user.Id;
+                account.FirstName = string.IsNullOrWhiteSpace(identity.FirstName) ? account.FirstName : identity.FirstName;
+                account.LastName = string.IsNullOrWhiteSpace(identity.LastName) ? account.LastName : identity.LastName;
+                account.ReclaimEmailHash = null;
+                account.NoCommunications = false;
+                _logger.LogInformation("Reunited external signup {Email} with previously-deleted family {AccountId}.", identity.Email, account.Id);
+            }
+            else
+            {
+                _db.ParentAccounts.Add(new ParentAccount
+                {
+                    UserId = user.Id,
+                    FirstName = identity.FirstName,
+                    LastName = identity.LastName,
+                    Language = Language.English,
+                });
+            }
+            await _db.SaveChangesAsync(ct);
+        }
+
+        // Refuse users who deleted their account (login is anonymized + locked).
+        if (await _users.IsLockedOutAsync(user))
+            return Unauthorized("Account locked.");
+
+        // Ensure the external login is linked (idempotent — silently swallows the AlreadyLinked error).
+        var linkResult = await _users.AddLoginAsync(user, new Microsoft.AspNetCore.Identity.UserLoginInfo(provider, identity.ProviderKey, provider));
+        if (!linkResult.Succeeded && !linkResult.Errors.Any(e => e.Code == "LoginAlreadyAssociated"))
+        {
+            _logger.LogWarning("AddLogin failed for {Email}: {Errors}", identity.Email, string.Join(",", linkResult.Errors.Select(e => e.Description)));
+        }
+
+        user.LastLoginAt = DateTime.UtcNow;
+        await _users.UpdateAsync(user);
+
+        var pair = await _tokens.IssueAsync(user, ct);
+        return Ok(await BuildTokenResponseAsync(user, pair, ct));
     }
 
     [HttpGet("me")]

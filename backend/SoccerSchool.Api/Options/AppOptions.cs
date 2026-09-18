@@ -72,8 +72,21 @@ public class AppOptions
     {
         public string ClientId { get; set; } = string.Empty;
         public string ClientSecret { get; set; } = string.Empty;
+        /// <summary>Additional client IDs accepted as valid Google id_token <c>aud</c> claims when
+        /// the mobile app exchanges a Google login. Comma- or space-separated. Typically holds the
+        /// iOS OAuth 2.0 client ID (and, later, the Android one) from Google Cloud Console. The
+        /// primary <see cref="ClientId"/> is always accepted; this list is additive.</summary>
+        public string MobileClientIds { get; set; } = string.Empty;
         public bool IsConfigured =>
             !string.IsNullOrWhiteSpace(ClientId) && !string.IsNullOrWhiteSpace(ClientSecret);
+
+        public IEnumerable<string> AcceptedAudiences()
+        {
+            if (!string.IsNullOrWhiteSpace(ClientId)) yield return ClientId.Trim();
+            if (string.IsNullOrWhiteSpace(MobileClientIds)) yield break;
+            foreach (var part in MobileClientIds.Split(new[] { ',', ' ', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                yield return part;
+        }
     }
 
     public class FacebookOptions
