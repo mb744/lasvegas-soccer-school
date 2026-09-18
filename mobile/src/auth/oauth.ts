@@ -39,10 +39,14 @@ export function facebookConfigured(): boolean {
  * backend, and resolves with the app's own JWT + refresh token pair. Throws on cancel or error —
  * the login screen catches and shows a message.
  *
- * Google's iOS OAuth 2.0 client rejects arbitrary custom-scheme redirects; the redirect URI must
- * use the reversed-client-ID scheme it hands out at credential-creation time (registered on the
- * app side via CFBundleURLTypes in app.json). We derive it here from the configured client ID so
- * the caller doesn't have to keep the two in sync manually.
+ * Google's iOS OAuth 2.0 client only supports the authorization-code + PKCE flow, not the
+ * response_type=id_token shortcut the web client accepts. We ask for a code, then exchange it
+ * for tokens client-side (iOS clients are public — no client secret required). The resulting
+ * id_token is what the backend actually validates.
+ *
+ * The redirect URI must use the reversed-client-ID scheme Google hands out at
+ * credential-creation time (also registered in Info.plist via CFBundleURLTypes in app.json) —
+ * derived from the configured client ID here so the two stay in sync.
  */
 export async function signInWithGoogle(): Promise<TokenResponse> {
   const cfg = readConfig();
@@ -57,15 +61,12 @@ export async function signInWithGoogle(): Promise<TokenResponse> {
   const request = new AuthSession.AuthRequest({
     clientId,
     redirectUri,
-    responseType: AuthSession.ResponseType.IdToken,
+    responseType: AuthSession.ResponseType.Code,
     scopes: ['openid', 'email', 'profile'],
     // prompt=select_account forces Google's account chooser every time even when the device is
     // already signed in to a Google account — critical for users with multiple accounts.
-    extraParams: {
-      nonce: Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2),
-      prompt: 'select_account',
-    },
-    usePKCE: false,
+    extraParams: { prompt: 'select_account' },
+    usePKCE: true,
   });
 
   // preferEphemeralSession: true tells ASWebAuthenticationSession on iOS not to share cookies
@@ -74,7 +75,23 @@ export async function signInWithGoogle(): Promise<TokenResponse> {
   // the picker even with prompt=select_account, silently defaulting to the wrong Gmail.
   const result = await request.promptAsync(discovery, { preferEphemeralSession: true });
   if (result.type !== 'success') throw new Error(result.type);
-  const idToken = result.params.id_token;
+  const code = result.params.code;
+  if (!code) throw new Error('no-code');
+  const codeVerifier = request.codeVerifier;
+  if (!codeVerifier) throw new Error('no-code-verifier');
+
+  // Exchange the auth code for id_token + access_token. iOS clients are public — no client
+  // secret is sent; PKCE proves this is the same client that started the flow.
+  const tokenResult = await AuthSession.exchangeCodeAsync(
+    {
+      clientId,
+      code,
+      redirectUri,
+      extraParams: { code_verifier: codeVerifier },
+    },
+    discovery,
+  );
+  const idToken = (tokenResult as { idToken?: string }).idToken;
   if (!idToken) throw new Error('no-id-token');
 
   const { data } = await api.post<TokenResponse>('/mobile/auth/google', { token: idToken });
