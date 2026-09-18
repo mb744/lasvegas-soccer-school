@@ -68,7 +68,11 @@ export async function signInWithGoogle(): Promise<TokenResponse> {
     usePKCE: false,
   });
 
-  const result = await request.promptAsync(discovery);
+  // preferEphemeralSession: true tells ASWebAuthenticationSession on iOS not to share cookies
+  // with Safari. Combined with prompt=select_account, this guarantees the account picker shows
+  // every time — otherwise a phone signed in to a single Google account in Safari can bypass
+  // the picker even with prompt=select_account, silently defaulting to the wrong Gmail.
+  const result = await request.promptAsync(discovery, { preferEphemeralSession: true });
   if (result.type !== 'success') throw new Error(result.type);
   const idToken = result.params.id_token;
   if (!idToken) throw new Error('no-id-token');
@@ -100,7 +104,7 @@ export async function signInWithFacebook(): Promise<TokenResponse> {
     usePKCE: false,
   });
 
-  const result = await request.promptAsync(discovery);
+  const result = await request.promptAsync(discovery, { preferEphemeralSession: true });
   if (result.type !== 'success') throw new Error(result.type);
   const accessToken = result.params.access_token;
   if (!accessToken) throw new Error('no-access-token');
