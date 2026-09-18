@@ -59,7 +59,12 @@ export async function signInWithGoogle(): Promise<TokenResponse> {
     redirectUri,
     responseType: AuthSession.ResponseType.IdToken,
     scopes: ['openid', 'email', 'profile'],
-    extraParams: { nonce: Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2) },
+    // prompt=select_account forces Google's account chooser every time even when the device is
+    // already signed in to a Google account — critical for users with multiple accounts.
+    extraParams: {
+      nonce: Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2),
+      prompt: 'select_account',
+    },
     usePKCE: false,
   });
 
