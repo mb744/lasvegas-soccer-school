@@ -48,36 +48,33 @@ export default function LoginScreen() {
     }
   };
 
-  const onGoogle = async () => {
+  const runSocial = async (kind: 'google' | 'facebook') => {
     setError(null);
     setBusy(true);
     try {
-      const res = await signInWithGoogle();
+      const res = kind === 'google' ? await signInWithGoogle() : await signInWithFacebook();
       await signInWithTokens(res);
       void registerForPush();
     } catch (e: any) {
-      // 'cancel'/'dismiss' means the user closed the browser — don't scare them with an error.
+      // 'cancel'/'dismiss' means the user closed the browser — silent.
       const msg = String(e?.message ?? '');
-      if (msg !== 'cancel' && msg !== 'dismiss') setError(t('login.errorSocial'));
+      if (msg === 'cancel' || msg === 'dismiss') return;
+
+      // Show the actual failure so we can diagnose in production. Server 4xx bodies (e.g. "Google
+      // sign-in failed.") arrive on e.response.data as a string; expo-auth-session errors surface
+      // on e.message. Fall back to the canned translation only when we have nothing useful.
+      const serverMsg = typeof e?.response?.data === 'string' ? e.response.data : undefined;
+      const detail = serverMsg || msg || '';
+      // eslint-disable-next-line no-console
+      console.log(`[oauth:${kind}]`, detail, e);
+      setError(detail ? `${t('login.errorSocial')} (${detail})` : t('login.errorSocial'));
     } finally {
       setBusy(false);
     }
   };
 
-  const onFacebook = async () => {
-    setError(null);
-    setBusy(true);
-    try {
-      const res = await signInWithFacebook();
-      await signInWithTokens(res);
-      void registerForPush();
-    } catch (e: any) {
-      const msg = String(e?.message ?? '');
-      if (msg !== 'cancel' && msg !== 'dismiss') setError(t('login.errorSocial'));
-    } finally {
-      setBusy(false);
-    }
-  };
+  const onGoogle = () => runSocial('google');
+  const onFacebook = () => runSocial('facebook');
 
   const showGoogle = googleConfigured();
   const showFacebook = facebookConfigured();
