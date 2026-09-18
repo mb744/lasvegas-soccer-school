@@ -37,8 +37,12 @@ export default function LoginScreen() {
     try {
       await signIn(email.trim(), password);
       void registerForPush();
-    } catch {
-      setError(t('login.error'));
+    } catch (e: any) {
+      // The backend returns a friendly message for OAuth-only accounts and for locked-out
+      // accounts — surface it so the parent knows to tap the Google/Facebook button instead
+      // of retrying with the same password.
+      const serverMsg = typeof e?.response?.data === 'string' ? e.response.data : undefined;
+      setError(serverMsg && serverMsg.length > 0 ? serverMsg : t('login.error'));
     } finally {
       setBusy(false);
     }

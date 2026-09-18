@@ -54,6 +54,19 @@ public class MobileAuthController : ControllerBase
         if (user is null)
             return Unauthorized("Invalid email or password.");
 
+        // A parent who signed up on the web via Google/Facebook has no password set. Rather than
+        // returning a generic "invalid email or password", steer them to the right button so they
+        // don't keep hammering the password field.
+        if (!await _users.HasPasswordAsync(user))
+        {
+            var logins = await _users.GetLoginsAsync(user);
+            var provider = logins.Select(l => l.LoginProvider).FirstOrDefault();
+            var providerHint = provider is null
+                ? "This account signs in with a social provider — use the Continue with Google or Facebook button."
+                : $"This account signs in with {provider} — tap Continue with {provider}.";
+            return Unauthorized(providerHint);
+        }
+
         // No cookie sign-in — just verify the password (with lockout) and mint tokens.
         var check = await _signIn.CheckPasswordSignInAsync(user, req.Password, lockoutOnFailure: true);
         if (!check.Succeeded)
