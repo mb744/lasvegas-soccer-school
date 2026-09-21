@@ -36,6 +36,13 @@ export const en = {
     home: 'Home',
     away: 'Away',
     uniform: 'Uniform',
+    jumpToday: 'Today',
+    jumpNext: 'Next event',
+    filter: {
+      all: 'All',
+      games: 'Games',
+      practices: 'Practices',
+    },
   },
   attendance: {
     going: 'Going',

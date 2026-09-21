@@ -38,6 +38,13 @@ export const es: Translations = {
     home: 'Local',
     away: 'Visitante',
     uniform: 'Uniforme',
+    jumpToday: 'Hoy',
+    jumpNext: 'Próximo evento',
+    filter: {
+      all: 'Todos',
+      games: 'Juegos',
+      practices: 'Prácticas',
+    },
   },
   attendance: {
     going: 'Asiste',
