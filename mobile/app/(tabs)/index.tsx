@@ -114,22 +114,28 @@ export default function HomeScreen() {
     >
       <Text style={styles.greeting}>{greeting}</Text>
 
-      <Text style={styles.sectionTitle}>{t('home.outstandingTitle')}</Text>
       {invoices.isLoading ? (
-        <View style={styles.loadingCard}>
-          <ActivityIndicator color={colors.brand} />
-        </View>
-      ) : outstanding ? (
-        <OutstandingInvoiceCard invoice={outstanding} onPress={() => router.push(`/invoices/${outstanding.id}`)} />
-      ) : (
-        <View style={styles.emptyCard}>
-          <Text style={styles.emptyCardText}>{t('home.noOutstanding')}</Text>
-        </View>
+        <>
+          <Text style={styles.sectionTitle}>{t('home.outstandingTitle')}</Text>
+          <View style={styles.loadingCard}>
+            <ActivityIndicator color={colors.brand} />
+          </View>
+        </>
+      ) : (invoices.data ?? []).length === 0 ? null : (
+        <>
+          <Text style={styles.sectionTitle}>{t('home.outstandingTitle')}</Text>
+          {outstanding ? (
+            <OutstandingInvoiceCard invoice={outstanding} onPress={() => router.push(`/invoices/${outstanding.id}`)} />
+          ) : (
+            <View style={styles.emptyCard}>
+              <Text style={styles.emptyCardText}>{t('home.noOutstanding')}</Text>
+            </View>
+          )}
+          <TouchableOpacity style={styles.viewAllBtn} onPress={() => router.push('/invoices')}>
+            <Text style={styles.viewAllBtnText}>{t('home.viewAll')}</Text>
+          </TouchableOpacity>
+        </>
       )}
-
-      <TouchableOpacity style={styles.viewAllBtn} onPress={() => router.push('/invoices')}>
-        <Text style={styles.viewAllBtnText}>{t('home.viewAll')}</Text>
-      </TouchableOpacity>
 
       {(announcements.data ?? []).length > 0 && (
         <>
