@@ -62,7 +62,7 @@ public class MobileScheduleController : ControllerBase
                 g.Id, g.TeamId, TeamName = g.Team!.Name, g.Kind, g.StartsAt, g.EndsAt, g.ArriveAt,
                 g.Summary, g.Location, VenueName = g.Venue != null ? g.Venue.Name : null,
                 g.OpponentName, g.IsHome, g.IsCancelled,
-                DirectUniformName = g.Uniform != null ? g.Uniform.Name : null,
+                DirectUniform = g.Uniform,
                 g.ShoeType,
             })
             .ToListAsync(ct);
@@ -70,15 +70,15 @@ public class MobileScheduleController : ControllerBase
 
         // Fall back to the club-wide default kit when a game doesn't have its own uniform pin.
         // Mirrors ResolveEventUniformTextAsync in MessagingController so parents see the same
-        // uniform on-app that the SMS/WhatsApp reminders describe.
+        // wear text ("white jersey, blue shorts, blue socks") on-app that the SMS/WhatsApp
+        // reminders describe.
         var designatedUniforms = await _db.Uniforms.AsNoTracking()
             .Where(u => u.Designation != UniformDesignation.None)
-            .Select(u => new { u.Designation, u.Name })
             .ToListAsync(ct);
         var defaultsByDesignation = designatedUniforms
             .GroupBy(u => u.Designation)
-            .ToDictionary(g => g.Key, g => g.First().Name);
-        string? FallbackUniform(ScheduledEventKind kind, bool? isHome)
+            .ToDictionary(g => g.Key, g => g.First());
+        Uniform? FallbackUniform(ScheduledEventKind kind, bool? isHome)
         {
             var designation = kind == ScheduledEventKind.Practice
                 ? UniformDesignation.Practice
@@ -88,8 +88,8 @@ public class MobileScheduleController : ControllerBase
                     false => UniformDesignation.Away,
                     _ => UniformDesignation.None,
                 };
-            return designation != UniformDesignation.None && defaultsByDesignation.TryGetValue(designation, out var name)
-                ? name
+            return designation != UniformDesignation.None && defaultsByDesignation.TryGetValue(designation, out var u)
+                ? u
                 : null;
         }
 
@@ -115,11 +115,14 @@ public class MobileScheduleController : ControllerBase
                     r.PlayerId, r.FirstName, r.LastName,
                     attendance.TryGetValue((e.Id, r.PlayerId), out var s) ? s : AttendanceStatus.Pending))
                 .ToList();
-            var uniformName = e.DirectUniformName ?? FallbackUniform(e.Kind, e.IsHome);
+            var uniform = e.DirectUniform ?? FallbackUniform(e.Kind, e.IsHome);
+            // ToWearText yields "white jersey, blue shorts, blue socks" when colors are set, and
+            // falls back to the uniform's own name when they aren't.
+            var uniformText = uniform?.ToWearText();
             return new MobileScheduleEventDto(
                 e.Id, e.TeamId, e.TeamName, e.Kind, e.StartsAt, e.EndsAt, e.ArriveAt,
                 e.Summary, e.Location, e.VenueName, e.OpponentName, e.IsHome, e.IsCancelled,
-                uniformName, e.ShoeType, players);
+                uniformText, e.ShoeType, players);
         }).ToList();
 
         return Ok(result);
