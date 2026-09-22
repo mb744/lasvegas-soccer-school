@@ -31,6 +31,10 @@ export const en = {
     noOutstanding: 'You have no outstanding invoices.',
     viewAll: 'View all invoices',
     seeInvoice: 'See invoice',
+    announcementsTitle: 'Announcements',
+    upcomingTitle: 'Upcoming events',
+    upcomingEmpty: 'No upcoming games or practices.',
+    everyone: 'Everyone',
   },
   invoices: {
     title: 'Invoices',

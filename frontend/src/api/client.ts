@@ -79,6 +79,8 @@ import type {
   SaveChargeTypeRequest,
   InboxParent,
   ChatParentSearch,
+  Announcement,
+  SaveAnnouncementRequest,
   ThreadDetail,
   ThreadMessage,
   SendThreadReplyRequest,
@@ -1089,6 +1091,23 @@ export const Api = {
   },
   async postChatGroupMessage(id: number, body: string) {
     await api.post(`/admin/chat-groups/${id}/messages`, { body })
+  },
+
+  // --- Admin: Announcements (parent Home tab in mobile) ---
+  async listAnnouncements() {
+    const r = await api.get<Announcement[]>('/announcements')
+    return r.data
+  },
+  async createAnnouncement(payload: SaveAnnouncementRequest) {
+    const r = await api.post<Announcement>('/announcements', payload)
+    return r.data
+  },
+  async updateAnnouncement(id: number, payload: SaveAnnouncementRequest) {
+    const r = await api.put<Announcement>(`/announcements/${id}`, payload)
+    return r.data
+  },
+  async deleteAnnouncement(id: number) {
+    await api.delete(`/announcements/${id}`)
   },
 
   // --- Admin: LVSS-hosted tournaments + invited teams catalog ---

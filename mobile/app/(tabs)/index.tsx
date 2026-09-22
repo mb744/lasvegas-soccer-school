@@ -11,31 +11,53 @@ import {
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { fetchInvoices } from '../../src/api/endpoints';
-import { InvoiceStatus, type InvoiceSummary } from '../../src/api/types';
+import { fetchAnnouncements, fetchInvoices, fetchSchedule } from '../../src/api/endpoints';
+import {
+  InvoiceStatus,
+  ScheduledEventKind,
+  type Announcement,
+  type InvoiceSummary,
+  type ScheduleEvent,
+} from '../../src/api/types';
 import { useAuth } from '../../src/auth/AuthContext';
-import { dueDateLabel, money } from '../../src/format';
+import { dueDateLabel, longDate, money, timeLabel } from '../../src/format';
 import { colors, radius, spacing } from '../../src/theme';
 
 /**
- * Home landing screen. Greets the parent, then surfaces the single most-relevant outstanding
- * invoice (nearest due date wins) as a tap-through into the full invoices list. Kept intentionally
- * light — this is the first screen after sign-in and needs to render fast even on cold cache.
+ * Home landing screen. Stacks (top-down): greeting, outstanding-invoice card, active
+ * announcements, upcoming events. All three data sources are read via React Query with a shared
+ * pull-to-refresh gesture on the outer scroll view.
  */
 export default function HomeScreen() {
   const { t } = useTranslation();
   const { me } = useAuth();
   const router = useRouter();
 
-  const { data, isLoading, isRefetching, refetch } = useQuery({
-    queryKey: ['invoices'],
-    queryFn: fetchInvoices,
-  });
+  const invoices = useQuery({ queryKey: ['invoices'], queryFn: fetchInvoices });
+  const announcements = useQuery({ queryKey: ['announcements'], queryFn: fetchAnnouncements });
+  const schedule = useQuery({ queryKey: ['schedule'], queryFn: fetchSchedule });
 
   const outstanding = React.useMemo(
-    () => (data ?? []).find((i) => i.status === InvoiceStatus.New || i.status === InvoiceStatus.Sent),
-    [data],
+    () =>
+      (invoices.data ?? []).find(
+        (i) => i.status === InvoiceStatus.New || i.status === InvoiceStatus.Sent,
+      ),
+    [invoices.data],
   );
+
+  const upcoming = React.useMemo(() => {
+    const now = new Date();
+    return (schedule.data ?? [])
+      .filter((e) => new Date(e.startsAt) >= now)
+      .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
+  }, [schedule.data]);
+
+  const anyRefetching = invoices.isRefetching || announcements.isRefetching || schedule.isRefetching;
+  const onRefresh = () => {
+    void invoices.refetch();
+    void announcements.refetch();
+    void schedule.refetch();
+  };
 
   const greeting = t('home.greeting', { name: me?.firstName || '' });
 
@@ -43,12 +65,12 @@ export default function HomeScreen() {
     <ScrollView
       style={styles.container}
       contentContainerStyle={{ padding: spacing.lg }}
-      refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.brand} />}
+      refreshControl={<RefreshControl refreshing={anyRefetching} onRefresh={onRefresh} tintColor={colors.brand} />}
     >
       <Text style={styles.greeting}>{greeting}</Text>
 
       <Text style={styles.sectionTitle}>{t('home.outstandingTitle')}</Text>
-      {isLoading ? (
+      {invoices.isLoading ? (
         <View style={styles.loadingCard}>
           <ActivityIndicator color={colors.brand} />
         </View>
@@ -63,6 +85,28 @@ export default function HomeScreen() {
       <TouchableOpacity style={styles.viewAllBtn} onPress={() => router.push('/invoices')}>
         <Text style={styles.viewAllBtnText}>{t('home.viewAll')}</Text>
       </TouchableOpacity>
+
+      {(announcements.data ?? []).length > 0 && (
+        <>
+          <Text style={styles.sectionTitle}>{t('home.announcementsTitle')}</Text>
+          {(announcements.data ?? []).map((a) => (
+            <AnnouncementCard key={a.id} announcement={a} />
+          ))}
+        </>
+      )}
+
+      <Text style={styles.sectionTitle}>{t('home.upcomingTitle')}</Text>
+      {schedule.isLoading ? (
+        <View style={styles.loadingCard}>
+          <ActivityIndicator color={colors.brand} />
+        </View>
+      ) : upcoming.length === 0 ? (
+        <View style={styles.emptyCard}>
+          <Text style={styles.emptyCardText}>{t('home.upcomingEmpty')}</Text>
+        </View>
+      ) : (
+        upcoming.map((ev) => <UpcomingEventRow key={ev.id} event={ev} />)
+      )}
     </ScrollView>
   );
 }
@@ -90,6 +134,79 @@ function OutstandingInvoiceCard({ invoice, onPress }: { invoice: InvoiceSummary;
   );
 }
 
+function AnnouncementCard({ announcement }: { announcement: Announcement }) {
+  const { t } = useTranslation();
+  const audience = announcement.teamName ?? t('home.everyone');
+  return (
+    <View style={styles.announcementCard}>
+      <View style={styles.announcementHead}>
+        <Text style={styles.announcementTitle}>{announcement.title}</Text>
+        <View style={styles.announcementBadge}>
+          <Text style={styles.announcementBadgeText}>{audience}</Text>
+        </View>
+      </View>
+      <Text style={styles.announcementBody}>{announcement.body}</Text>
+      <Text style={styles.announcementWhen}>{longDate(announcement.createdAt)}</Text>
+    </View>
+  );
+}
+
+function UpcomingEventRow({ event }: { event: ScheduleEvent }) {
+  const { t } = useTranslation();
+  const kindLabel =
+    event.kind === ScheduledEventKind.Practice
+      ? t('schedule.practice')
+      : event.kind === ScheduledEventKind.Miscellaneous
+        ? t('schedule.event')
+        : t('schedule.game');
+  const title =
+    event.kind === ScheduledEventKind.Game && event.opponentName
+      ? t('schedule.vs', { opponent: event.opponentName })
+      : event.summary || kindLabel;
+
+  return (
+    <View style={styles.upcomingRow}>
+      <View style={styles.upcomingDate}>
+        <Text style={styles.upcomingDateDay}>{shortDay(event.startsAt)}</Text>
+        <Text style={styles.upcomingDateNum}>{shortDayNum(event.startsAt)}</Text>
+      </View>
+      <View style={styles.upcomingBody}>
+        <View style={styles.upcomingHeader}>
+          <View style={[styles.upcomingKind, badgeColor(event.kind)]}>
+            <Text style={styles.upcomingKindText}>{kindLabel}</Text>
+          </View>
+          <Text style={styles.upcomingTime}>{timeLabel(event.startsAt)}</Text>
+        </View>
+        <Text style={styles.upcomingTitle} numberOfLines={2}>
+          {title}
+        </Text>
+        <Text style={styles.upcomingTeam} numberOfLines={1}>
+          {event.teamName}
+        </Text>
+        {event.venueName || event.location ? (
+          <Text style={styles.upcomingLocation} numberOfLines={1}>
+            📍 {event.venueName ?? event.location}
+          </Text>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+function shortDay(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, { weekday: 'short' }).toUpperCase();
+}
+
+function shortDayNum(iso: string): string {
+  return String(new Date(iso).getDate());
+}
+
+function badgeColor(kind: ScheduledEventKind) {
+  if (kind === ScheduledEventKind.Practice) return { backgroundColor: colors.brandLight };
+  if (kind === ScheduledEventKind.Miscellaneous) return { backgroundColor: colors.subtext };
+  return { backgroundColor: colors.brand };
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   greeting: { fontSize: 24, fontWeight: '800', color: colors.text, marginBottom: spacing.lg },
@@ -98,6 +215,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: colors.subtext,
     textTransform: 'uppercase',
+    marginTop: spacing.lg,
     marginBottom: spacing.sm,
   },
   loadingCard: {
@@ -107,7 +225,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     alignItems: 'center',
-    marginBottom: spacing.lg,
+    marginBottom: spacing.md,
   },
   emptyCard: {
     backgroundColor: colors.card,
@@ -116,16 +234,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     alignItems: 'center',
-    marginBottom: spacing.lg,
+    marginBottom: spacing.md,
   },
   emptyCardText: { color: colors.subtext, fontSize: 15 },
+
   invoiceCard: {
     backgroundColor: colors.card,
     borderRadius: radius.lg,
     padding: spacing.lg,
     borderWidth: 1,
     borderColor: colors.brand,
-    marginBottom: spacing.lg,
+    marginBottom: spacing.md,
   },
   invoiceCardHeader: {
     flexDirection: 'row',
@@ -151,11 +270,67 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   invoiceCtaText: { color: colors.brand, fontSize: 14, fontWeight: '800' },
+
   viewAllBtn: {
     backgroundColor: colors.brand,
     borderRadius: radius.md,
-    paddingVertical: spacing.lg,
+    paddingVertical: spacing.md,
     alignItems: 'center',
+    marginBottom: spacing.md,
   },
-  viewAllBtnText: { color: colors.white, fontSize: 16, fontWeight: '800' },
+  viewAllBtnText: { color: colors.white, fontSize: 15, fontWeight: '800' },
+
+  announcementCard: {
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.accent,
+    borderTopWidth: 1,
+    borderRightWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.lg,
+    marginBottom: spacing.sm,
+  },
+  announcementHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  announcementTitle: { fontSize: 16, fontWeight: '800', color: colors.text, flex: 1, marginRight: spacing.sm },
+  announcementBadge: {
+    backgroundColor: colors.brand,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: radius.sm,
+  },
+  announcementBadgeText: { color: colors.white, fontSize: 11, fontWeight: '800' },
+  announcementBody: { fontSize: 14, color: colors.text, marginTop: spacing.xs, lineHeight: 20 },
+  announcementWhen: { fontSize: 12, color: colors.subtext, marginTop: spacing.sm },
+
+  upcomingRow: {
+    flexDirection: 'row',
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    alignItems: 'stretch',
+  },
+  upcomingDate: {
+    width: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRightWidth: 1,
+    borderRightColor: colors.border,
+    paddingRight: spacing.sm,
+    marginRight: spacing.md,
+  },
+  upcomingDateDay: { fontSize: 11, fontWeight: '800', color: colors.subtext, letterSpacing: 1 },
+  upcomingDateNum: { fontSize: 22, fontWeight: '800', color: colors.brand },
+  upcomingBody: { flex: 1 },
+  upcomingHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  upcomingKind: { paddingHorizontal: spacing.sm, paddingVertical: 2, borderRadius: radius.sm },
+  upcomingKindText: { color: colors.white, fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
+  upcomingTime: { fontSize: 13, fontWeight: '700', color: colors.text, marginLeft: 'auto' },
+  upcomingTitle: { fontSize: 15, fontWeight: '700', color: colors.text, marginTop: spacing.xs },
+  upcomingTeam: { fontSize: 13, color: colors.subtext, marginTop: 2 },
+  upcomingLocation: { fontSize: 12, color: colors.subtext, marginTop: 2 },
 });

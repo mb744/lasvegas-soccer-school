@@ -131,3 +131,12 @@ export interface InvoiceDetail extends InvoiceSummary {
   paymentMethod: string | null;
   paymentReference: string | null;
 }
+
+export interface Announcement {
+  id: number;
+  title: string;
+  body: string;
+  teamId: number | null;
+  teamName: string | null;
+  createdAt: string;
+}

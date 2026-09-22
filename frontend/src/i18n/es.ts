@@ -179,6 +179,8 @@ const es: Translations = {
     hubHostedTournamentsBlurb: 'Cree torneos o ligas que LVSS organiza. Agregue equipos LVSS y equipos invitados externos; registre la cuota por equipo.',
     hubChatGroups: 'Grupos de chat',
     hubChatGroupsBlurb: 'Cree y gestione chats grupales dentro de la app móvil para padres — cárguelos desde una plantilla, agregue o quite miembros, publique mensajes de admin.',
+    hubAnnouncements: 'Anuncios',
+    hubAnnouncementsBlurb: 'Publique mensajes cortos en la pantalla Inicio de la app móvil — para toda la escuela o dirigidos a un equipo específico.',
     hostedTitle: 'Torneos anfitriones',
     hostedSubtitle: 'Administre los eventos que LVSS organiza y el catálogo de equipos externos invitados.',
     hostedAddNew: 'Nuevo evento',

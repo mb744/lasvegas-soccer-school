@@ -17,6 +17,7 @@ export function AdminPage() {
     { to: '/admin/invoices',            title: t('admin.hubInvoices'),         blurb: t('admin.hubInvoicesBlurb'),         icon: '💰' },
     { to: '/admin/hosted-tournaments',  title: t('admin.hubHostedTournaments'), blurb: t('admin.hubHostedTournamentsBlurb'), icon: '🏆' },
     { to: '/admin/chat-groups',         title: t('admin.hubChatGroups'),       blurb: t('admin.hubChatGroupsBlurb'),       icon: '💭' },
+    { to: '/admin/announcements',       title: t('admin.hubAnnouncements'),    blurb: t('admin.hubAnnouncementsBlurb'),    icon: '📣' },
     { to: '/admin/settings',            title: t('admin.hubSettings'),         blurb: t('admin.hubSettingsBlurb'),         icon: '⚙️' },
   ] as const
 

@@ -33,6 +33,10 @@ export const es: Translations = {
     noOutstanding: 'No tiene facturas pendientes.',
     viewAll: 'Ver todas las facturas',
     seeInvoice: 'Ver factura',
+    announcementsTitle: 'Anuncios',
+    upcomingTitle: 'Próximos eventos',
+    upcomingEmpty: 'No hay juegos ni prácticas próximas.',
+    everyone: 'Todos',
   },
   invoices: {
     title: 'Facturas',

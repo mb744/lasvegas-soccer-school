@@ -91,6 +91,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
     public DbSet<InvitedTeam> InvitedTeams => Set<InvitedTeam>();
     public DbSet<VenueField> VenueFields => Set<VenueField>();
     public DbSet<MappedField> MappedFields => Set<MappedField>();
+    public DbSet<Announcement> Announcements => Set<Announcement>();
 
     // Mobile companion app (native React Native, JWT + SignalR):
     // in-app group chat, Expo push device registry, and mobile refresh tokens.
@@ -709,6 +710,17 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
             // Composite index supports the "history since X, newest first" queries the mobile
             // client and the unread-count computation both run.
             b.HasIndex(m => new { m.ChatGroupId, m.Id });
+        });
+
+        modelBuilder.Entity<Announcement>(b =>
+        {
+            b.HasOne(a => a.Team)
+                .WithMany()
+                .HasForeignKey(a => a.TeamId)
+                .OnDelete(DeleteBehavior.SetNull);
+            // Mobile query filters active + not-yet-expired + optional-team.
+            b.HasIndex(a => new { a.IsActive, a.EndsAt });
+            b.HasIndex(a => a.TeamId);
         });
 
         modelBuilder.Entity<ChatMessageReport>(b =>

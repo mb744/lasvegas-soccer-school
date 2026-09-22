@@ -1482,6 +1482,26 @@ export interface ChatParentSearch {
   phone: string | null
 }
 
+export interface Announcement {
+  id: number
+  title: string
+  body: string
+  teamId: number | null
+  teamName: string | null
+  endsAt: string | null
+  isActive: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface SaveAnnouncementRequest {
+  title: string
+  body: string
+  teamId: number | null
+  endsAt: string | null
+  isActive: boolean
+}
+
 export interface ThreadDetail {
   phone: string
   name: string | null

@@ -177,6 +177,8 @@ const en = {
     hubHostedTournamentsBlurb: 'Set up tournaments or leagues LVSS is hosting. Add LVSS teams and external invited teams; track the per-team fee.',
     hubChatGroups: 'Chat groups',
     hubChatGroupsBlurb: 'Create and manage in-app group chats for the mobile parent app — seed from a team roster, add or remove parent members, post admin messages.',
+    hubAnnouncements: 'Announcements',
+    hubAnnouncementsBlurb: "Post short messages to the parent mobile app's Home tab — school-wide or targeted at a specific team.",
     hostedTitle: 'Hosted tournaments',
     hostedSubtitle: 'Manage the events LVSS is hosting and the pool of invited external teams admins can roster into each event.',
     hostedAddNew: 'New event',

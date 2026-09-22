@@ -1,5 +1,6 @@
 import { api } from './client';
 import type {
+  Announcement,
   AttendanceStatus,
   BlockedUser,
   ChatGroup,
@@ -114,5 +115,12 @@ export async function fetchInvoices(): Promise<InvoiceSummary[]> {
 
 export async function fetchInvoice(id: number): Promise<InvoiceDetail> {
   const { data } = await api.get<InvoiceDetail>(`/mobile/invoices/${id}`);
+  return data;
+}
+
+// ---- Announcements ----
+
+export async function fetchAnnouncements(): Promise<Announcement[]> {
+  const { data } = await api.get<Announcement[]>('/mobile/announcements');
   return data;
 }
