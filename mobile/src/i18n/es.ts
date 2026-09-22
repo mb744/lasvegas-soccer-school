@@ -86,6 +86,8 @@ export const es: Translations = {
     title: 'Evento',
     when: 'Cuándo',
     opponent: 'Oponente',
+    homeAway: 'Local / Visitante',
+    field: 'Cancha',
     attendance: 'Asistencia',
     openInMaps: 'Abrir en Mapas',
     mapUnavailableTitle: 'Mapas no disponible',

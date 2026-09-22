@@ -84,6 +84,8 @@ export const en = {
     title: 'Event',
     when: 'When',
     opponent: 'Opponent',
+    homeAway: 'Home / Away',
+    field: 'Field',
     attendance: 'Attendance',
     openInMaps: 'Open in Maps',
     mapUnavailableTitle: 'Maps not available',

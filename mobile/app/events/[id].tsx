@@ -92,11 +92,19 @@ export default function EventDetailScreen() {
     [event.venueName, event.location].filter(Boolean).join(', ') || event.location || event.venueName || '';
 
   const detailRows = [
+    event.opponentName ? { label: t('event.opponent'), value: event.opponentName } : null,
+    // Home/Away only meaningful for games — practices and school events don't have a side.
+    event.kind === ScheduledEventKind.Game && typeof event.isHome === 'boolean'
+      ? {
+          label: t('event.homeAway'),
+          value: event.isHome ? t('schedule.home') : t('schedule.away'),
+        }
+      : null,
+    // "Field" is the free-text sub-location (e.g. "Field 3"); the full venue address lives on
+    // the location card below and drives the map + Open-in-Maps action.
+    event.location ? { label: t('event.field'), value: event.location } : null,
     event.arriveAt ? { label: t('schedule.arrive'), value: timeLabel(event.arriveAt) } : null,
     event.uniformName ? { label: t('schedule.uniform'), value: event.uniformName } : null,
-    event.opponentName && event.kind !== ScheduledEventKind.Game
-      ? { label: t('event.opponent'), value: event.opponentName }
-      : null,
   ].filter(Boolean) as { label: string; value: string }[];
 
   return (
