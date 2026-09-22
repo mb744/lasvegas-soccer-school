@@ -271,6 +271,11 @@ function UpcomingEventRow({
             {event.players.map((p) => `${p.firstName} ${p.lastName}`.trim()).join(', ')}
           </Text>
         ) : null}
+        {event.arriveAt ? (
+          <Text style={styles.upcomingLocation} numberOfLines={1}>
+            ⏰ {t('schedule.arrive')} {timeLabel(event.arriveAt)}
+          </Text>
+        ) : null}
         {event.venueName || event.location ? (
           <Text style={styles.upcomingLocation} numberOfLines={1}>
             📍 {event.venueName ?? event.location}

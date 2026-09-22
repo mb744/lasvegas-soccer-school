@@ -301,6 +301,11 @@ function EventCard({
           </Text>
         ) : null}
         {event.isCancelled ? <Text style={styles.cancelled}>{t('schedule.cancelled')}</Text> : null}
+        {event.arriveAt ? (
+          <Text style={styles.location} numberOfLines={1}>
+            ⏰ {t('schedule.arrive')} {timeLabel(event.arriveAt)}
+          </Text>
+        ) : null}
         {event.venueName || event.location ? (
           <Text style={styles.location} numberOfLines={1}>
             📍 {event.venueName ?? event.location}
