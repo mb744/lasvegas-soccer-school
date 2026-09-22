@@ -62,10 +62,36 @@ public class MobileScheduleController : ControllerBase
                 g.Id, g.TeamId, TeamName = g.Team!.Name, g.Kind, g.StartsAt, g.EndsAt, g.ArriveAt,
                 g.Summary, g.Location, VenueName = g.Venue != null ? g.Venue.Name : null,
                 g.OpponentName, g.IsHome, g.IsCancelled,
-                UniformName = g.Uniform != null ? g.Uniform.Name : null, g.ShoeType,
+                DirectUniformName = g.Uniform != null ? g.Uniform.Name : null,
+                g.ShoeType,
             })
             .ToListAsync(ct);
         if (events.Count == 0) return Ok(Array.Empty<MobileScheduleEventDto>());
+
+        // Fall back to the club-wide default kit when a game doesn't have its own uniform pin.
+        // Mirrors ResolveEventUniformTextAsync in MessagingController so parents see the same
+        // uniform on-app that the SMS/WhatsApp reminders describe.
+        var designatedUniforms = await _db.Uniforms.AsNoTracking()
+            .Where(u => u.Designation != UniformDesignation.None)
+            .Select(u => new { u.Designation, u.Name })
+            .ToListAsync(ct);
+        var defaultsByDesignation = designatedUniforms
+            .GroupBy(u => u.Designation)
+            .ToDictionary(g => g.Key, g => g.First().Name);
+        string? FallbackUniform(ScheduledEventKind kind, bool? isHome)
+        {
+            var designation = kind == ScheduledEventKind.Practice
+                ? UniformDesignation.Practice
+                : isHome switch
+                {
+                    true => UniformDesignation.Home,
+                    false => UniformDesignation.Away,
+                    _ => UniformDesignation.None,
+                };
+            return designation != UniformDesignation.None && defaultsByDesignation.TryGetValue(designation, out var name)
+                ? name
+                : null;
+        }
 
         // Which of the caller's kids are on each team (so each event lists only this family's players).
         var rosterByTeam = (await _db.TeamPlayers
@@ -89,10 +115,11 @@ public class MobileScheduleController : ControllerBase
                     r.PlayerId, r.FirstName, r.LastName,
                     attendance.TryGetValue((e.Id, r.PlayerId), out var s) ? s : AttendanceStatus.Pending))
                 .ToList();
+            var uniformName = e.DirectUniformName ?? FallbackUniform(e.Kind, e.IsHome);
             return new MobileScheduleEventDto(
                 e.Id, e.TeamId, e.TeamName, e.Kind, e.StartsAt, e.EndsAt, e.ArriveAt,
                 e.Summary, e.Location, e.VenueName, e.OpponentName, e.IsHome, e.IsCancelled,
-                e.UniformName, e.ShoeType, players);
+                uniformName, e.ShoeType, players);
         }).ToList();
 
         return Ok(result);
