@@ -19,6 +19,17 @@ function toDateTimeLocal(iso: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
+/** Given a datetime-local start value, returns the same value shifted back 30 minutes — the
+ *  club-wide default "Be There" time. Empty string when the start hasn't been picked yet. */
+function defaultArriveFor(start: string): string {
+  if (!start) return ''
+  const d = new Date(start)
+  if (Number.isNaN(d.getTime())) return ''
+  d.setMinutes(d.getMinutes() - 30)
+  const pad = (n: number) => n.toString().padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 /**
  * Admin schedule editor for a single team: manual games + practices (single and recurring series),
  * edit/cancel/delete, and a cancellation-notification helper. Operates on the shared ScheduledGames
@@ -56,6 +67,8 @@ export function TeamScheduleSection({
   const [opponentName, setOpponentName] = useState('')
   const [isHome, setIsHome] = useState<boolean | null>(null)
   const [startsAt, setStartsAt] = useState('')      // datetime-local format (local time)
+  const [arriveAt, setArriveAt] = useState('')
+  const [arriveTouched, setArriveTouched] = useState(false)
   const [endsAt, setEndsAt] = useState('')
   const [location, setLocation] = useState('')
   const [venueId, setVenueId] = useState<number | ''>('')
@@ -82,17 +95,20 @@ export function TeamScheduleSection({
 
   const startNewPractice = () => {
     setEditingId('new-practice'); setEditingKind('practice')
-    setStartsAt(''); setEndsAt(''); setLocation(''); setVenueId(''); setShoeType(0); setSummary('')
+    setStartsAt(''); setArriveAt(''); setArriveTouched(false); setEndsAt('')
+    setLocation(''); setVenueId(''); setShoeType(0); setSummary('')
     setOpponentName(''); setIsHome(null)
   }
   const startNewMisc = () => {
     setEditingId('new-misc'); setEditingKind('misc')
-    setStartsAt(''); setEndsAt(''); setLocation(''); setVenueId(''); setShoeType(0); setSummary('')
+    setStartsAt(''); setArriveAt(''); setArriveTouched(false); setEndsAt('')
+    setLocation(''); setVenueId(''); setShoeType(0); setSummary('')
     setOpponentName(''); setIsHome(null)
   }
   const startNewGame = () => {
     setEditingId('new-game'); setEditingKind('game')
-    setStartsAt(''); setEndsAt(''); setLocation(''); setVenueId(''); setShoeType(0); setSummary('')
+    setStartsAt(''); setArriveAt(''); setArriveTouched(false); setEndsAt('')
+    setLocation(''); setVenueId(''); setShoeType(0); setSummary('')
     setOpponentName(''); setIsHome(null)
   }
   const startSeries = () => {
@@ -113,6 +129,10 @@ export function TeamScheduleSection({
     setEditingKind(ev.kind === 0 ? 'game' : ev.kind === 2 ? 'misc' : 'practice')
     // datetime-local wants YYYY-MM-DDTHH:mm in local time (no timezone). Strip seconds/ms.
     setStartsAt(toDateTimeLocal(ev.startsAt))
+    // Preserve a saved arrival time; otherwise seed the 30-min default for games and leave it
+    // adjustable — treating the saved value as "touched" so start-time changes don't overwrite it.
+    setArriveAt(ev.arriveAt ? toDateTimeLocal(ev.arriveAt) : defaultArriveFor(toDateTimeLocal(ev.startsAt)))
+    setArriveTouched(ev.arriveAt != null)
     setEndsAt(ev.endsAt ? toDateTimeLocal(ev.endsAt) : '')
     setLocation(ev.location ?? '')
     setVenueId(ev.venueId ?? '')
@@ -155,6 +175,7 @@ export function TeamScheduleSection({
       if (editingKind === 'game') {
         const payload = {
           startsAt: startsAtIso,
+          arriveAt: arriveAt ? new Date(arriveAt).toISOString() : null,
           endsAt: endsAtIso,
           opponentName: opponentName.trim() || null,
           isHome,
@@ -439,7 +460,12 @@ export function TeamScheduleSection({
             <label className="block text-sm">
               <RequiredLabel>{t('admin.msgPracticeStart')}</RequiredLabel>
               <input ref={vEvent.register('startsAt')} type="datetime-local" value={startsAt}
-                onChange={e => setStartsAt(e.target.value)}
+                onChange={e => {
+                  const v = e.target.value
+                  setStartsAt(v)
+                  // For games, auto-fill "Be There" to 30 min before, until the admin overrides it.
+                  if (editingKind === 'game' && !arriveTouched) setArriveAt(defaultArriveFor(v))
+                }}
                 onBlur={e => vEvent.onFieldBlur('startsAt', e.target.value)}
                 className={`mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm ${vEvent.fieldCls('startsAt')}`} />
             </label>
@@ -450,6 +476,12 @@ export function TeamScheduleSection({
             </label>
             {editingKind === 'game' && (
               <>
+                <label className="block text-sm">
+                  <span className="font-medium text-slate-700">{t('admin.evtGameBeThere')}</span>
+                  <input type="datetime-local" value={arriveAt}
+                    onChange={e => { setArriveAt(e.target.value); setArriveTouched(true) }}
+                    className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+                </label>
                 <label className="block text-sm">
                   <span className="font-medium text-slate-700">{t('admin.msgGameOpponent')}</span>
                   <input type="text" value={opponentName} onChange={e => setOpponentName(e.target.value)}
