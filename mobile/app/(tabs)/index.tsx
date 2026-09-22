@@ -195,9 +195,11 @@ function UpcomingEventRow({ event, onPress }: { event: ScheduleEvent; onPress: (
             {title}
           </Text>
         ) : null}
-        <Text style={styles.upcomingTeam} numberOfLines={1}>
-          {event.teamName}
-        </Text>
+        {event.players.length > 0 ? (
+          <Text style={styles.upcomingTeam} numberOfLines={1}>
+            {event.players.map((p) => `${p.firstName} ${p.lastName}`.trim()).join(', ')}
+          </Text>
+        ) : null}
         {event.venueName || event.location ? (
           <Text style={styles.upcomingLocation} numberOfLines={1}>
             📍 {event.venueName ?? event.location}
