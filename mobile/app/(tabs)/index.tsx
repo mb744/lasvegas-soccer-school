@@ -92,9 +92,13 @@ export default function HomeScreen() {
   );
 
   const upcoming = React.useMemo(() => {
-    const now = new Date();
+    // Anchor to start-of-today rather than "right now" so a game/practice earlier in the day
+    // doesn't silently drop off Home the moment its clock time passes — parents expect to see
+    // today's events all day, matching the Schedule tab's day-grouped view.
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
     const future = (schedule.data ?? [])
-      .filter((e) => new Date(e.startsAt) >= now)
+      .filter((e) => new Date(e.startsAt) >= startOfToday)
       .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
     // Same practice can show up twice on the schedule when a kid is rostered on two teams that
     // run their practices together — collapse those into a single card, keyed on start time +
