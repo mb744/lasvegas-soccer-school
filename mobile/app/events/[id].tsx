@@ -124,6 +124,19 @@ export default function EventDetailScreen() {
         ) : null}
         {title ? <Text style={styles.title}>{title}</Text> : null}
         {event.isCancelled ? <Text style={styles.cancelled}>{t('schedule.cancelled')}</Text> : null}
+
+        {!event.isCancelled && event.players.length > 0 ? (
+          <View style={styles.heroAttendance}>
+            {event.players.map((p) => (
+              <PlayerAttendance
+                key={p.playerId}
+                player={p}
+                showName={event.players.length > 1}
+                onSet={(status) => mutation.mutate({ playerId: p.playerId, status })}
+              />
+            ))}
+          </View>
+        ) : null}
       </View>
 
       {detailRows.length > 0 ? (
@@ -142,19 +155,6 @@ export default function EventDetailScreen() {
       ) : null}
 
       {addressForMap ? <LocationMap address={addressForMap} /> : null}
-
-      {!event.isCancelled && event.players.length > 0 ? (
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>{t('event.attendance')}</Text>
-          {event.players.map((p) => (
-            <PlayerAttendance
-              key={p.playerId}
-              player={p}
-              onSet={(status) => mutation.mutate({ playerId: p.playerId, status })}
-            />
-          ))}
-        </View>
-      ) : null}
     </ScrollView>
   );
 }
@@ -211,9 +211,11 @@ function LocationMap({ address }: { address: string }) {
 
 function PlayerAttendance({
   player,
+  showName,
   onSet,
 }: {
   player: EventPlayer;
+  showName: boolean;
   onSet: (status: AttendanceStatus) => void;
 }) {
   const { t } = useTranslation();
@@ -225,7 +227,7 @@ function PlayerAttendance({
 
   return (
     <View style={styles.attendanceRow}>
-      <Text style={styles.playerName}>{player.firstName}</Text>
+      {showName ? <Text style={styles.playerName}>{player.firstName}</Text> : null}
       <View style={styles.chips}>
         {options.map((opt) => {
           const active = player.status === opt.status;
@@ -322,13 +324,14 @@ const styles = StyleSheet.create({
   },
   openMapsBtnText: { color: colors.white, fontSize: 15, fontWeight: '800' },
 
-  attendanceRow: {
+  heroAttendance: {
     marginTop: spacing.md,
     paddingTop: spacing.md,
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
-  playerName: { fontSize: 15, fontWeight: '700', color: colors.text, marginBottom: spacing.sm },
+  attendanceRow: { marginTop: spacing.sm },
+  playerName: { fontSize: 13, fontWeight: '700', color: colors.subtext, marginBottom: 4, textTransform: 'uppercase' },
   chips: { flexDirection: 'row', gap: spacing.sm },
   chip: {
     flex: 1,
