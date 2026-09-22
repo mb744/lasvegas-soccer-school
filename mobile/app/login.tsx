@@ -29,7 +29,7 @@ export default function LoginScreen() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  if (me) return <Redirect href="/(tabs)/schedule" />;
+  if (me) return <Redirect href="/(tabs)" />;
 
   const onSubmit = async () => {
     setError(null);

@@ -105,3 +105,29 @@ export interface BlockedUser {
   userId: string;
   blockedAt: string;
 }
+
+export enum InvoiceStatus {
+  New = 0,
+  Sent = 1,
+  Paid = 2,
+  Closed = 3,
+}
+
+export interface InvoiceSummary {
+  id: number;
+  description: string;
+  amount: number;
+  currency: string;
+  dueDate: string | null;
+  status: InvoiceStatus;
+  issuedAt: string;
+  paidAt: string | null;
+  playerName: string | null;
+  chargeTypeName: string | null;
+}
+
+export interface InvoiceDetail extends InvoiceSummary {
+  sentAt: string | null;
+  paymentMethod: string | null;
+  paymentReference: string | null;
+}

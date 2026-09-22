@@ -5,6 +5,8 @@ import type {
   ChatGroup,
   ChatMessage,
   DevicePlatform,
+  InvoiceDetail,
+  InvoiceSummary,
   Me,
   Player,
   ScheduleEvent,
@@ -101,4 +103,16 @@ export async function registerDevice(expoPushToken: string, platform: DevicePlat
 
 export async function unregisterDevice(expoPushToken: string): Promise<void> {
   await api.delete('/mobile/devices', { data: { expoPushToken } });
+}
+
+// ---- Invoices ----
+
+export async function fetchInvoices(): Promise<InvoiceSummary[]> {
+  const { data } = await api.get<InvoiceSummary[]>('/mobile/invoices');
+  return data;
+}
+
+export async function fetchInvoice(id: number): Promise<InvoiceDetail> {
+  const { data } = await api.get<InvoiceDetail>(`/mobile/invoices/${id}`);
+  return data;
 }

@@ -123,6 +123,35 @@ public record MobileReportMessageRequest
 
 public record MobileBlockedUserDto(string UserId, DateTime BlockedAt);
 
+// ---- Invoices (parent-facing, read-only) ----
+
+public record MobileInvoiceSummaryDto(
+    int Id,
+    string Description,
+    decimal Amount,
+    string Currency,
+    DateOnly? DueDate,
+    InvoiceStatus Status,
+    DateTime IssuedAt,
+    DateTime? PaidAt,
+    string? PlayerName,
+    string? ChargeTypeName);
+
+public record MobileInvoiceDetailDto(
+    int Id,
+    string Description,
+    decimal Amount,
+    string Currency,
+    DateOnly? DueDate,
+    InvoiceStatus Status,
+    DateTime IssuedAt,
+    DateTime? SentAt,
+    DateTime? PaidAt,
+    string? PaymentMethod,
+    string? PaymentReference,
+    string? PlayerName,
+    string? ChargeTypeName);
+
 // ---- Push devices ----
 
 public record RegisterDeviceRequest

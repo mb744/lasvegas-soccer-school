@@ -39,6 +39,13 @@ export default function TabsLayout() {
       }}
     >
       <Tabs.Screen
+        name="index"
+        options={{
+          title: t('tabs.home'),
+          tabBarIcon: ({ color }) => <TabIcon icon="🏠" color={color} />,
+        }}
+      />
+      <Tabs.Screen
         name="schedule"
         options={{
           title: t('tabs.schedule'),

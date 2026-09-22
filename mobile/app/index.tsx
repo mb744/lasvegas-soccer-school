@@ -16,5 +16,5 @@ export default function Index() {
     );
   }
 
-  return <Redirect href={me ? '/(tabs)/schedule' : '/login'} />;
+  return <Redirect href={me ? '/(tabs)' : '/login'} />;
 }
