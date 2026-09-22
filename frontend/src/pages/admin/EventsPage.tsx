@@ -557,6 +557,7 @@ function TournamentTeamPanel({
   const [gUniformId, setGUniformId] = useState('')
   const [gVenueId, setGVenueId] = useState<number | ''>('')
   const [gShoeType, setGShoeType] = useState<ShoeType>(0)
+  const [gNotes, setGNotes] = useState('')
   const vGame = useRequiredValidation(['startsAt'])
 
   const reloadAll = async () => {
@@ -775,6 +776,7 @@ function TournamentTeamPanel({
   const resetGameForm = () => {
     setGStart(''); setGArrive(''); setGArriveTouched(false)
     setGOpponent(''); setGHome('unknown'); setGLocation(''); setGUniformId(''); setGVenueId(''); setGShoeType(0)
+    setGNotes('')
     vGame.reset()
   }
 
@@ -794,6 +796,7 @@ function TournamentTeamPanel({
     setGUniformId(g.uniformId != null ? String(g.uniformId) : '')
     setGVenueId(g.venueId ?? '')
     setGShoeType(g.shoeType)
+    setGNotes(g.description ?? '')
     vGame.reset()
     setShowAdd(true)
   }
@@ -810,6 +813,7 @@ function TournamentTeamPanel({
         opponentName: gOpponent.trim() || null,
         isHome: gHome === 'home' ? true : gHome === 'away' ? false : null,
         location: gLocation.trim() || null,
+        notes: gNotes.trim() || null,
         tournamentId: tour.id,
         uniformId: gUniformId ? Number(gUniformId) : null,
         venueId: gVenueId === '' ? null : gVenueId,
@@ -1065,6 +1069,13 @@ function TournamentTeamPanel({
                 className="mt-1 w-full border border-slate-300 rounded-md px-2 py-1 text-sm">
                 {SHOE_TYPES.map(s => <option key={s} value={s}>{t(shoeTypeKey(s))}</option>)}
               </select>
+            </label>
+            <label className="block text-xs sm:col-span-2">
+              <span className="text-slate-600">{t('admin.evtNotes')}</span>
+              <textarea value={gNotes} onChange={e => setGNotes(e.target.value)}
+                rows={3} maxLength={2000}
+                placeholder={t('admin.evtNotesPlaceholder')}
+                className="mt-1 w-full border border-slate-300 rounded-md px-2 py-1 text-sm" />
             </label>
             <div className="sm:col-span-2 flex gap-2">
               <button type="submit" disabled={busy}

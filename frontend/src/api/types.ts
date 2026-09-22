@@ -958,6 +958,7 @@ export interface SavePracticeRequest {
   endsAt?: string | null
   location?: string | null
   summary?: string | null
+  notes?: string | null      // free-form notes shown to parents on the mobile event detail
   venueId?: number | null
   shoeType?: ShoeType
 }
@@ -970,6 +971,7 @@ export interface SaveGameRequest {
   isHome?: boolean | null
   location?: string | null
   summary?: string | null
+  notes?: string | null      // free-form notes shown to parents on the mobile event detail
   tournamentId?: number | null
   uniformId?: number | null  // explicit uniform override; null = use mapping
   venueId?: number | null    // structured venue/park; null = none

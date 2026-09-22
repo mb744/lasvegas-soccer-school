@@ -74,10 +74,12 @@ export interface ScheduleEvent {
   summary?: string | null;
   location?: string | null;
   venueName?: string | null;
+  venueAddress?: string | null;
   opponentName?: string | null;
   isHome?: boolean | null;
   isCancelled: boolean;
   uniformName?: string | null;
+  notes?: string | null;
   shoeType: number;
   players: EventPlayer[];
 }

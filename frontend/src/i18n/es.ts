@@ -809,6 +809,8 @@ const es: Translations = {
     evtGameDeleteConfirm: '¿Eliminar este partido? Esta acción no se puede deshacer.',
     evtEditGame: 'Editar partido',
     evtGameBeThere: 'Estar presente',
+    evtNotes: 'Notas',
+    evtNotesPlaceholder: 'Notas que los padres verán en el detalle del evento — estacionamiento, refrigerios, color del oponente, lo que ayude a llegar preparados.',
     evtGameUniform: 'Uniforme',
     evtGameUniformDefault: 'Predeterminado (según local/visitante)',
     evtTournSendPreviewTitle: 'Enviar confirmaciones del torneo — vista previa',

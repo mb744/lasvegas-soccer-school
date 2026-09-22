@@ -35,6 +35,7 @@ export default function EventDetailScreen() {
   });
   const event = React.useMemo(() => (data ?? []).find((e) => e.id === eventId), [data, eventId]);
 
+  // Optimistic mutation — no invalidate on settle so the parent screens don't reflow.
   const mutation = useMutation({
     mutationFn: (vars: { playerId: number; status: AttendanceStatus }) =>
       setAttendance(eventId, vars.playerId, vars.status),
@@ -58,7 +59,6 @@ export default function EventDetailScreen() {
     onError: (_e, _v, ctx) => {
       if (ctx?.prev) qc.setQueryData(['schedule'], ctx.prev);
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: ['schedule'] }),
   });
 
   if (isLoading || !event) {
@@ -77,8 +77,6 @@ export default function EventDetailScreen() {
         ? t('schedule.event')
         : t('schedule.game');
 
-  // Show a distinct title line only when it isn't just the kind label repeated (a plain practice
-  // needs no "Practice" heading beneath the badge).
   const showTitle =
     (event.kind === ScheduledEventKind.Game && !!event.opponentName) ||
     (!!event.summary && event.summary !== kindLabel);
@@ -88,24 +86,25 @@ export default function EventDetailScreen() {
       : event.summary!
     : null;
 
-  const addressForMap =
-    [event.venueName, event.location].filter(Boolean).join(', ') || event.location || event.venueName || '';
-
   const detailRows = [
-    event.opponentName ? { label: t('event.opponent'), value: event.opponentName } : null,
-    // Home/Away only meaningful for games — practices and school events don't have a side.
     event.kind === ScheduledEventKind.Game && typeof event.isHome === 'boolean'
       ? {
           label: t('event.homeAway'),
           value: event.isHome ? t('schedule.home') : t('schedule.away'),
         }
       : null,
-    // "Field" is the free-text sub-location (e.g. "Field 3"); the full venue address lives on
-    // the location card below and drives the map + Open-in-Maps action.
     event.location ? { label: t('event.field'), value: event.location } : null,
-    event.arriveAt ? { label: t('schedule.arrive'), value: timeLabel(event.arriveAt) } : null,
+    event.venueName ? { label: t('event.venue'), value: event.venueName } : null,
+    event.venueAddress ? { label: t('event.address'), value: event.venueAddress } : null,
     event.uniformName ? { label: t('schedule.uniform'), value: event.uniformName } : null,
   ].filter(Boolean) as { label: string; value: string }[];
+
+  const addressForMap =
+    [event.venueName, event.venueAddress ?? event.location].filter(Boolean).join(', ') ||
+    event.venueAddress ||
+    event.location ||
+    event.venueName ||
+    '';
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ padding: spacing.lg }}>
@@ -118,20 +117,31 @@ export default function EventDetailScreen() {
         <Text style={styles.date}>
           {longDate(event.startsAt)} · {timeLabel(event.startsAt)}
         </Text>
+        {event.arriveAt ? (
+          <Text style={styles.date}>
+            {t('event.arrive')} · {timeLabel(event.arriveAt)}
+          </Text>
+        ) : null}
         {title ? <Text style={styles.title}>{title}</Text> : null}
-        <Text style={styles.team}>{event.teamName}</Text>
         {event.isCancelled ? <Text style={styles.cancelled}>{t('schedule.cancelled')}</Text> : null}
       </View>
 
       {detailRows.length > 0 ? (
         <View style={styles.card}>
-          {detailRows.map((r) => (
-            <Row key={r.label} label={r.label} value={r.value} />
+          {detailRows.map((r, i) => (
+            <Row key={r.label} label={r.label} value={r.value} isLast={i === detailRows.length - 1} />
           ))}
         </View>
       ) : null}
 
-      {addressForMap ? <LocationCard address={addressForMap} venueName={event.venueName ?? null} /> : null}
+      {event.notes ? (
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>{t('event.notes')}</Text>
+          <Text style={styles.notesBody}>{event.notes}</Text>
+        </View>
+      ) : null}
+
+      {addressForMap ? <LocationMap address={addressForMap} /> : null}
 
       {!event.isCancelled && event.players.length > 0 ? (
         <View style={styles.card}>
@@ -149,21 +159,18 @@ export default function EventDetailScreen() {
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({ label, value, isLast }: { label: string; value: string; isLast: boolean }) {
   return (
-    <View style={styles.row}>
+    <View style={[styles.row, isLast && styles.rowLast]}>
       <Text style={styles.rowLabel}>{label}</Text>
       <Text style={styles.rowValue}>{value}</Text>
     </View>
   );
 }
 
-function LocationCard({ address, venueName }: { address: string; venueName: string | null }) {
+function LocationMap({ address }: { address: string }) {
   const { t } = useTranslation();
   const encoded = encodeURIComponent(address);
-  // Google Maps' public search URL renders a marker at the queried location and works cross-
-  // platform without an API key. Loaded in a WebView with taps disabled so the parent
-  // TouchableOpacity handles opening the native maps app on tap.
   const embedUrl = `https://www.google.com/maps?q=${encoded}&z=15&output=embed`;
 
   const openMaps = useCallback(async () => {
@@ -177,7 +184,7 @@ function LocationCard({ address, venueName }: { address: string; venueName: stri
   }, [encoded, t]);
 
   return (
-    <TouchableOpacity style={styles.locationCard} activeOpacity={0.85} onPress={openMaps}>
+    <TouchableOpacity style={styles.mapCard} activeOpacity={0.85} onPress={openMaps}>
       <View style={styles.mapWrap} pointerEvents="none">
         <WebView
           source={{ uri: embedUrl }}
@@ -192,17 +199,11 @@ function LocationCard({ address, venueName }: { address: string; venueName: stri
               <ActivityIndicator color={colors.brand} />
             </View>
           )}
-          onError={() => {
-            /* WebView failing to load is non-fatal — the tappable card still opens external maps. */
-          }}
+          onError={() => {}}
         />
       </View>
-      <View style={styles.locationBody}>
-        {venueName ? <Text style={styles.locationVenue}>{venueName}</Text> : null}
-        <Text style={styles.locationAddress}>{address}</Text>
-        <View style={styles.openMapsBtn}>
-          <Text style={styles.openMapsBtnText}>{t('event.openInMaps')} →</Text>
-        </View>
+      <View style={styles.openMapsBtn}>
+        <Text style={styles.openMapsBtnText}>{t('event.openInMaps')} →</Text>
       </View>
     </TouchableOpacity>
   );
@@ -272,7 +273,6 @@ const styles = StyleSheet.create({
   kindBadgeText: { color: colors.white, fontSize: 11, fontWeight: '800', textTransform: 'uppercase' },
   date: { fontSize: 20, fontWeight: '800', color: colors.text, marginBottom: spacing.xs },
   title: { fontSize: 18, fontWeight: '700', color: colors.text, marginTop: spacing.xs },
-  team: { fontSize: 15, color: colors.subtext, marginTop: spacing.xs },
   cancelled: { color: colors.danger, fontWeight: '800', marginTop: spacing.sm },
 
   card: {
@@ -298,10 +298,13 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
+  rowLast: { borderBottomWidth: 0 },
   rowLabel: { fontSize: 13, fontWeight: '700', color: colors.subtext, textTransform: 'uppercase' },
   rowValue: { fontSize: 15, color: colors.text, flexShrink: 1, textAlign: 'right', marginLeft: spacing.md },
 
-  locationCard: {
+  notesBody: { fontSize: 15, color: colors.text, lineHeight: 22 },
+
+  mapCard: {
     backgroundColor: colors.card,
     borderRadius: radius.lg,
     borderWidth: 1,
@@ -312,12 +315,8 @@ const styles = StyleSheet.create({
   mapWrap: { height: 200, backgroundColor: colors.border },
   mapWebview: { flex: 1, backgroundColor: 'transparent' },
   mapLoading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  locationBody: { padding: spacing.lg },
-  locationVenue: { fontSize: 16, fontWeight: '800', color: colors.text, marginBottom: 4 },
-  locationAddress: { fontSize: 14, color: colors.subtext, marginBottom: spacing.md, lineHeight: 20 },
   openMapsBtn: {
     backgroundColor: colors.brand,
-    borderRadius: radius.md,
     paddingVertical: spacing.md,
     alignItems: 'center',
   },

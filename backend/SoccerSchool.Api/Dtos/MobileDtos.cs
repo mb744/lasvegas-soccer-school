@@ -70,10 +70,12 @@ public record MobileScheduleEventDto(
     string? Summary,
     string? Location,
     string? VenueName,
+    string? VenueAddress,
     string? OpponentName,
     bool? IsHome,
     bool IsCancelled,
     string? UniformName,
+    string? Notes,
     ShoeType ShoeType,
     IReadOnlyList<MobileEventPlayerDto> Players);
 

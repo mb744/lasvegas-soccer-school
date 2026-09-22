@@ -807,6 +807,8 @@ const en = {
     evtGameDeleteConfirm: 'Delete this game? This cannot be undone.',
     evtEditGame: 'Edit game',
     evtGameBeThere: 'Be There',
+    evtNotes: 'Notes',
+    evtNotesPlaceholder: 'Notes parents will see on the mobile event detail — parking, snacks, opponent color, whatever helps them show up prepared.',
     evtGameUniform: 'Uniform',
     evtGameUniformDefault: 'Default (by home/away)',
     evtTournSendPreviewTitle: 'Send tournament confirmations — preview',

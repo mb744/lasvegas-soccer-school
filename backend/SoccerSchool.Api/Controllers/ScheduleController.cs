@@ -530,6 +530,7 @@ public class ScheduleController : ControllerBase
             VenueId = request.VenueId,
             ShoeType = request.ShoeType,
             Summary = string.IsNullOrWhiteSpace(request.Summary) ? "Practice" : request.Summary.Trim(),
+            Description = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim(),
             CreatedAt = DateTime.UtcNow,
             LastSeenAt = DateTime.UtcNow
         };
@@ -644,6 +645,7 @@ public class ScheduleController : ControllerBase
         practice.VenueId = request.VenueId;
         practice.ShoeType = request.ShoeType;
         practice.Summary = string.IsNullOrWhiteSpace(request.Summary) ? "Practice" : request.Summary.Trim();
+        practice.Description = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim();
         practice.LastSeenAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
         return Ok(ToDto(practice, practice.Team!));
@@ -693,6 +695,7 @@ public class ScheduleController : ControllerBase
             VenueId = request.VenueId,
             ShoeType = request.ShoeType,
             Summary = string.IsNullOrWhiteSpace(request.Summary) ? "Event" : request.Summary.Trim(),
+            Description = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim(),
             CreatedAt = DateTime.UtcNow,
             LastSeenAt = DateTime.UtcNow
         };
@@ -718,6 +721,7 @@ public class ScheduleController : ControllerBase
         ev.VenueId = request.VenueId;
         ev.ShoeType = request.ShoeType;
         ev.Summary = string.IsNullOrWhiteSpace(request.Summary) ? "Event" : request.Summary.Trim();
+        ev.Description = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim();
         ev.LastSeenAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
         return Ok(ToDto(ev, ev.Team!));
@@ -781,6 +785,7 @@ public class ScheduleController : ControllerBase
             Summary = string.IsNullOrWhiteSpace(request.Summary)
                 ? (string.IsNullOrWhiteSpace(request.OpponentName) ? "Game" : $"vs {request.OpponentName.Trim()}")
                 : request.Summary.Trim(),
+            Description = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim(),
             CreatedAt = DateTime.UtcNow,
             LastSeenAt = DateTime.UtcNow
         };
@@ -814,6 +819,7 @@ public class ScheduleController : ControllerBase
         game.Summary = string.IsNullOrWhiteSpace(request.Summary)
             ? (string.IsNullOrWhiteSpace(request.OpponentName) ? "Game" : $"vs {request.OpponentName.Trim()}")
             : request.Summary.Trim();
+        game.Description = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim();
         game.LastSeenAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
         return Ok(ToDto(game, game.Team!));

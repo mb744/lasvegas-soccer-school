@@ -60,9 +60,12 @@ public class MobileScheduleController : ControllerBase
             .Select(g => new
             {
                 g.Id, g.TeamId, TeamName = g.Team!.Name, g.Kind, g.StartsAt, g.EndsAt, g.ArriveAt,
-                g.Summary, g.Location, VenueName = g.Venue != null ? g.Venue.Name : null,
+                g.Summary, g.Location,
+                VenueName = g.Venue != null ? g.Venue.Name : null,
+                VenueAddress = g.Venue != null ? g.Venue.Address : null,
                 g.OpponentName, g.IsHome, g.IsCancelled,
                 DirectUniform = g.Uniform,
+                Notes = g.Description,
                 g.ShoeType,
             })
             .ToListAsync(ct);
@@ -121,8 +124,9 @@ public class MobileScheduleController : ControllerBase
             var uniformText = uniform?.ToWearText();
             return new MobileScheduleEventDto(
                 e.Id, e.TeamId, e.TeamName, e.Kind, e.StartsAt, e.EndsAt, e.ArriveAt,
-                e.Summary, e.Location, e.VenueName, e.OpponentName, e.IsHome, e.IsCancelled,
-                uniformText, e.ShoeType, players);
+                e.Summary, e.Location, e.VenueName, e.VenueAddress,
+                e.OpponentName, e.IsHome, e.IsCancelled,
+                uniformText, e.Notes, e.ShoeType, players);
         }).ToList();
 
         return Ok(result);

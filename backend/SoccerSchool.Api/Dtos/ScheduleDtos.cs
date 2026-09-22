@@ -89,6 +89,12 @@ public record SavePracticeRequest
     [MaxLength(512)]
     public string? Summary { get; init; }
 
+    /// <summary>Free-form notes an admin wants parents to see on the mobile event detail — bring
+    /// snacks, wear layers, park on the north side, etc. Persisted on
+    /// <see cref="Domain.ScheduledGame.Description"/>.</summary>
+    [MaxLength(2000)]
+    public string? Notes { get; init; }
+
     /// <summary>Optional structured venue (park/field). Null = none.</summary>
     public int? VenueId { get; init; }
 
@@ -123,6 +129,12 @@ public record SaveGameRequest
     /// <summary>"Be There" arrival time — when players should show up (typically 15–30 min
     /// before StartsAt). Null = not set.</summary>
     public DateTime? ArriveAt { get; init; }
+
+    /// <summary>Free-form notes an admin wants parents to see on the mobile event detail — team
+    /// meeting location, opponent color to look out for, parking notes, etc. Persisted on
+    /// <see cref="Domain.ScheduledGame.Description"/>.</summary>
+    [MaxLength(2000)]
+    public string? Notes { get; init; }
 
     /// <summary>Explicit uniform override. Null = use the club-wide home/away → designation mapping.</summary>
     public int? UniformId { get; init; }

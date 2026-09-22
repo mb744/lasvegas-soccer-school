@@ -70,6 +70,7 @@ export function TeamScheduleSection({
   const [arriveAt, setArriveAt] = useState('')
   const [arriveTouched, setArriveTouched] = useState(false)
   const [endsAt, setEndsAt] = useState('')
+  const [notes, setNotes] = useState('')
   const [location, setLocation] = useState('')
   const [venueId, setVenueId] = useState<number | ''>('')
   const [shoeType, setShoeType] = useState<ShoeType>(0)
@@ -96,19 +97,19 @@ export function TeamScheduleSection({
   const startNewPractice = () => {
     setEditingId('new-practice'); setEditingKind('practice')
     setStartsAt(''); setArriveAt(''); setArriveTouched(false); setEndsAt('')
-    setLocation(''); setVenueId(''); setShoeType(0); setSummary('')
+    setLocation(''); setVenueId(''); setShoeType(0); setSummary(''); setNotes('')
     setOpponentName(''); setIsHome(null)
   }
   const startNewMisc = () => {
     setEditingId('new-misc'); setEditingKind('misc')
     setStartsAt(''); setArriveAt(''); setArriveTouched(false); setEndsAt('')
-    setLocation(''); setVenueId(''); setShoeType(0); setSummary('')
+    setLocation(''); setVenueId(''); setShoeType(0); setSummary(''); setNotes('')
     setOpponentName(''); setIsHome(null)
   }
   const startNewGame = () => {
     setEditingId('new-game'); setEditingKind('game')
     setStartsAt(''); setArriveAt(''); setArriveTouched(false); setEndsAt('')
-    setLocation(''); setVenueId(''); setShoeType(0); setSummary('')
+    setLocation(''); setVenueId(''); setShoeType(0); setSummary(''); setNotes('')
     setOpponentName(''); setIsHome(null)
   }
   const startSeries = () => {
@@ -138,6 +139,7 @@ export function TeamScheduleSection({
     setVenueId(ev.venueId ?? '')
     setShoeType(ev.shoeType)
     setSummary(ev.summary ?? '')
+    setNotes(ev.description ?? '')
     setOpponentName(ev.opponentName ?? '')
     setIsHome(ev.isHome)
   }
@@ -171,6 +173,7 @@ export function TeamScheduleSection({
       const endsAtIso = endsAt ? new Date(endsAt).toISOString() : null
       const trimmedLocation = location.trim() || null
       const trimmedSummary = summary.trim() || null
+      const trimmedNotes = notes.trim() || null
       const venueIdValue = venueId === '' ? null : venueId
       if (editingKind === 'game') {
         const payload = {
@@ -181,6 +184,7 @@ export function TeamScheduleSection({
           isHome,
           location: trimmedLocation,
           summary: trimmedSummary,
+          notes: trimmedNotes,
           venueId: venueIdValue,
           shoeType,
         }
@@ -193,6 +197,7 @@ export function TeamScheduleSection({
           endsAt: endsAtIso,
           location: trimmedLocation,
           summary: trimmedSummary,
+          notes: trimmedNotes,
           venueId: venueIdValue,
           shoeType,
         }
@@ -205,6 +210,7 @@ export function TeamScheduleSection({
           endsAt: endsAtIso,
           location: trimmedLocation,
           summary: trimmedSummary,
+          notes: trimmedNotes,
           venueId: venueIdValue,
           shoeType,
         }
@@ -523,6 +529,13 @@ export function TeamScheduleSection({
               <span className="font-medium text-slate-700">{t('admin.msgPracticeLabel')}</span>
               <input type="text" value={summary} onChange={e => setSummary(e.target.value)}
                 placeholder={editingKind === 'game' ? 'Game' : editingKind === 'misc' ? 'Event' : 'Practice'}
+                className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+            </label>
+            <label className="block text-sm sm:col-span-2">
+              <span className="font-medium text-slate-700">{t('admin.evtNotes')}</span>
+              <textarea value={notes} onChange={e => setNotes(e.target.value)}
+                rows={3} maxLength={2000}
+                placeholder={t('admin.evtNotesPlaceholder')}
                 className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
             </label>
             <div className="sm:col-span-2 flex items-center gap-3 pt-2">
