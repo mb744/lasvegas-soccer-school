@@ -11,7 +11,7 @@ import {
   View,
   type ViewToken,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchSchedule, setAttendance } from '../../src/api/endpoints';
@@ -30,6 +30,15 @@ export default function ScheduleScreen() {
     queryKey: ['schedule'],
     queryFn: fetchSchedule,
   });
+
+  // Refetch on tab focus so new/changed events from the admin side show up without waiting for
+  // the default 30s stale window to elapse.
+  useFocusEffect(
+    React.useCallback(() => {
+      void refetch();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []),
+  );
 
   // NOTE: no onSettled invalidation — the optimistic setQueryData already updates the UI; refetching
   // after every chip tap re-renders every card and makes the list visibly reflow under the tap.

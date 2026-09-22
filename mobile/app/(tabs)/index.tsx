@@ -8,7 +8,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchAnnouncements, fetchInvoices, fetchSchedule, setAttendance } from '../../src/api/endpoints';
@@ -39,6 +39,18 @@ export default function HomeScreen() {
   const invoices = useQuery({ queryKey: ['invoices'], queryFn: fetchInvoices });
   const announcements = useQuery({ queryKey: ['announcements'], queryFn: fetchAnnouncements });
   const schedule = useQuery({ queryKey: ['schedule'], queryFn: fetchSchedule });
+
+  // Refetch on tab focus so admin-side additions (new game, cancelled practice) show up as soon
+  // as the parent switches back to Home instead of only after the 30s stale window elapses.
+  useFocusEffect(
+    React.useCallback(() => {
+      void invoices.refetch();
+      void announcements.refetch();
+      void schedule.refetch();
+      // Intentionally empty deps — refetch fns are stable and we want to fire once per focus.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []),
+  );
 
   // Same mutation shape the Schedule tab + Event detail use — sharing the ['schedule'] key means
   // an attendance change from any of the three screens updates all three instantly. NOTE: we
