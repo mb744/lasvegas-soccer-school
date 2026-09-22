@@ -41,7 +41,11 @@ export default function HomeScreen() {
   const schedule = useQuery({ queryKey: ['schedule'], queryFn: fetchSchedule });
 
   // Same mutation shape the Schedule tab + Event detail use — sharing the ['schedule'] key means
-  // an attendance change from any of the three screens updates all three instantly.
+  // an attendance change from any of the three screens updates all three instantly. NOTE: we
+  // intentionally do NOT invalidate on settle — the optimistic update in onMutate already puts
+  // the right state on screen, and invalidating would trigger a background refetch that re-renders
+  // every card in the list, causing visible reflow / scroll drift after each tap. The next
+  // natural refetch (pull-to-refresh, tab re-focus) picks up any server-side drift.
   const attendanceMutation = useMutation({
     mutationFn: (vars: { eventId: number; playerId: number; status: AttendanceStatus }) =>
       setAttendance(vars.eventId, vars.playerId, vars.status),
@@ -65,7 +69,6 @@ export default function HomeScreen() {
     onError: (_e, _v, ctx) => {
       if (ctx?.prev) qc.setQueryData(['schedule'], ctx.prev);
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: ['schedule'] }),
   });
 
   const outstanding = React.useMemo(
