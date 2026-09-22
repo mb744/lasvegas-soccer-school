@@ -102,11 +102,11 @@ export default function HomeScreen() {
       .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
     // Same practice can show up twice on the schedule when a kid is rostered on two teams that
     // run their practices together — collapse those into a single card, keyed on start time +
-    // the player set so genuinely-different events at the same time (two siblings on two teams)
-    // still both surface.
+    // kind + the player set so genuinely-different events at the same time (two siblings on two
+    // teams, or a game and a practice at the same slot) still both surface.
     const seen = new Set<string>();
     return future.filter((e) => {
-      const key = `${e.startsAt}|${e.players.map((p) => p.playerId).sort().join(',')}`;
+      const key = `${e.startsAt}|${e.kind}|${e.players.map((p) => p.playerId).sort().join(',')}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;

@@ -77,11 +77,13 @@ export default function ScheduleScreen() {
   }, [data, filter]);
 
   // Same dedup as Home — a kid rostered on two teams that practice together shouldn't produce
-  // two identical cards.
+  // two identical cards. Kind is part of the key so a game and a practice at the same slot for
+  // the same player (rare but real — game and separate practice at the same time on different
+  // teams) don't collapse into one card.
   const deduped = useMemo(() => {
     const seen = new Set<string>();
     return filtered.filter((e) => {
-      const key = `${e.startsAt}|${e.players.map((p) => p.playerId).sort().join(',')}`;
+      const key = `${e.startsAt}|${e.kind}|${e.players.map((p) => p.playerId).sort().join(',')}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
