@@ -80,6 +80,15 @@ export const en = {
       practices: 'Practices',
     },
   },
+  event: {
+    title: 'Event',
+    when: 'When',
+    opponent: 'Opponent',
+    attendance: 'Attendance',
+    openInMaps: 'Open in Maps',
+    mapUnavailableTitle: 'Maps not available',
+    mapUnavailableMessage: 'This device does not have a maps app installed.',
+  },
   attendance: {
     going: 'Going',
     notGoing: 'Not going',

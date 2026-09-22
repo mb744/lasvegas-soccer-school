@@ -82,6 +82,15 @@ export const es: Translations = {
       practices: 'Prácticas',
     },
   },
+  event: {
+    title: 'Evento',
+    when: 'Cuándo',
+    opponent: 'Oponente',
+    attendance: 'Asistencia',
+    openInMaps: 'Abrir en Mapas',
+    mapUnavailableTitle: 'Mapas no disponible',
+    mapUnavailableMessage: 'Este dispositivo no tiene una aplicación de mapas instalada.',
+  },
   attendance: {
     going: 'Asiste',
     notGoing: 'No asiste',

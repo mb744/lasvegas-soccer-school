@@ -78,7 +78,8 @@
         "googleAndroidClientId": "",
         "googleWebClientId": "10228158424-ip9qesq1kpgvfj4vs9is6gcv9693blob.apps.googleusercontent.com",
         "facebookAppId": "1659218045358325"
-      }
+      },
+      "googleMapsKey": ""
     },
     "owner": "las-vegas-soccer-school",
     "runtimeVersion": {

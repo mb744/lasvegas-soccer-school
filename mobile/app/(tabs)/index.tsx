@@ -105,7 +105,9 @@ export default function HomeScreen() {
           <Text style={styles.emptyCardText}>{t('home.upcomingEmpty')}</Text>
         </View>
       ) : (
-        upcoming.map((ev) => <UpcomingEventRow key={ev.id} event={ev} />)
+        upcoming.map((ev) => (
+          <UpcomingEventRow key={ev.id} event={ev} onPress={() => router.push(`/events/${ev.id}`)} />
+        ))
       )}
     </ScrollView>
   );
@@ -144,7 +146,7 @@ function AnnouncementCard({ announcement }: { announcement: Announcement }) {
   );
 }
 
-function UpcomingEventRow({ event }: { event: ScheduleEvent }) {
+function UpcomingEventRow({ event, onPress }: { event: ScheduleEvent; onPress: () => void }) {
   const { t } = useTranslation();
   const kindLabel =
     event.kind === ScheduledEventKind.Practice
@@ -158,7 +160,7 @@ function UpcomingEventRow({ event }: { event: ScheduleEvent }) {
       : event.summary || kindLabel;
 
   return (
-    <View style={styles.upcomingRow}>
+    <TouchableOpacity style={styles.upcomingRow} onPress={onPress} activeOpacity={0.85}>
       <View style={styles.upcomingDate}>
         <Text style={styles.upcomingDateDay}>{shortDay(event.startsAt)}</Text>
         <Text style={styles.upcomingDateNum}>{shortDayNum(event.startsAt)}</Text>
@@ -182,7 +184,7 @@ function UpcomingEventRow({ event }: { event: ScheduleEvent }) {
           </Text>
         ) : null}
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 

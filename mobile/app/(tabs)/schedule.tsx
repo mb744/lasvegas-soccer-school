@@ -11,6 +11,7 @@ import {
   View,
   type ViewToken,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchSchedule, setAttendance } from '../../src/api/endpoints';
@@ -22,6 +23,7 @@ type Filter = 'all' | 'games' | 'practices';
 
 export default function ScheduleScreen() {
   const { t } = useTranslation();
+  const router = useRouter();
   const qc = useQueryClient();
 
   const { data, isLoading, isError, refetch, isRefetching } = useQuery({
@@ -179,6 +181,7 @@ export default function ScheduleScreen() {
         renderItem={({ item }) => (
           <EventCard
             event={item}
+            onPress={() => router.push(`/events/${item.id}`)}
             onSet={(playerId, status) => mutation.mutate({ eventId: item.id, playerId, status })}
           />
         )}
@@ -223,9 +226,11 @@ function sameDay(a: Date, b: Date): boolean {
 
 function EventCard({
   event,
+  onPress,
   onSet,
 }: {
   event: ScheduleEvent;
+  onPress: () => void;
   onSet: (playerId: number, status: AttendanceStatus) => void;
 }) {
   const { t } = useTranslation();
@@ -242,7 +247,11 @@ function EventCard({
       : event.summary || kindLabel;
 
   return (
-    <View style={[styles.card, event.isCancelled && styles.cardCancelled]}>
+    <TouchableOpacity
+      activeOpacity={0.85}
+      onPress={onPress}
+      style={[styles.card, event.isCancelled && styles.cardCancelled]}
+    >
       <View style={styles.cardHead}>
         <View style={[styles.kindBadge, badgeStyle(event.kind)]}>
           <Text style={styles.kindBadgeText}>{kindLabel}</Text>
@@ -269,7 +278,7 @@ function EventCard({
         event.players.map((p) => (
           <PlayerAttendance key={p.playerId} player={p} onSet={(s) => onSet(p.playerId, s)} />
         ))}
-    </View>
+    </TouchableOpacity>
   );
 }
 
