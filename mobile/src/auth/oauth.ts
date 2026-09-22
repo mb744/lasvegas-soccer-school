@@ -69,11 +69,13 @@ export async function signInWithGoogle(): Promise<TokenResponse> {
     usePKCE: true,
   });
 
-  // preferEphemeralSession: true tells ASWebAuthenticationSession on iOS not to share cookies
-  // with Safari. Combined with prompt=select_account, this guarantees the account picker shows
-  // every time — otherwise a phone signed in to a single Google account in Safari can bypass
-  // the picker even with prompt=select_account, silently defaulting to the wrong Gmail.
-  const result = await request.promptAsync(discovery, { preferEphemeralSession: true });
+  // NOTE: preferEphemeralSession is intentionally OFF. When it's on, Google's multi-device 2FA
+  // ("Yes, it's me" push confirmation on another device) breaks — the isolated browser session
+  // loses the redirect handoff between the confirmation event and the OAuth callback, so the app
+  // comes back without an auth code. prompt=select_account below is usually enough to force the
+  // account picker in the shared session too; users who don't see the picker can tap through and
+  // it'll come up if there's more than one Google account signed in on the device.
+  const result = await request.promptAsync(discovery);
   if (result.type !== 'success') throw new Error(result.type);
   const code = result.params.code;
   if (!code) throw new Error('no-code');
@@ -121,7 +123,9 @@ export async function signInWithFacebook(): Promise<TokenResponse> {
     usePKCE: false,
   });
 
-  const result = await request.promptAsync(discovery, { preferEphemeralSession: true });
+  // preferEphemeralSession off for the same reason as Google — multi-device confirmations
+  // (Facebook's "notify device to log in on another") break in isolated sessions.
+  const result = await request.promptAsync(discovery);
   if (result.type !== 'success') throw new Error(result.type);
   const accessToken = result.params.access_token;
   if (!accessToken) throw new Error('no-access-token');
