@@ -10,12 +10,14 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { useQuery } from '@tanstack/react-query';
-import { fetchAnnouncements, fetchInvoices, fetchSchedule } from '../../src/api/endpoints';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { fetchAnnouncements, fetchInvoices, fetchSchedule, setAttendance } from '../../src/api/endpoints';
 import {
+  AttendanceStatus,
   InvoiceStatus,
   ScheduledEventKind,
   type Announcement,
+  type EventPlayer,
   type InvoiceSummary,
   type ScheduleEvent,
 } from '../../src/api/types';
@@ -32,10 +34,39 @@ export default function HomeScreen() {
   const { t } = useTranslation();
   const { me } = useAuth();
   const router = useRouter();
+  const qc = useQueryClient();
 
   const invoices = useQuery({ queryKey: ['invoices'], queryFn: fetchInvoices });
   const announcements = useQuery({ queryKey: ['announcements'], queryFn: fetchAnnouncements });
   const schedule = useQuery({ queryKey: ['schedule'], queryFn: fetchSchedule });
+
+  // Same mutation shape the Schedule tab + Event detail use — sharing the ['schedule'] key means
+  // an attendance change from any of the three screens updates all three instantly.
+  const attendanceMutation = useMutation({
+    mutationFn: (vars: { eventId: number; playerId: number; status: AttendanceStatus }) =>
+      setAttendance(vars.eventId, vars.playerId, vars.status),
+    onMutate: async (vars) => {
+      await qc.cancelQueries({ queryKey: ['schedule'] });
+      const prev = qc.getQueryData<ScheduleEvent[]>(['schedule']);
+      qc.setQueryData<ScheduleEvent[]>(['schedule'], (old: ScheduleEvent[] | undefined) =>
+        (old ?? []).map((ev) =>
+          ev.id === vars.eventId
+            ? {
+                ...ev,
+                players: ev.players.map((p) =>
+                  p.playerId === vars.playerId ? { ...p, status: vars.status } : p,
+                ),
+              }
+            : ev,
+        ),
+      );
+      return { prev };
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.prev) qc.setQueryData(['schedule'], ctx.prev);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ['schedule'] }),
+  });
 
   const outstanding = React.useMemo(
     () =>
@@ -117,7 +148,14 @@ export default function HomeScreen() {
         </View>
       ) : (
         upcoming.map((ev) => (
-          <UpcomingEventRow key={ev.id} event={ev} onPress={() => router.push(`/events/${ev.id}`)} />
+          <UpcomingEventRow
+            key={ev.id}
+            event={ev}
+            onPress={() => router.push(`/events/${ev.id}`)}
+            onSetAttendance={(playerId, status) =>
+              attendanceMutation.mutate({ eventId: ev.id, playerId, status })
+            }
+          />
         ))
       )}
     </ScrollView>
@@ -157,7 +195,15 @@ function AnnouncementCard({ announcement }: { announcement: Announcement }) {
   );
 }
 
-function UpcomingEventRow({ event, onPress }: { event: ScheduleEvent; onPress: () => void }) {
+function UpcomingEventRow({
+  event,
+  onPress,
+  onSetAttendance,
+}: {
+  event: ScheduleEvent;
+  onPress: () => void;
+  onSetAttendance: (playerId: number, status: AttendanceStatus) => void;
+}) {
   const { t } = useTranslation();
   const kindLabel =
     event.kind === ScheduledEventKind.Practice
@@ -205,8 +251,57 @@ function UpcomingEventRow({ event, onPress }: { event: ScheduleEvent; onPress: (
             📍 {event.venueName ?? event.location}
           </Text>
         ) : null}
+        {!event.isCancelled && event.players.length > 0 ? (
+          <View style={styles.upcomingAttendance}>
+            {event.players.map((p) => (
+              <UpcomingAttendance
+                key={p.playerId}
+                player={p}
+                showName={event.players.length > 1}
+                onSet={(status) => onSetAttendance(p.playerId, status)}
+              />
+            ))}
+          </View>
+        ) : null}
       </View>
     </TouchableOpacity>
+  );
+}
+
+function UpcomingAttendance({
+  player,
+  showName,
+  onSet,
+}: {
+  player: EventPlayer;
+  showName: boolean;
+  onSet: (status: AttendanceStatus) => void;
+}) {
+  const { t } = useTranslation();
+  const options: { status: AttendanceStatus; label: string; color: string }[] = [
+    { status: AttendanceStatus.Confirmed, label: t('attendance.going'), color: colors.success },
+    { status: AttendanceStatus.Maybe, label: t('attendance.maybe'), color: colors.warning },
+    { status: AttendanceStatus.Declined, label: t('attendance.notGoing'), color: colors.danger },
+  ];
+
+  return (
+    <View style={styles.upcomingAttendanceRow}>
+      {showName ? <Text style={styles.upcomingAttendanceName}>{player.firstName}</Text> : null}
+      <View style={styles.upcomingChips}>
+        {options.map((opt) => {
+          const active = player.status === opt.status;
+          return (
+            <TouchableOpacity
+              key={opt.status}
+              style={[styles.upcomingChip, active && { backgroundColor: opt.color, borderColor: opt.color }]}
+              onPress={() => onSet(opt.status)}
+            >
+              <Text style={[styles.upcomingChipText, active && styles.upcomingChipTextActive]}>{opt.label}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
   );
 }
 
@@ -342,4 +437,30 @@ const styles = StyleSheet.create({
   upcomingTitle: { fontSize: 15, fontWeight: '700', color: colors.text, marginTop: spacing.xs },
   upcomingTeam: { fontSize: 13, color: colors.subtext, marginTop: 2 },
   upcomingLocation: { fontSize: 12, color: colors.subtext, marginTop: 2 },
+
+  upcomingAttendance: {
+    marginTop: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  upcomingAttendanceRow: { marginTop: spacing.xs },
+  upcomingAttendanceName: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.subtext,
+    marginBottom: 4,
+    textTransform: 'uppercase',
+  },
+  upcomingChips: { flexDirection: 'row', gap: 6 },
+  upcomingChip: {
+    flex: 1,
+    paddingVertical: 6,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+  },
+  upcomingChipText: { fontSize: 11, fontWeight: '700', color: colors.subtext },
+  upcomingChipTextActive: { color: colors.white },
 });
