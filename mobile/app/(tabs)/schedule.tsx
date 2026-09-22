@@ -31,10 +31,11 @@ export default function ScheduleScreen() {
     queryFn: fetchSchedule,
   });
 
+  // NOTE: no onSettled invalidation — the optimistic setQueryData already updates the UI; refetching
+  // after every chip tap re-renders every card and makes the list visibly reflow under the tap.
   const mutation = useMutation({
     mutationFn: (vars: { eventId: number; playerId: number; status: AttendanceStatus }) =>
       setAttendance(vars.eventId, vars.playerId, vars.status),
-    // Optimistic: flip the chip immediately, roll back on error.
     onMutate: async (vars) => {
       await qc.cancelQueries({ queryKey: ['schedule'] });
       const prev = qc.getQueryData<ScheduleEvent[]>(['schedule']);
@@ -55,7 +56,6 @@ export default function ScheduleScreen() {
     onError: (_e, _v, ctx) => {
       if (ctx?.prev) qc.setQueryData(['schedule'], ctx.prev);
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: ['schedule'] }),
   });
 
   const [filter, setFilter] = useState<Filter>('all');
@@ -67,10 +67,20 @@ export default function ScheduleScreen() {
     return list.filter((e) => e.kind !== ScheduledEventKind.Game);
   }, [data, filter]);
 
-  const sections = useMemo(() => groupByDay(filtered), [filtered]);
+  // Same dedup as Home — a kid rostered on two teams that practice together shouldn't produce
+  // two identical cards.
+  const deduped = useMemo(() => {
+    const seen = new Set<string>();
+    return filtered.filter((e) => {
+      const key = `${e.startsAt}|${e.players.map((p) => p.playerId).sort().join(',')}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [filtered]);
 
-  // Index of the first section that starts today or later — that's what "jump to today" targets.
-  // Falls back to -1 (button hidden) when every event is in the past.
+  const sections = useMemo(() => groupByDay(deduped), [deduped]);
+
   const jumpIndex = useMemo(() => {
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
@@ -90,11 +100,9 @@ export default function ScheduleScreen() {
     setVisibleSectionIdx(idxs);
   }).current;
 
-  // Where the floating button lives (or should hide) based on today's position vs. what's visible.
   const buttonPlacement: 'top' | 'bottom' | 'hidden' = useMemo(() => {
     if (jumpIndex < 0) return 'hidden';
     if (visibleSectionIdx.has(jumpIndex)) return 'hidden';
-    // Empty visible set can happen briefly during layout — hide until we know.
     if (visibleSectionIdx.size === 0) return 'hidden';
     const min = Math.min(...visibleSectionIdx);
     const max = Math.max(...visibleSectionIdx);
@@ -103,7 +111,6 @@ export default function ScheduleScreen() {
     return 'hidden';
   }, [jumpIndex, visibleSectionIdx]);
 
-  // Fade the button in/out so it doesn't pop.
   const buttonOpacity = useRef(new Animated.Value(0)).current;
   const shouldShowButton = buttonPlacement !== 'hidden';
   React.useEffect(() => {
@@ -188,7 +195,6 @@ export default function ScheduleScreen() {
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={viewabilityConfig}
         onScrollToIndexFailed={(info) => {
-          // scrollToLocation on a section not yet measured — retry after a beat.
           const wait = new Promise((resolve) => setTimeout(resolve, 200));
           void wait.then(() =>
             listRef.current?.scrollToLocation({
@@ -224,6 +230,12 @@ function sameDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
+/**
+ * Row visual matches the Home screen's UpcomingEventRow: date block on the left, badge + time on
+ * the right, then title (only when there's something beyond the kind label), player names comma-
+ * joined, location, and inline attendance chips per player. Tapping the row navigates to the event
+ * detail; chip taps consume the touch so they don't also navigate.
+ */
 function EventCard({
   event,
   onPress,
@@ -241,52 +253,72 @@ function EventCard({
         ? t('schedule.event')
         : t('schedule.game');
 
-  const title =
-    event.kind === ScheduledEventKind.Game && event.opponentName
+  const showTitle =
+    (event.kind === ScheduledEventKind.Game && !!event.opponentName) ||
+    (!!event.summary && event.summary !== kindLabel);
+  const title = showTitle
+    ? event.kind === ScheduledEventKind.Game && event.opponentName
       ? t('schedule.vs', { opponent: event.opponentName })
-      : event.summary || kindLabel;
+      : event.summary!
+    : null;
 
   return (
     <TouchableOpacity
-      activeOpacity={0.85}
-      onPress={onPress}
       style={[styles.card, event.isCancelled && styles.cardCancelled]}
+      onPress={onPress}
+      activeOpacity={0.85}
     >
-      <View style={styles.cardHead}>
-        <View style={[styles.kindBadge, badgeStyle(event.kind)]}>
-          <Text style={styles.kindBadgeText}>{kindLabel}</Text>
-        </View>
-        <Text style={styles.time}>{timeLabel(event.startsAt)}</Text>
+      <View style={styles.dateBlock}>
+        <Text style={styles.dateDay}>{shortDay(event.startsAt)}</Text>
+        <Text style={styles.dateNum}>{shortDayNum(event.startsAt)}</Text>
       </View>
-
-      <Text style={styles.cardTitle}>{title}</Text>
-      <Text style={styles.team}>{event.teamName}</Text>
-
-      {event.isCancelled ? <Text style={styles.cancelled}>{t('schedule.cancelled')}</Text> : null}
-
-      {event.venueName || event.location ? (
-        <Text style={styles.meta}>📍 {event.venueName ?? event.location}</Text>
-      ) : null}
-      {event.arriveAt ? (
-        <Text style={styles.meta}>⏰ {t('schedule.arrive')}: {timeLabel(event.arriveAt)}</Text>
-      ) : null}
-      {event.uniformName ? (
-        <Text style={styles.meta}>👕 {t('schedule.uniform')}: {event.uniformName}</Text>
-      ) : null}
-
-      {!event.isCancelled &&
-        event.players.map((p) => (
-          <PlayerAttendance key={p.playerId} player={p} onSet={(s) => onSet(p.playerId, s)} />
-        ))}
+      <View style={styles.cardBody}>
+        <View style={styles.cardHeader}>
+          <View style={[styles.kindBadge, badgeStyle(event.kind)]}>
+            <Text style={styles.kindBadgeText}>{kindLabel}</Text>
+          </View>
+          <Text style={styles.time}>{timeLabel(event.startsAt)}</Text>
+        </View>
+        {title ? (
+          <Text style={styles.title} numberOfLines={2}>
+            {title}
+          </Text>
+        ) : null}
+        {event.players.length > 0 ? (
+          <Text style={styles.players} numberOfLines={1}>
+            {event.players.map((p) => `${p.firstName} ${p.lastName}`.trim()).join(', ')}
+          </Text>
+        ) : null}
+        {event.isCancelled ? <Text style={styles.cancelled}>{t('schedule.cancelled')}</Text> : null}
+        {event.venueName || event.location ? (
+          <Text style={styles.location} numberOfLines={1}>
+            📍 {event.venueName ?? event.location}
+          </Text>
+        ) : null}
+        {!event.isCancelled && event.players.length > 0 ? (
+          <View style={styles.attendanceBlock}>
+            {event.players.map((p) => (
+              <PlayerAttendance
+                key={p.playerId}
+                player={p}
+                showName={event.players.length > 1}
+                onSet={(s) => onSet(p.playerId, s)}
+              />
+            ))}
+          </View>
+        ) : null}
+      </View>
     </TouchableOpacity>
   );
 }
 
 function PlayerAttendance({
   player,
+  showName,
   onSet,
 }: {
   player: EventPlayer;
+  showName: boolean;
   onSet: (status: AttendanceStatus) => void;
 }) {
   const { t } = useTranslation();
@@ -298,7 +330,7 @@ function PlayerAttendance({
 
   return (
     <View style={styles.attendanceRow}>
-      <Text style={styles.playerName}>{player.firstName}</Text>
+      {showName ? <Text style={styles.attendanceName}>{player.firstName}</Text> : null}
       <View style={styles.chips}>
         {options.map((opt) => {
           const active = player.status === opt.status;
@@ -315,6 +347,14 @@ function PlayerAttendance({
       </View>
     </View>
   );
+}
+
+function shortDay(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, { weekday: 'short' }).toUpperCase();
+}
+
+function shortDayNum(iso: string): string {
+  return String(new Date(iso).getDate());
 }
 
 function groupByDay(events: ScheduleEvent[]): { title: string; data: ScheduleEvent[] }[] {
@@ -348,40 +388,63 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
     marginBottom: spacing.sm,
   },
+
   card: {
+    flexDirection: 'row',
     backgroundColor: colors.card,
     borderRadius: radius.lg,
-    padding: spacing.lg,
-    marginBottom: spacing.md,
     borderWidth: 1,
     borderColor: colors.border,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    alignItems: 'stretch',
   },
   cardCancelled: { opacity: 0.6 },
-  cardHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  dateBlock: {
+    width: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRightWidth: 1,
+    borderRightColor: colors.border,
+    paddingRight: spacing.sm,
+    marginRight: spacing.md,
+  },
+  dateDay: { fontSize: 11, fontWeight: '800', color: colors.subtext, letterSpacing: 1 },
+  dateNum: { fontSize: 22, fontWeight: '800', color: colors.brand },
+  cardBody: { flex: 1 },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   kindBadge: { paddingHorizontal: spacing.sm, paddingVertical: 2, borderRadius: radius.sm },
-  kindBadgeText: { color: colors.white, fontSize: 11, fontWeight: '800', textTransform: 'uppercase' },
-  time: { fontSize: 15, fontWeight: '700', color: colors.text },
-  cardTitle: { fontSize: 18, fontWeight: '800', color: colors.text, marginTop: spacing.sm },
-  team: { fontSize: 14, color: colors.subtext, marginTop: 2 },
-  cancelled: { color: colors.danger, fontWeight: '700', marginTop: spacing.xs },
-  meta: { fontSize: 14, color: colors.subtext, marginTop: spacing.xs },
-  attendanceRow: {
-    marginTop: spacing.md,
-    paddingTop: spacing.md,
+  kindBadgeText: { color: colors.white, fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
+  time: { fontSize: 13, fontWeight: '700', color: colors.text, marginLeft: 'auto' },
+  title: { fontSize: 15, fontWeight: '700', color: colors.text, marginTop: spacing.xs },
+  players: { fontSize: 13, color: colors.subtext, marginTop: 2 },
+  location: { fontSize: 12, color: colors.subtext, marginTop: 2 },
+  cancelled: { color: colors.danger, fontWeight: '700', marginTop: spacing.xs, fontSize: 13 },
+
+  attendanceBlock: {
+    marginTop: spacing.sm,
+    paddingTop: spacing.sm,
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
-  playerName: { fontSize: 15, fontWeight: '700', color: colors.text, marginBottom: spacing.sm },
-  chips: { flexDirection: 'row', gap: spacing.sm },
+  attendanceRow: { marginTop: spacing.xs },
+  attendanceName: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.subtext,
+    marginBottom: 4,
+    textTransform: 'uppercase',
+  },
+  chips: { flexDirection: 'row', gap: 6 },
   chip: {
     flex: 1,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.md,
+    paddingVertical: 6,
+    borderRadius: radius.sm,
     borderWidth: 1,
     borderColor: colors.border,
     alignItems: 'center',
   },
-  chipText: { fontSize: 13, fontWeight: '700', color: colors.subtext },
+  chipText: { fontSize: 11, fontWeight: '700', color: colors.subtext },
   chipTextActive: { color: colors.white },
 
   filterBar: {
@@ -392,10 +455,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-  filterRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
+  filterRow: { flexDirection: 'row', gap: spacing.sm },
   filterPill: {
     flex: 1,
     paddingVertical: spacing.sm,
