@@ -135,16 +135,9 @@ function OutstandingInvoiceCard({ invoice, onPress }: { invoice: InvoiceSummary;
 }
 
 function AnnouncementCard({ announcement }: { announcement: Announcement }) {
-  const { t } = useTranslation();
-  const audience = announcement.teamName ?? t('home.everyone');
   return (
     <View style={styles.announcementCard}>
-      <View style={styles.announcementHead}>
-        <Text style={styles.announcementTitle}>{announcement.title}</Text>
-        <View style={styles.announcementBadge}>
-          <Text style={styles.announcementBadgeText}>{audience}</Text>
-        </View>
-      </View>
+      <Text style={styles.announcementTitle}>{announcement.title}</Text>
       <Text style={styles.announcementBody}>{announcement.body}</Text>
       <Text style={styles.announcementWhen}>{longDate(announcement.createdAt)}</Text>
     </View>
@@ -292,15 +285,7 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     marginBottom: spacing.sm,
   },
-  announcementHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  announcementTitle: { fontSize: 16, fontWeight: '800', color: colors.text, flex: 1, marginRight: spacing.sm },
-  announcementBadge: {
-    backgroundColor: colors.brand,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    borderRadius: radius.sm,
-  },
-  announcementBadgeText: { color: colors.white, fontSize: 11, fontWeight: '800' },
+  announcementTitle: { fontSize: 16, fontWeight: '800', color: colors.text },
   announcementBody: { fontSize: 14, color: colors.text, marginTop: spacing.xs, lineHeight: 20 },
   announcementWhen: { fontSize: 12, color: colors.subtext, marginTop: spacing.sm },
 
