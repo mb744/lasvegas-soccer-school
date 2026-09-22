@@ -2,7 +2,6 @@ import React, { useCallback } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Image,
   Linking,
   ScrollView,
   StyleSheet,
@@ -10,9 +9,9 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { WebView } from 'react-native-webview';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import Constants from 'expo-constants';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchSchedule, setAttendance } from '../../src/api/endpoints';
 import {
@@ -78,13 +77,27 @@ export default function EventDetailScreen() {
         ? t('schedule.event')
         : t('schedule.game');
 
-  const title =
-    event.kind === ScheduledEventKind.Game && event.opponentName
+  // Show a distinct title line only when it isn't just the kind label repeated (a plain practice
+  // needs no "Practice" heading beneath the badge).
+  const showTitle =
+    (event.kind === ScheduledEventKind.Game && !!event.opponentName) ||
+    (!!event.summary && event.summary !== kindLabel);
+  const title = showTitle
+    ? event.kind === ScheduledEventKind.Game && event.opponentName
       ? t('schedule.vs', { opponent: event.opponentName })
-      : event.summary || kindLabel;
+      : event.summary!
+    : null;
 
   const addressForMap =
     [event.venueName, event.location].filter(Boolean).join(', ') || event.location || event.venueName || '';
+
+  const detailRows = [
+    event.arriveAt ? { label: t('schedule.arrive'), value: timeLabel(event.arriveAt) } : null,
+    event.uniformName ? { label: t('schedule.uniform'), value: event.uniformName } : null,
+    event.opponentName && event.kind !== ScheduledEventKind.Game
+      ? { label: t('event.opponent'), value: event.opponentName }
+      : null,
+  ].filter(Boolean) as { label: string; value: string }[];
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ padding: spacing.lg }}>
@@ -94,19 +107,21 @@ export default function EventDetailScreen() {
         <View style={[styles.kindBadge, badgeStyle(event.kind)]}>
           <Text style={styles.kindBadgeText}>{kindLabel}</Text>
         </View>
-        <Text style={styles.title}>{title}</Text>
+        <Text style={styles.date}>
+          {longDate(event.startsAt)} · {timeLabel(event.startsAt)}
+        </Text>
+        {title ? <Text style={styles.title}>{title}</Text> : null}
         <Text style={styles.team}>{event.teamName}</Text>
         {event.isCancelled ? <Text style={styles.cancelled}>{t('schedule.cancelled')}</Text> : null}
       </View>
 
-      <View style={styles.card}>
-        <Row label={t('event.when')} value={`${longDate(event.startsAt)} · ${timeLabel(event.startsAt)}`} />
-        {event.arriveAt ? (
-          <Row label={t('schedule.arrive')} value={timeLabel(event.arriveAt)} />
-        ) : null}
-        {event.uniformName ? <Row label={t('schedule.uniform')} value={event.uniformName} /> : null}
-        {event.opponentName ? <Row label={t('event.opponent')} value={event.opponentName} /> : null}
-      </View>
+      {detailRows.length > 0 ? (
+        <View style={styles.card}>
+          {detailRows.map((r) => (
+            <Row key={r.label} label={r.label} value={r.value} />
+          ))}
+        </View>
+      ) : null}
 
       {addressForMap ? <LocationCard address={addressForMap} venueName={event.venueName ?? null} /> : null}
 
@@ -138,13 +153,12 @@ function Row({ label, value }: { label: string; value: string }) {
 function LocationCard({ address, venueName }: { address: string; venueName: string | null }) {
   const { t } = useTranslation();
   const encoded = encodeURIComponent(address);
-  const staticMapKey = ((Constants.expoConfig?.extra as Record<string, unknown> | undefined)?.googleMapsKey ?? '') as string;
-  const staticMapUrl = staticMapKey
-    ? `https://maps.googleapis.com/maps/api/staticmap?center=${encoded}&zoom=15&size=640x320&scale=2&markers=color:red|${encoded}&key=${staticMapKey}`
-    : null;
+  // Google Maps' public search URL renders a marker at the queried location and works cross-
+  // platform without an API key. Loaded in a WebView with taps disabled so the parent
+  // TouchableOpacity handles opening the native maps app on tap.
+  const embedUrl = `https://www.google.com/maps?q=${encoded}&z=15&output=embed`;
 
   const openMaps = useCallback(async () => {
-    // Universal Google Maps URL — Apple Maps handles it on iOS, Google Maps or default maps app on Android.
     const url = `https://www.google.com/maps/search/?api=1&query=${encoded}`;
     const canOpen = await Linking.canOpenURL(url);
     if (!canOpen) {
@@ -156,9 +170,25 @@ function LocationCard({ address, venueName }: { address: string; venueName: stri
 
   return (
     <TouchableOpacity style={styles.locationCard} activeOpacity={0.85} onPress={openMaps}>
-      {staticMapUrl ? (
-        <Image source={{ uri: staticMapUrl }} style={styles.mapImage} resizeMode="cover" />
-      ) : null}
+      <View style={styles.mapWrap} pointerEvents="none">
+        <WebView
+          source={{ uri: embedUrl }}
+          style={styles.mapWebview}
+          scrollEnabled={false}
+          scalesPageToFit
+          javaScriptEnabled
+          domStorageEnabled
+          startInLoadingState
+          renderLoading={() => (
+            <View style={styles.mapLoading}>
+              <ActivityIndicator color={colors.brand} />
+            </View>
+          )}
+          onError={() => {
+            /* WebView failing to load is non-fatal — the tappable card still opens external maps. */
+          }}
+        />
+      </View>
       <View style={styles.locationBody}>
         {venueName ? <Text style={styles.locationVenue}>{venueName}</Text> : null}
         <Text style={styles.locationAddress}>{address}</Text>
@@ -232,7 +262,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   kindBadgeText: { color: colors.white, fontSize: 11, fontWeight: '800', textTransform: 'uppercase' },
-  title: { fontSize: 22, fontWeight: '800', color: colors.text },
+  date: { fontSize: 20, fontWeight: '800', color: colors.text, marginBottom: spacing.xs },
+  title: { fontSize: 18, fontWeight: '700', color: colors.text, marginTop: spacing.xs },
   team: { fontSize: 15, color: colors.subtext, marginTop: spacing.xs },
   cancelled: { color: colors.danger, fontWeight: '800', marginTop: spacing.sm },
 
@@ -270,7 +301,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     marginBottom: spacing.lg,
   },
-  mapImage: { width: '100%', height: 180, backgroundColor: colors.border },
+  mapWrap: { height: 200, backgroundColor: colors.border },
+  mapWebview: { flex: 1, backgroundColor: 'transparent' },
+  mapLoading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   locationBody: { padding: spacing.lg },
   locationVenue: { fontSize: 16, fontWeight: '800', color: colors.text, marginBottom: 4 },
   locationAddress: { fontSize: 14, color: colors.subtext, marginBottom: spacing.md, lineHeight: 20 },

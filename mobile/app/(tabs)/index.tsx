@@ -47,9 +47,20 @@ export default function HomeScreen() {
 
   const upcoming = React.useMemo(() => {
     const now = new Date();
-    return (schedule.data ?? [])
+    const future = (schedule.data ?? [])
       .filter((e) => new Date(e.startsAt) >= now)
       .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
+    // Same practice can show up twice on the schedule when a kid is rostered on two teams that
+    // run their practices together — collapse those into a single card, keyed on start time +
+    // the player set so genuinely-different events at the same time (two siblings on two teams)
+    // still both surface.
+    const seen = new Set<string>();
+    return future.filter((e) => {
+      const key = `${e.startsAt}|${e.players.map((p) => p.playerId).sort().join(',')}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   }, [schedule.data]);
 
   const anyRefetching = invoices.isRefetching || announcements.isRefetching || schedule.isRefetching;
@@ -154,10 +165,17 @@ function UpcomingEventRow({ event, onPress }: { event: ScheduleEvent; onPress: (
       : event.kind === ScheduledEventKind.Miscellaneous
         ? t('schedule.event')
         : t('schedule.game');
-  const title =
-    event.kind === ScheduledEventKind.Game && event.opponentName
+  // Only surface a title line when there's something meaningful beyond the kind badge — for a
+  // plain practice with no admin-typed summary the badge already says "Practice", so a redundant
+  // "Practice" title just wastes vertical space.
+  const showTitle =
+    (event.kind === ScheduledEventKind.Game && !!event.opponentName) ||
+    (!!event.summary && event.summary !== kindLabel);
+  const title = showTitle
+    ? event.kind === ScheduledEventKind.Game && event.opponentName
       ? t('schedule.vs', { opponent: event.opponentName })
-      : event.summary || kindLabel;
+      : event.summary!
+    : null;
 
   return (
     <TouchableOpacity style={styles.upcomingRow} onPress={onPress} activeOpacity={0.85}>
@@ -172,9 +190,11 @@ function UpcomingEventRow({ event, onPress }: { event: ScheduleEvent; onPress: (
           </View>
           <Text style={styles.upcomingTime}>{timeLabel(event.startsAt)}</Text>
         </View>
-        <Text style={styles.upcomingTitle} numberOfLines={2}>
-          {title}
-        </Text>
+        {title ? (
+          <Text style={styles.upcomingTitle} numberOfLines={2}>
+            {title}
+          </Text>
+        ) : null}
         <Text style={styles.upcomingTeam} numberOfLines={1}>
           {event.teamName}
         </Text>
