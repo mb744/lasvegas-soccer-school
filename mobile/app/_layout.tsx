@@ -44,6 +44,8 @@ export default function RootLayout() {
               <Stack.Screen name="login" />
               <Stack.Screen name="(tabs)" />
               <Stack.Screen name="chat/[groupId]" options={{ headerShown: true, title: '' }} />
+              <Stack.Screen name="invoices/index" options={{ headerShown: true, title: '' }} />
+              <Stack.Screen name="invoices/[id]" options={{ headerShown: true, title: '' }} />
             </Stack>
           </AuthProvider>
         </QueryClientProvider>
