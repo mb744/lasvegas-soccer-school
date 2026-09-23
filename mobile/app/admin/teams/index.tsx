@@ -41,7 +41,7 @@ export default function AdminTeamsListScreen() {
         <FlatList
           data={data ?? []}
           keyExtractor={(t) => String(t.id)}
-          contentContainerStyle={{ padding: spacing.lg }}
+          contentContainerStyle={{ padding: spacing.lg, paddingBottom: 96 }}
           refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.brand} />}
           ListEmptyComponent={<Text style={styles.empty}>{t('admin.noTeams')}</Text>}
           renderItem={({ item }) => (
@@ -56,6 +56,14 @@ export default function AdminTeamsListScreen() {
           )}
         />
       )}
+
+      <TouchableOpacity
+        style={styles.fab}
+        onPress={() => router.push('/admin/teams/new')}
+        activeOpacity={0.85}
+      >
+        <Text style={styles.fabText}>+ {t('admin.newTeam')}</Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -77,4 +85,20 @@ const styles = StyleSheet.create({
   },
   rowName: { fontSize: 16, fontWeight: '700', color: colors.text },
   rowChevron: { fontSize: 22, color: colors.subtext },
+  fab: {
+    position: 'absolute',
+    left: spacing.lg,
+    right: spacing.lg,
+    bottom: spacing.lg,
+    backgroundColor: colors.brand,
+    borderRadius: 999,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 6,
+  },
+  fabText: { color: colors.white, fontSize: 15, fontWeight: '800' },
 });

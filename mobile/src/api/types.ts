@@ -224,3 +224,75 @@ export interface AdminChatGroupMember {
   role: number;
   addedAt: string;
 }
+
+export interface AdminPlayerOption {
+  id: number;
+  firstName: string;
+  lastName: string;
+  dateOfBirth: string;
+  parentName: string | null;
+}
+
+export interface AdminUniform {
+  id: number;
+  name: string;
+}
+
+export interface AdminVenue {
+  id: number;
+  name: string;
+  address: string | null;
+}
+
+/** Player row from GET /api/teams/{id} — richer than the mobile-admin roster row (has jersey #,
+ *  goalie flag, etc.) — matches the web admin TeamPlayer DTO. */
+export interface AdminTeamPlayerRow {
+  playerId: number;
+  playerFirstName: string;
+  playerLastName: string;
+  jerseyNumber: string | null;
+}
+
+export interface SaveTeamRequest {
+  name: string;
+  messageGroupId?: number | null;
+}
+
+export interface SaveTeamCoachRequest {
+  name: string;
+  email: string | null;
+  phone: string | null;
+  role: number;
+  language?: number;
+  hasWhatsApp?: boolean;
+  coachId?: number | null;
+}
+
+export interface SavePracticeRequest {
+  startsAt: string;
+  endsAt: string | null;
+  location: string | null;
+  summary: string | null;
+  notes: string | null;
+  venueId: number | null;
+  shoeType?: number;
+}
+
+export interface SaveGameRequest {
+  startsAt: string;
+  endsAt: string | null;
+  arriveAt: string | null;
+  opponentName: string | null;
+  isHome: boolean | null;
+  location: string | null;
+  summary: string | null;
+  notes: string | null;
+  uniformId: number | null;
+  venueId: number | null;
+  shoeType?: number;
+}
+
+export interface SaveChatGroupRequest {
+  title: string;
+  seedFromTeamId: number | null;
+}

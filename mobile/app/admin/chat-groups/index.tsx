@@ -41,7 +41,6 @@ export default function AdminChatGroupsListScreen() {
         <FlatList
           data={data ?? []}
           keyExtractor={(g) => String(g.id)}
-          contentContainerStyle={{ padding: spacing.lg }}
           refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.brand} />}
           ListEmptyComponent={<Text style={styles.empty}>{t('admin.noChatGroups')}</Text>}
           renderItem={({ item }) => (
@@ -60,8 +59,17 @@ export default function AdminChatGroupsListScreen() {
               <Text style={styles.rowChevron}>›</Text>
             </TouchableOpacity>
           )}
+          contentContainerStyle={{ padding: spacing.lg, paddingBottom: 96 }}
         />
       )}
+
+      <TouchableOpacity
+        style={styles.fab}
+        onPress={() => router.push('/admin/chat-groups/new')}
+        activeOpacity={0.85}
+      >
+        <Text style={styles.fabText}>+ {t('admin.newChatGroup')}</Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -83,4 +91,20 @@ const styles = StyleSheet.create({
   rowName: { fontSize: 16, fontWeight: '700', color: colors.text },
   rowMeta: { fontSize: 13, color: colors.subtext, marginTop: 2 },
   rowChevron: { fontSize: 22, color: colors.subtext, marginLeft: spacing.sm },
+  fab: {
+    position: 'absolute',
+    left: spacing.lg,
+    right: spacing.lg,
+    bottom: spacing.lg,
+    backgroundColor: colors.brand,
+    borderRadius: 999,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 6,
+  },
+  fabText: { color: colors.white, fontSize: 15, fontWeight: '800' },
 });

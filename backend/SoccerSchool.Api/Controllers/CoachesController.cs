@@ -17,7 +17,7 @@ namespace SoccerSchool.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/coaches")]
-[Authorize(Roles = Roles.Admin)]
+[Authorize(Roles = Roles.Admin, AuthenticationSchemes = AuthSchemes.CookieOrMobileJwt)]
 public class CoachesController : ControllerBase
 {
     private readonly AppDbContext _db;

@@ -3,7 +3,10 @@ import type {
   AdminAnnouncement,
   AdminChatGroup,
   AdminEvent,
+  AdminPlayerOption,
   AdminTeamDetail,
+  AdminUniform,
+  AdminVenue,
   Announcement,
   AttendanceStatus,
   BlockedUser,
@@ -15,6 +18,11 @@ import type {
   Me,
   Player,
   SaveAnnouncementRequest,
+  SaveChatGroupRequest,
+  SaveGameRequest,
+  SavePracticeRequest,
+  SaveTeamCoachRequest,
+  SaveTeamRequest,
   ScheduleEvent,
   TeamOption,
   TokenResponse,
@@ -189,4 +197,136 @@ export async function fetchAdminChatGroups(): Promise<AdminChatGroup[]> {
 
 export async function postAdminChatMessage(groupId: number, body: string): Promise<void> {
   await api.post(`/admin/chat-groups/${groupId}/messages`, { body });
+}
+
+export async function createChatGroup(req: SaveChatGroupRequest): Promise<AdminChatGroup> {
+  const { data } = await api.post<AdminChatGroup>('/admin/chat-groups', req);
+  return data;
+}
+
+export async function updateChatGroup(id: number, req: SaveChatGroupRequest): Promise<AdminChatGroup> {
+  const { data } = await api.put<AdminChatGroup>(`/admin/chat-groups/${id}`, req);
+  return data;
+}
+
+export async function deleteChatGroup(id: number): Promise<void> {
+  await api.delete(`/admin/chat-groups/${id}`);
+}
+
+export async function addChatGroupMember(groupId: number, parentAccountId: number): Promise<AdminChatGroup> {
+  const { data } = await api.post<AdminChatGroup>(`/admin/chat-groups/${groupId}/members`, { parentAccountId });
+  return data;
+}
+
+export async function removeChatGroupMember(groupId: number, memberId: number): Promise<AdminChatGroup> {
+  const { data } = await api.delete<AdminChatGroup>(`/admin/chat-groups/${groupId}/members/${memberId}`);
+  return data;
+}
+
+// ---- Admin: chat parent picker ----
+
+export interface AdminChatParentSearch {
+  parentAccountId: number;
+  name: string;
+  email: string | null;
+  phone: string | null;
+}
+
+export async function searchChatParents(q: string, limit = 20): Promise<AdminChatParentSearch[]> {
+  const params = new URLSearchParams();
+  if (q) params.set('q', q);
+  params.set('limit', String(limit));
+  const { data } = await api.get<AdminChatParentSearch[]>(`/admin/chat-groups/search-parents?${params.toString()}`);
+  return data;
+}
+
+// ---- Admin: teams CRUD (reuses the web endpoints — dual auth) ----
+
+// Team create lives under /api/schedule/teams (historical — the sync surface owns team CRUD).
+export async function createTeam(req: SaveTeamRequest): Promise<{ id: number; name: string }> {
+  const { data } = await api.post<{ id: number; name: string }>('/schedule/teams', req);
+  return data;
+}
+
+export async function updateTeam(id: number, req: SaveTeamRequest): Promise<{ id: number; name: string }> {
+  const { data } = await api.put<{ id: number; name: string }>(`/teams/${id}`, req);
+  return data;
+}
+
+export async function deleteTeam(id: number): Promise<void> {
+  await api.delete(`/teams/${id}`);
+}
+
+export async function addTeamPlayer(teamId: number, playerId: number): Promise<void> {
+  await api.post(`/teams/${teamId}/roster`, { playerId });
+}
+
+export async function removeTeamPlayer(teamId: number, playerId: number): Promise<void> {
+  await api.delete(`/teams/${teamId}/roster/${playerId}`);
+}
+
+export async function addTeamCoach(teamId: number, req: SaveTeamCoachRequest): Promise<void> {
+  await api.post(`/teams/${teamId}/coaches`, req);
+}
+
+export async function updateTeamCoach(teamId: number, coachRowId: number, req: SaveTeamCoachRequest): Promise<void> {
+  await api.put(`/teams/${teamId}/coaches/${coachRowId}`, req);
+}
+
+export async function removeTeamCoach(teamId: number, coachRowId: number): Promise<void> {
+  await api.delete(`/teams/${teamId}/coaches/${coachRowId}`);
+}
+
+export async function fetchAdminPlayers(q?: string): Promise<AdminPlayerOption[]> {
+  const params = q ? `?q=${encodeURIComponent(q)}` : '';
+  const { data } = await api.get<AdminPlayerOption[]>(`/mobile/admin/players${params}`);
+  return data;
+}
+
+export async function fetchAdminUniforms(): Promise<AdminUniform[]> {
+  const { data } = await api.get<AdminUniform[]>('/mobile/admin/uniforms');
+  return data;
+}
+
+export async function fetchAdminVenues(): Promise<AdminVenue[]> {
+  const { data } = await api.get<AdminVenue[]>('/mobile/admin/venues');
+  return data;
+}
+
+// ---- Admin: events CRUD (reuses the web endpoints — dual auth on ScheduleController) ----
+
+export async function createPractice(teamId: number, req: SavePracticeRequest): Promise<void> {
+  await api.post(`/schedule/teams/${teamId}/practices`, req);
+}
+
+export async function updatePractice(id: number, req: SavePracticeRequest): Promise<void> {
+  await api.put(`/schedule/practices/${id}`, req);
+}
+
+export async function deletePractice(id: number): Promise<void> {
+  await api.delete(`/schedule/practices/${id}`);
+}
+
+export async function createGame(teamId: number, req: SaveGameRequest): Promise<void> {
+  await api.post(`/schedule/teams/${teamId}/games`, req);
+}
+
+export async function updateGame(id: number, req: SaveGameRequest): Promise<void> {
+  await api.put(`/schedule/games/${id}`, req);
+}
+
+export async function deleteGame(id: number): Promise<void> {
+  await api.delete(`/schedule/games/${id}`);
+}
+
+export async function createMiscEvent(teamId: number, req: SavePracticeRequest): Promise<void> {
+  await api.post(`/schedule/teams/${teamId}/misc-events`, req);
+}
+
+export async function updateMiscEvent(id: number, req: SavePracticeRequest): Promise<void> {
+  await api.put(`/schedule/misc-events/${id}`, req);
+}
+
+export async function deleteMiscEvent(id: number): Promise<void> {
+  await api.delete(`/schedule/misc-events/${id}`);
 }

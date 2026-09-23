@@ -14,7 +14,7 @@ namespace SoccerSchool.Api.Controllers.Mobile;
 /// </summary>
 [ApiController]
 [Route("api/mobile/admin")]
-[Authorize(Roles = Roles.Admin, AuthenticationSchemes = AuthSchemes.MobileJwt)]
+[Authorize(Roles = Roles.Admin, AuthenticationSchemes = AuthSchemes.CookieOrMobileJwt)]
 public class MobileAdminController : ControllerBase
 {
     private readonly AppDbContext _db;
@@ -114,6 +114,53 @@ public class MobileAdminController : ControllerBase
     private static MobileAdminEventDto ToEventDto(ScheduledGame g) => new(
         g.Id, g.TeamId, g.Team?.Name ?? string.Empty, g.Kind, g.StartsAt, g.ArriveAt,
         g.OpponentName, g.Location, null, g.IsCancelled);
+
+    /// <summary>All players an admin can pick from when adding to a team roster. Read-only; player
+    /// details themselves are managed via the web admin.</summary>
+    [HttpGet("players")]
+    public async Task<ActionResult<IEnumerable<MobileAdminPlayerOptionDto>>> Players(
+        CancellationToken ct, [FromQuery] string? q = null)
+    {
+        var query = _db.Players.AsQueryable();
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var needle = q.Trim();
+            query = query.Where(p =>
+                EF.Functions.Like(p.FirstName, $"%{needle}%") ||
+                EF.Functions.Like(p.LastName, $"%{needle}%") ||
+                EF.Functions.Like(p.FirstName + " " + p.LastName, $"%{needle}%"));
+        }
+        var rows = await query
+            .OrderBy(p => p.LastName).ThenBy(p => p.FirstName)
+            .Take(50)
+            .Select(p => new MobileAdminPlayerOptionDto(
+                p.Id, p.FirstName, p.LastName, p.DateOfBirth,
+                p.ParentAccount != null ? (p.ParentAccount!.FirstName + " " + p.ParentAccount.LastName).Trim() : null))
+            .ToListAsync(ct);
+        return Ok(rows);
+    }
+
+    /// <summary>Every uniform for the game form's uniform picker.</summary>
+    [HttpGet("uniforms")]
+    public async Task<ActionResult<IEnumerable<MobileAdminUniformDto>>> Uniforms(CancellationToken ct)
+    {
+        var rows = await _db.Uniforms
+            .OrderBy(u => u.Name)
+            .Select(u => new MobileAdminUniformDto(u.Id, u.Name))
+            .ToListAsync(ct);
+        return Ok(rows);
+    }
+
+    /// <summary>Every venue for the event forms' venue picker.</summary>
+    [HttpGet("venues")]
+    public async Task<ActionResult<IEnumerable<MobileAdminVenueDto>>> Venues(CancellationToken ct)
+    {
+        var rows = await _db.Venues
+            .OrderBy(v => v.Name)
+            .Select(v => new MobileAdminVenueDto(v.Id, v.Name, v.Address))
+            .ToListAsync(ct);
+        return Ok(rows);
+    }
 }
 
 public record MobileTeamOptionDto(int Id, string Name);
@@ -150,3 +197,13 @@ public record MobileAdminEventDto(
     string? Location,
     string? VenueName,
     bool IsCancelled);
+
+public record MobileAdminPlayerOptionDto(
+    int Id,
+    string FirstName,
+    string LastName,
+    DateOnly DateOfBirth,
+    string? ParentName);
+
+public record MobileAdminUniformDto(int Id, string Name);
+public record MobileAdminVenueDto(int Id, string Name, string? Address);

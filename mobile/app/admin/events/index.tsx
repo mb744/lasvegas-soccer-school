@@ -9,7 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Stack, useFocusEffect } from 'expo-router';
+import { Stack, useFocusEffect, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { cancelAdminEvent, fetchAdminEvents, uncancelAdminEvent } from '../../../src/api/endpoints';
@@ -20,6 +20,7 @@ import { colors, radius, spacing } from '../../../src/theme';
 
 export default function AdminEventsListScreen() {
   const { t } = useTranslation();
+  const router = useRouter();
   const qc = useQueryClient();
 
   const { data, isLoading, isRefetching, refetch } = useQuery({
@@ -70,17 +71,39 @@ export default function AdminEventsListScreen() {
         <FlatList
           data={data ?? []}
           keyExtractor={(e) => String(e.id)}
-          contentContainerStyle={{ padding: spacing.lg }}
+          contentContainerStyle={{ padding: spacing.lg, paddingBottom: 96 }}
           refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.brand} />}
           ListEmptyComponent={<Text style={styles.empty}>{t('admin.noEvents')}</Text>}
-          renderItem={({ item }) => <EventRow event={item} onToggleCancel={() => confirmCancel(item)} />}
+          renderItem={({ item }) => (
+            <EventRow
+              event={item}
+              onPress={() => router.push(`/admin/events/${item.id}`)}
+              onToggleCancel={() => confirmCancel(item)}
+            />
+          )}
         />
       )}
+
+      <TouchableOpacity
+        style={styles.fab}
+        onPress={() => router.push('/admin/events/new')}
+        activeOpacity={0.85}
+      >
+        <Text style={styles.fabText}>+ {t('admin.newEvent')}</Text>
+      </TouchableOpacity>
     </View>
   );
 }
 
-function EventRow({ event, onToggleCancel }: { event: AdminEvent; onToggleCancel: () => void }) {
+function EventRow({
+  event,
+  onPress,
+  onToggleCancel,
+}: {
+  event: AdminEvent;
+  onPress: () => void;
+  onToggleCancel: () => void;
+}) {
   const { t } = useTranslation();
   const kindLabel =
     event.kind === ScheduledEventKind.Practice
@@ -94,7 +117,11 @@ function EventRow({ event, onToggleCancel }: { event: AdminEvent; onToggleCancel
       : kindLabel;
 
   return (
-    <View style={[styles.card, event.isCancelled && styles.cardCancelled]}>
+    <TouchableOpacity
+      style={[styles.card, event.isCancelled && styles.cardCancelled]}
+      onPress={onPress}
+      activeOpacity={0.85}
+    >
       <View style={styles.cardHead}>
         <View style={[styles.kindBadge, badgeStyle(event.kind)]}>
           <Text style={styles.kindBadgeText}>{kindLabel}</Text>
@@ -109,12 +136,15 @@ function EventRow({ event, onToggleCancel }: { event: AdminEvent; onToggleCancel
         <Text style={styles.meta}>📍 {event.venueName ?? event.location}</Text>
       ) : null}
       {event.isCancelled ? <Text style={styles.cancelled}>{t('schedule.cancelled')}</Text> : null}
-      <TouchableOpacity style={[styles.actionBtn, event.isCancelled && styles.actionBtnUncancel]} onPress={onToggleCancel}>
+      <TouchableOpacity
+        style={[styles.actionBtn, event.isCancelled && styles.actionBtnUncancel]}
+        onPress={(e) => { e.stopPropagation?.(); onToggleCancel(); }}
+      >
         <Text style={styles.actionBtnText}>
           {event.isCancelled ? t('admin.uncancelEvent') : t('admin.cancelEvent')}
         </Text>
       </TouchableOpacity>
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -156,4 +186,21 @@ const styles = StyleSheet.create({
   },
   actionBtnUncancel: { borderColor: colors.brand },
   actionBtnText: { color: colors.text, fontSize: 13, fontWeight: '800', textTransform: 'uppercase' },
+
+  fab: {
+    position: 'absolute',
+    left: spacing.lg,
+    right: spacing.lg,
+    bottom: spacing.lg,
+    backgroundColor: colors.brand,
+    borderRadius: 999,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 6,
+  },
+  fabText: { color: colors.white, fontSize: 15, fontWeight: '800' },
 });

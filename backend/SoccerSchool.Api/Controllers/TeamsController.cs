@@ -19,7 +19,7 @@ namespace SoccerSchool.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/teams")]
-[Authorize(Roles = Roles.Admin)]
+[Authorize(Roles = Roles.Admin, AuthenticationSchemes = AuthSchemes.CookieOrMobileJwt)]
 public class TeamsController : ControllerBase
 {
     private readonly AppDbContext _db;
