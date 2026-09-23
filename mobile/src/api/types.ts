@@ -142,3 +142,29 @@ export interface Announcement {
   teamName: string | null;
   createdAt: string;
 }
+
+/** Admin-facing announcement — includes edit fields the parent-facing DTO omits. */
+export interface AdminAnnouncement {
+  id: number;
+  title: string;
+  body: string;
+  teamId: number | null;
+  teamName: string | null;
+  endsAt: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SaveAnnouncementRequest {
+  title: string;
+  body: string;
+  teamId: number | null;
+  endsAt: string | null;
+  isActive: boolean;
+}
+
+export interface TeamOption {
+  id: number;
+  name: string;
+}

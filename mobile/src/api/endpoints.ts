@@ -1,5 +1,6 @@
 import { api } from './client';
 import type {
+  AdminAnnouncement,
   Announcement,
   AttendanceStatus,
   BlockedUser,
@@ -10,7 +11,9 @@ import type {
   InvoiceSummary,
   Me,
   Player,
+  SaveAnnouncementRequest,
   ScheduleEvent,
+  TeamOption,
   TokenResponse,
 } from './types';
 
@@ -122,5 +125,33 @@ export async function fetchInvoice(id: number): Promise<InvoiceDetail> {
 
 export async function fetchAnnouncements(): Promise<Announcement[]> {
   const { data } = await api.get<Announcement[]>('/mobile/announcements');
+  return data;
+}
+
+// ---- Admin: announcements CRUD (mobile admin composer) ----
+
+export async function fetchAdminAnnouncements(): Promise<AdminAnnouncement[]> {
+  const { data } = await api.get<AdminAnnouncement[]>('/announcements');
+  return data;
+}
+
+export async function createAnnouncement(req: SaveAnnouncementRequest): Promise<AdminAnnouncement> {
+  const { data } = await api.post<AdminAnnouncement>('/announcements', req);
+  return data;
+}
+
+export async function updateAnnouncement(id: number, req: SaveAnnouncementRequest): Promise<AdminAnnouncement> {
+  const { data } = await api.put<AdminAnnouncement>(`/announcements/${id}`, req);
+  return data;
+}
+
+export async function deleteAnnouncement(id: number): Promise<void> {
+  await api.delete(`/announcements/${id}`);
+}
+
+// ---- Admin: reference lists ----
+
+export async function fetchAdminTeams(): Promise<TeamOption[]> {
+  const { data } = await api.get<TeamOption[]>('/mobile/admin/teams');
   return data;
 }

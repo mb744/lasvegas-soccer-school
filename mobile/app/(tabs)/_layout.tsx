@@ -60,6 +60,16 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="admin"
+        options={{
+          // href=null keeps the tab off the tab bar entirely for non-admins; expo-router still
+          // resolves the route file so navigation from any admin-triggered link keeps working.
+          href: me?.isAdmin ? undefined : null,
+          title: t('tabs.admin'),
+          tabBarIcon: ({ color }) => <TabIcon icon="🛠️" color={color} />,
+        }}
+      />
+      <Tabs.Screen
         name="profile"
         options={{
           title: t('tabs.profile'),
