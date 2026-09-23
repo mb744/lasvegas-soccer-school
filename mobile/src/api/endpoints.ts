@@ -1,6 +1,9 @@
 import { api } from './client';
 import type {
   AdminAnnouncement,
+  AdminChatGroup,
+  AdminEvent,
+  AdminTeamDetail,
   Announcement,
   AttendanceStatus,
   BlockedUser,
@@ -154,4 +157,36 @@ export async function deleteAnnouncement(id: number): Promise<void> {
 export async function fetchAdminTeams(): Promise<TeamOption[]> {
   const { data } = await api.get<TeamOption[]>('/mobile/admin/teams');
   return data;
+}
+
+export async function fetchAdminTeamDetail(id: number): Promise<AdminTeamDetail> {
+  const { data } = await api.get<AdminTeamDetail>(`/mobile/admin/teams/${id}`);
+  return data;
+}
+
+export async function fetchAdminEvents(teamId?: number): Promise<AdminEvent[]> {
+  const params = teamId ? `?teamId=${teamId}` : '';
+  const { data } = await api.get<AdminEvent[]>(`/mobile/admin/events${params}`);
+  return data;
+}
+
+export async function cancelAdminEvent(id: number): Promise<AdminEvent> {
+  const { data } = await api.post<AdminEvent>(`/mobile/admin/events/${id}/cancel`);
+  return data;
+}
+
+export async function uncancelAdminEvent(id: number): Promise<AdminEvent> {
+  const { data } = await api.post<AdminEvent>(`/mobile/admin/events/${id}/uncancel`);
+  return data;
+}
+
+// ---- Admin: chat groups (uses same endpoints as the web admin) ----
+
+export async function fetchAdminChatGroups(): Promise<AdminChatGroup[]> {
+  const { data } = await api.get<AdminChatGroup[]>('/admin/chat-groups');
+  return data;
+}
+
+export async function postAdminChatMessage(groupId: number, body: string): Promise<void> {
+  await api.post(`/admin/chat-groups/${groupId}/messages`, { body });
 }

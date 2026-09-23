@@ -168,3 +168,59 @@ export interface TeamOption {
   id: number;
   name: string;
 }
+
+export interface AdminTeamDetail {
+  id: number;
+  name: string;
+  players: AdminTeamPlayer[];
+  coaches: AdminTeamCoach[];
+}
+
+export interface AdminTeamPlayer {
+  id: number;
+  firstName: string;
+  lastName: string;
+  dateOfBirth: string;
+  parentName: string | null;
+  parentPhone: string | null;
+}
+
+export interface AdminTeamCoach {
+  id: number;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  role: string;
+}
+
+export interface AdminEvent {
+  id: number;
+  teamId: number;
+  teamName: string;
+  kind: ScheduledEventKind;
+  startsAt: string;
+  arriveAt: string | null;
+  opponentName: string | null;
+  location: string | null;
+  venueName: string | null;
+  isCancelled: boolean;
+}
+
+export interface AdminChatGroup {
+  id: number;
+  title: string;
+  teamId: number | null;
+  teamName: string | null;
+  memberCount: number;
+  messageCount: number;
+  createdAt: string;
+  members: AdminChatGroupMember[];
+}
+
+export interface AdminChatGroupMember {
+  id: number;
+  parentAccountId: number | null;
+  displayName: string;
+  role: number;
+  addedAt: string;
+}

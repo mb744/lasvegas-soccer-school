@@ -1,214 +1,91 @@
 import React from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  FlatList,
-  RefreshControl,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { deleteAnnouncement, fetchAdminAnnouncements } from '../../src/api/endpoints';
 import { useAuth } from '../../src/auth/AuthContext';
-import type { AdminAnnouncement } from '../../src/api/types';
-import { longDate } from '../../src/format';
 import { colors, radius, spacing } from '../../src/theme';
 
-/**
- * Admin landing tab — first-pass surface for on-the-go moderation. Right now: full CRUD over
- * the parent-facing announcements. Follow-up passes can layer in broadcasts, roster snapshots,
- * attendance overview, and invoice summaries.
- */
-export default function AdminScreen() {
+/** Admin landing tab — hub of tiles that open into each section screen. */
+export default function AdminHubScreen() {
   const { t } = useTranslation();
   const { me } = useAuth();
   const router = useRouter();
-  const qc = useQueryClient();
-
-  const { data, isLoading, isRefetching, refetch } = useQuery({
-    queryKey: ['adminAnnouncements'],
-    queryFn: fetchAdminAnnouncements,
-    enabled: !!me?.isAdmin,
-  });
-
-  useFocusEffect(
-    React.useCallback(() => {
-      void refetch();
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []),
-  );
-
-  const remove = (row: AdminAnnouncement) => {
-    Alert.alert(
-      t('admin.deleteConfirmTitle'),
-      t('admin.deleteConfirmMessage'),
-      [
-        { text: t('common.cancel'), style: 'cancel' },
-        {
-          text: t('admin.delete'),
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteAnnouncement(row.id);
-              await qc.invalidateQueries({ queryKey: ['adminAnnouncements'] });
-              await qc.invalidateQueries({ queryKey: ['announcements'] });
-            } catch {
-              // No-op — refetch stays out of the way. Admin can retry.
-            }
-          },
-        },
-      ],
-      { cancelable: true },
-    );
-  };
 
   if (!me?.isAdmin) return null;
 
-  return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>{t('admin.announcements')}</Text>
-        <Text style={styles.headerBlurb}>{t('admin.announcementsBlurb')}</Text>
-      </View>
-
-      {isLoading ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={colors.brand} />
-        </View>
-      ) : (
-        <FlatList
-          data={data ?? []}
-          keyExtractor={(a) => String(a.id)}
-          contentContainerStyle={{ padding: spacing.lg, paddingBottom: 96 }}
-          refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.brand} />}
-          ListEmptyComponent={<Text style={styles.empty}>{t('admin.noAnnouncements')}</Text>}
-          renderItem={({ item }) => (
-            <AnnouncementRow
-              row={item}
-              onEdit={() => router.push(`/admin/announcements/${item.id}`)}
-              onDelete={() => remove(item)}
-            />
-          )}
-        />
-      )}
-
-      <TouchableOpacity
-        style={styles.fab}
-        onPress={() => router.push('/admin/announcements/new')}
-        activeOpacity={0.85}
-      >
-        <Text style={styles.fabText}>+ {t('admin.newAnnouncement')}</Text>
-      </TouchableOpacity>
-    </View>
-  );
-}
-
-function AnnouncementRow({
-  row,
-  onEdit,
-  onDelete,
-}: {
-  row: AdminAnnouncement;
-  onEdit: () => void;
-  onDelete: () => void;
-}) {
-  const { t } = useTranslation();
-  const expired = row.endsAt ? new Date(row.endsAt) < new Date() : false;
-  const audience = row.teamName ? t('admin.audienceTeam', { team: row.teamName }) : t('admin.audienceEveryone');
+  const tiles: { key: string; icon: string; label: string; blurb: string; path: string }[] = [
+    {
+      key: 'announcements',
+      icon: '📣',
+      label: t('admin.hubAnnouncements'),
+      blurb: t('admin.hubAnnouncementsBlurb'),
+      path: '/admin/announcements',
+    },
+    {
+      key: 'teams',
+      icon: '⚽',
+      label: t('admin.hubTeams'),
+      blurb: t('admin.hubTeamsBlurb'),
+      path: '/admin/teams',
+    },
+    {
+      key: 'events',
+      icon: '📅',
+      label: t('admin.hubEvents'),
+      blurb: t('admin.hubEventsBlurb'),
+      path: '/admin/events',
+    },
+    {
+      key: 'chatGroups',
+      icon: '💭',
+      label: t('admin.hubChatGroups'),
+      blurb: t('admin.hubChatGroupsBlurb'),
+      path: '/admin/chat-groups',
+    },
+  ];
 
   return (
-    <TouchableOpacity
-      style={[styles.card, (!row.isActive || expired) && styles.cardMuted]}
-      onPress={onEdit}
-      onLongPress={onDelete}
-      activeOpacity={0.85}
-      delayLongPress={400}
-    >
-      <View style={styles.cardHeader}>
-        <Text style={styles.cardTitle} numberOfLines={2}>
-          {row.title}
-        </Text>
-        <View style={styles.cardBadges}>
-          {!row.isActive ? (
-            <View style={[styles.badge, styles.badgeMuted]}>
-              <Text style={styles.badgeText}>{t('admin.hidden')}</Text>
-            </View>
-          ) : null}
-          {expired ? (
-            <View style={[styles.badge, styles.badgeExpired]}>
-              <Text style={styles.badgeText}>{t('admin.expired')}</Text>
-            </View>
-          ) : null}
-        </View>
-      </View>
-      <Text style={styles.cardBody} numberOfLines={3}>
-        {row.body}
-      </Text>
-      <View style={styles.cardFooter}>
-        <Text style={styles.cardMeta}>{audience}</Text>
-        <Text style={styles.cardMeta}>{longDate(row.createdAt)}</Text>
-      </View>
-    </TouchableOpacity>
+    <ScrollView style={styles.container} contentContainerStyle={{ padding: spacing.lg }}>
+      <Text style={styles.title}>{t('admin.title')}</Text>
+      <Text style={styles.subtitle}>{t('admin.hubSubtitle')}</Text>
+
+      {tiles.map((tile) => (
+        <TouchableOpacity
+          key={tile.key}
+          style={styles.tile}
+          onPress={() => router.push(tile.path as never)}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.tileIcon}>{tile.icon}</Text>
+          <View style={styles.tileBody}>
+            <Text style={styles.tileLabel}>{tile.label}</Text>
+            <Text style={styles.tileBlurb}>{tile.blurb}</Text>
+          </View>
+          <Text style={styles.tileChevron}>›</Text>
+        </TouchableOpacity>
+      ))}
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  header: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.sm,
-    backgroundColor: colors.bg,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  headerTitle: { fontSize: 20, fontWeight: '800', color: colors.text },
-  headerBlurb: { fontSize: 13, color: colors.subtext, marginTop: 4, lineHeight: 18 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  empty: { textAlign: 'center', color: colors.subtext, marginTop: spacing.xl, fontSize: 15 },
+  title: { fontSize: 24, fontWeight: '800', color: colors.text, marginBottom: spacing.xs },
+  subtitle: { fontSize: 14, color: colors.subtext, marginBottom: spacing.lg, lineHeight: 20 },
 
-  card: {
+  tile: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: colors.card,
     borderRadius: radius.lg,
-    borderLeftWidth: 4,
-    borderLeftColor: colors.accent,
-    borderTopWidth: 1,
-    borderRightWidth: 1,
-    borderBottomWidth: 1,
+    borderWidth: 1,
     borderColor: colors.border,
     padding: spacing.lg,
-    marginBottom: spacing.sm,
+    marginBottom: spacing.md,
   },
-  cardMuted: { opacity: 0.55 },
-  cardHeader: { flexDirection: 'row', alignItems: 'flex-start' },
-  cardTitle: { flex: 1, fontSize: 16, fontWeight: '800', color: colors.text, marginRight: spacing.sm },
-  cardBadges: { flexDirection: 'row', gap: 4 },
-  badge: { paddingHorizontal: spacing.sm, paddingVertical: 2, borderRadius: radius.sm },
-  badgeMuted: { backgroundColor: colors.subtext },
-  badgeExpired: { backgroundColor: colors.warning },
-  badgeText: { color: colors.white, fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
-  cardBody: { fontSize: 14, color: colors.text, marginTop: spacing.xs, lineHeight: 20 },
-  cardFooter: { flexDirection: 'row', justifyContent: 'space-between', marginTop: spacing.sm },
-  cardMeta: { fontSize: 12, color: colors.subtext },
-
-  fab: {
-    position: 'absolute',
-    left: spacing.lg,
-    right: spacing.lg,
-    bottom: spacing.lg,
-    backgroundColor: colors.brand,
-    borderRadius: 999,
-    paddingVertical: spacing.md,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    elevation: 6,
-  },
-  fabText: { color: colors.white, fontSize: 15, fontWeight: '800' },
+  tileIcon: { fontSize: 28, marginRight: spacing.md },
+  tileBody: { flex: 1 },
+  tileLabel: { fontSize: 16, fontWeight: '800', color: colors.text },
+  tileBlurb: { fontSize: 13, color: colors.subtext, marginTop: 2, lineHeight: 18 },
+  tileChevron: { fontSize: 24, color: colors.subtext, marginLeft: spacing.sm },
 });
