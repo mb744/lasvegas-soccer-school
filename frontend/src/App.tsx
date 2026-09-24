@@ -17,9 +17,7 @@ import { AdminInvoicesPage } from './pages/admin/InvoicesPage'
 import { AdminHostedTournamentsPage } from './pages/admin/HostedTournamentsPage'
 import { AdminChatGroupsPage } from './pages/admin/ChatGroupsPage'
 import { AdminAnnouncementsPage } from './pages/admin/AnnouncementsPage'
-import { AdminDrillsPage } from './pages/admin/DrillsPage'
 import { TournamentPublicPage } from './pages/TournamentPublicPage'
-import { ResetPlayerPasswordPage } from './pages/ResetPlayerPasswordPage'
 import { LoginPage } from './pages/LoginPage'
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage'
 import { ResetPasswordPage } from './pages/ResetPasswordPage'
@@ -115,12 +113,7 @@ export default function App() {
             path="/admin/announcements"
             element={<RequireAuth adminOnly><AdminAnnouncementsPage /></RequireAuth>}
           />
-          <Route
-            path="/admin/drills"
-            element={<RequireAuth adminOnly><AdminDrillsPage /></RequireAuth>}
-          />
           <Route path="/tournament/:slug" element={<TournamentPublicPage />} />
-          <Route path="/reset-player-password" element={<ResetPlayerPasswordPage />} />
           <Route path="*" element={<LandingPage />} />
         </Routes>
       </AuthProvider>

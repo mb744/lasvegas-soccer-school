@@ -1,13 +1,5 @@
 import axios from 'axios'
 import type {
-  AdminDrill,
-  AdminDrillAssignment,
-  CreateDrillAssignmentRequest,
-  DrillTargetOptions,
-  PlayerPasswordResetInfo,
-  SaveDrillRequest,
-} from './types'
-import type {
   AddMessageGroupMemberRequest,
   BroadcastDetail,
   BroadcastSummary,
@@ -1265,47 +1257,6 @@ export const Api = {
   },
   async deleteInvitedTeam(id: number) {
     await api.delete(`/admin/invited-teams/${id}`)
-  },
-
-  // --- Daily Training: admin drills + assignments ---
-  async listDrills(includeArchived = false) {
-    const r = await api.get<AdminDrill[]>(`/admin/drills${includeArchived ? '?includeArchived=true' : ''}`)
-    return r.data
-  },
-  async createDrill(payload: SaveDrillRequest) {
-    const r = await api.post<AdminDrill>('/admin/drills', payload)
-    return r.data
-  },
-  async updateDrill(id: number, payload: SaveDrillRequest) {
-    const r = await api.put<AdminDrill>(`/admin/drills/${id}`, payload)
-    return r.data
-  },
-  async deleteDrill(id: number) {
-    await api.delete(`/admin/drills/${id}`)
-  },
-  async listDrillAssignments(drillId?: number) {
-    const r = await api.get<AdminDrillAssignment[]>(`/admin/drills/assignments${drillId ? `?drillId=${drillId}` : ''}`)
-    return r.data
-  },
-  async createDrillAssignment(payload: CreateDrillAssignmentRequest) {
-    const r = await api.post<AdminDrillAssignment>('/admin/drills/assignments', payload)
-    return r.data
-  },
-  async deleteDrillAssignment(id: number) {
-    await api.delete(`/admin/drills/assignments/${id}`)
-  },
-  async drillTargetOptions() {
-    const r = await api.get<DrillTargetOptions>('/admin/drills/targets')
-    return r.data
-  },
-
-  // --- Daily Training: parent resets a child's password from the emailed link (no login) ---
-  async playerPasswordResetInfo(token: string) {
-    const r = await api.get<PlayerPasswordResetInfo>(`/public/player-password-reset?token=${encodeURIComponent(token)}`)
-    return r.data
-  },
-  async resetPlayerPassword(token: string, newPassword: string) {
-    await api.post('/public/player-password-reset', { token, newPassword })
   },
 }
 
