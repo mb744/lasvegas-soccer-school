@@ -192,6 +192,7 @@ export default function AdminChatGroupDetailScreen() {
               <View key={m.id} style={styles.memberRow}>
                 <Text style={{ flex: 1, color: colors.text }}>{m.displayName}</Text>
                 {m.role === 1 ? <Text style={styles.adminBadge}>{t('admin.admin')}</Text> : null}
+                {m.isCoach ? <Text style={styles.coachBadge}>{t('admin.coach')}</Text> : null}
                 <TouchableOpacity onPress={() => removeMemberMut.mutate(m.id)}>
                   <Text style={styles.removeText}>✕</Text>
                 </TouchableOpacity>
@@ -325,6 +326,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   adminBadge: { color: colors.accent, fontSize: 11, fontWeight: '800', textTransform: 'uppercase' },
+  coachBadge: { color: colors.brand, fontSize: 11, fontWeight: '800', textTransform: 'uppercase' },
   removeText: { color: colors.danger, fontSize: 18, fontWeight: '800' },
   primaryBtn: {
     marginTop: spacing.md,

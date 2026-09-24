@@ -13,13 +13,15 @@ import { WebView } from 'react-native-webview';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { fetchSchedule, setAttendance } from '../../src/api/endpoints';
+import { fetchSchedule, fetchStaffEventAttendance, setAttendance } from '../../src/api/endpoints';
 import {
   AttendanceStatus,
   ScheduledEventKind,
   type EventPlayer,
   type ScheduleEvent,
+  type StaffEventAttendance,
 } from '../../src/api/types';
+import { useAuth } from '../../src/auth/AuthContext';
 import { longDate, timeLabel } from '../../src/format';
 import { colors, radius, spacing } from '../../src/theme';
 
@@ -29,11 +31,28 @@ export default function EventDetailScreen() {
   const eventId = Number(id);
   const qc = useQueryClient();
 
+  const { me } = useAuth();
+
   const { data, isLoading } = useQuery({
     queryKey: ['schedule'],
     queryFn: fetchSchedule,
   });
   const event = React.useMemo(() => (data ?? []).find((e) => e.id === eventId), [data, eventId]);
+
+  // Staff = admin OR coach of the event's team. Only staff see the team-wide counts on the chips;
+  // parents keep the plain "Going / Maybe / Not going" chips they've always had.
+  const isStaff =
+    !!me &&
+    !!event &&
+    (me.isAdmin || (me.coachTeamIds ?? []).includes(event.teamId));
+
+  const { data: staffAttendance } = useQuery({
+    queryKey: ['staff-event-attendance', eventId],
+    queryFn: () => fetchStaffEventAttendance(eventId),
+    enabled: isStaff && !!event && !event.isCancelled,
+    // Fresh-enough for a details screen — count reflects state at open; nav back and forth to refresh.
+    staleTime: 30_000,
+  });
 
   // Optimistic mutation — no invalidate on settle so the parent screens don't reflow.
   const mutation = useMutation({
@@ -58,6 +77,11 @@ export default function EventDetailScreen() {
     },
     onError: (_e, _v, ctx) => {
       if (ctx?.prev) qc.setQueryData(['schedule'], ctx.prev);
+    },
+    onSettled: () => {
+      // Refresh the staff counts after any attendance change on this event. No-op for parents
+      // (query is disabled), so this is cheap to fire unconditionally.
+      qc.invalidateQueries({ queryKey: ['staff-event-attendance', eventId] });
     },
   });
 
@@ -132,9 +156,19 @@ export default function EventDetailScreen() {
                 key={p.playerId}
                 player={p}
                 showName={event.players.length > 1}
+                counts={isStaff ? staffAttendance : undefined}
                 onSet={(status) => mutation.mutate({ playerId: p.playerId, status })}
               />
             ))}
+          </View>
+        ) : null}
+
+        {isStaff && !event.isCancelled && event.players.length === 0 && staffAttendance ? (
+          // Staff on a team where none of the kids belong to this login (unusual but possible for
+          // an admin viewing another team's event). Still show the team-wide counts so they can
+          // gauge turnout.
+          <View style={styles.heroAttendance}>
+            <StaffOnlyChips counts={staffAttendance} />
           </View>
         ) : null}
       </View>
@@ -212,17 +246,35 @@ function LocationMap({ address }: { address: string }) {
 function PlayerAttendance({
   player,
   showName,
+  counts,
   onSet,
 }: {
   player: EventPlayer;
   showName: boolean;
+  /** When provided (staff viewers only), each chip appends the team-wide count for that status. */
+  counts: StaffEventAttendance | undefined;
   onSet: (status: AttendanceStatus) => void;
 }) {
   const { t } = useTranslation();
-  const options: { status: AttendanceStatus; label: string; color: string }[] = [
-    { status: AttendanceStatus.Confirmed, label: t('attendance.going'), color: colors.success },
-    { status: AttendanceStatus.Maybe, label: t('attendance.maybe'), color: colors.warning },
-    { status: AttendanceStatus.Declined, label: t('attendance.notGoing'), color: colors.danger },
+  const options: { status: AttendanceStatus; label: string; color: string; count: number | null }[] = [
+    {
+      status: AttendanceStatus.Confirmed,
+      label: t('attendance.going'),
+      color: colors.success,
+      count: counts?.going ?? null,
+    },
+    {
+      status: AttendanceStatus.Maybe,
+      label: t('attendance.maybe'),
+      color: colors.warning,
+      count: counts?.maybe ?? null,
+    },
+    {
+      status: AttendanceStatus.Declined,
+      label: t('attendance.notGoing'),
+      color: colors.danger,
+      count: counts?.notGoing ?? null,
+    },
   ];
 
   return (
@@ -237,10 +289,39 @@ function PlayerAttendance({
               style={[styles.chip, active && { backgroundColor: opt.color, borderColor: opt.color }]}
               onPress={() => onSet(opt.status)}
             >
-              <Text style={[styles.chipText, active && styles.chipTextActive]}>{opt.label}</Text>
+              <Text style={[styles.chipText, active && styles.chipTextActive]}>
+                {opt.label}
+                {opt.count !== null ? ` · ${opt.count}` : ''}
+              </Text>
             </TouchableOpacity>
           );
         })}
+      </View>
+    </View>
+  );
+}
+
+/** Staff-only, non-interactive summary chips shown when the staff viewer has no kids on this event. */
+function StaffOnlyChips({ counts }: { counts: StaffEventAttendance }) {
+  const { t } = useTranslation();
+  const items = [
+    { label: t('attendance.going'), color: colors.success, count: counts.going },
+    { label: t('attendance.maybe'), color: colors.warning, count: counts.maybe },
+    { label: t('attendance.notGoing'), color: colors.danger, count: counts.notGoing },
+  ];
+  return (
+    <View style={styles.attendanceRow}>
+      <View style={styles.chips}>
+        {items.map((it) => (
+          <View
+            key={it.label}
+            style={[styles.chip, { backgroundColor: it.color, borderColor: it.color }]}
+          >
+            <Text style={[styles.chipText, styles.chipTextActive]}>
+              {it.label} · {it.count}
+            </Text>
+          </View>
+        ))}
       </View>
     </View>
   );

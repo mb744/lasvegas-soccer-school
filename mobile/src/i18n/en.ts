@@ -86,6 +86,7 @@ export const en = {
     chatPostFailedMessage: 'Try again in a moment.',
     members: 'Members',
     admin: 'Admin',
+    coach: 'Coach',
     newTeam: 'New team',
     teamNameLabel: 'Team name',
     addPlayer: 'Add player',

@@ -24,9 +24,11 @@ import type {
   SaveTeamCoachRequest,
   SaveTeamRequest,
   ScheduleEvent,
+  StaffEventAttendance,
   TeamOption,
   TokenResponse,
 } from './types';
+import type { TrainingLogin } from './types';
 
 // ---- Auth ----
 
@@ -55,6 +57,26 @@ export async function fetchPlayers(): Promise<Player[]> {
   return data;
 }
 
+// ---- Daily Training login (the kid's username/password for the Daily Training app) ----
+
+export async function fetchTrainingLogin(playerId: number): Promise<TrainingLogin> {
+  const { data } = await api.get<TrainingLogin>(`/players/${playerId}/training-login`);
+  return data;
+}
+
+/** Creates the login or updates it. Omit `password` to keep the current one. */
+export async function saveTrainingLogin(
+  playerId: number,
+  payload: { username: string; password?: string },
+): Promise<TrainingLogin> {
+  const { data } = await api.put<TrainingLogin>(`/players/${playerId}/training-login`, payload);
+  return data;
+}
+
+export async function deleteTrainingLogin(playerId: number): Promise<void> {
+  await api.delete(`/players/${playerId}/training-login`);
+}
+
 // ---- Schedule + attendance ----
 
 export async function fetchSchedule(): Promise<ScheduleEvent[]> {
@@ -68,6 +90,16 @@ export async function setAttendance(
   status: AttendanceStatus,
 ): Promise<void> {
   await api.put(`/mobile/events/${eventId}/attendance`, { playerId, status });
+}
+
+/**
+ * Team-wide attendance counts on one event. Backend returns 403 for callers who are neither
+ * admin nor the coach of the event's team; callers should gate the fetch on Me.isAdmin ||
+ * Me.coachTeamIds.includes(event.teamId).
+ */
+export async function fetchStaffEventAttendance(eventId: number): Promise<StaffEventAttendance> {
+  const { data } = await api.get<StaffEventAttendance>(`/mobile/staff-events/${eventId}/attendance`);
+  return data;
 }
 
 // ---- Chat ----

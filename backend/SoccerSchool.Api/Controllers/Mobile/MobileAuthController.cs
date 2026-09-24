@@ -295,6 +295,18 @@ public class MobileAuthController : ControllerBase
         var account = await _db.ParentAccounts.FirstOrDefaultAsync(p => p.UserId == user.Id, ct);
         var roles = await _users.GetRolesAsync(user);
 
+        // Coach identity = the login's email appears on a TeamCoach card. No separate role; the
+        // team's coach card carrying your email IS what makes you the coach. Inlined here so this
+        // controller doesn't depend on any in-flight service registration.
+        var normalizedEmail = user.NormalizedEmail;
+        var coachTeamIds = string.IsNullOrEmpty(normalizedEmail)
+            ? new List<int>()
+            : await _db.TeamCoaches
+                .Where(tc => tc.Email != null && tc.Email.Trim().ToUpper() == normalizedEmail)
+                .Select(tc => tc.TeamId)
+                .Distinct()
+                .ToListAsync(ct);
+
         var players = account is null
             ? new List<MobilePlayerDto>()
             : await _db.Players
@@ -316,6 +328,8 @@ public class MobileAuthController : ControllerBase
             account?.CellPhone,
             account?.Language ?? Language.English,
             roles.Contains(Roles.Admin),
+            coachTeamIds.Count > 0,
+            coachTeamIds,
             players);
     }
 

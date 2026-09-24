@@ -34,15 +34,47 @@ public class ChatAdminController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<IEnumerable<ChatGroupAdminDto>>> List(CancellationToken ct)
     {
-        var rows = await _db.ChatGroups
+        var coachEmails = await CoachEmailsAsync(ct);
+        var groups = await _db.ChatGroups
             .OrderByDescending(g => g.CreatedAt)
-            .Select(g => new ChatGroupAdminDto(
-                g.Id, g.Title, g.TeamId, g.Team != null ? g.Team.Name : null,
-                g.Members.Count, g.Messages.Count, g.CreatedAt,
-                g.Members.OrderBy(m => m.DisplayName).Select(m => new ChatGroupMemberDto(
-                    m.Id, m.ParentAccountId, m.DisplayName, m.Role, m.AddedAt)).ToList()))
+            .Select(g => new
+            {
+                g.Id, g.Title, g.TeamId,
+                TeamName = g.Team != null ? g.Team.Name : null,
+                MemberCount = g.Members.Count, MessageCount = g.Messages.Count, g.CreatedAt,
+                Members = g.Members.OrderBy(m => m.DisplayName)
+                    .Select(m => new
+                    {
+                        m.Id, m.ParentAccountId, m.DisplayName, m.Role, m.AddedAt,
+                        // Resolve the member's email: family membership → ParentAccount.User.Email;
+                        // admin/staff membership (UserId set) → the ApplicationUser's Email.
+                        MemberEmail = m.ParentAccountId != null && m.ParentAccount != null && m.ParentAccount!.User != null
+                            ? m.ParentAccount!.User!.NormalizedEmail
+                            : (m.UserId != null
+                                ? _db.Users.Where(u => u.Id == m.UserId).Select(u => u.NormalizedEmail).FirstOrDefault()
+                                : null),
+                    }).ToList(),
+            })
             .ToListAsync(ct);
-        return Ok(rows);
+
+        var result = groups.Select(g => new ChatGroupAdminDto(
+            g.Id, g.Title, g.TeamId, g.TeamName, g.MemberCount, g.MessageCount, g.CreatedAt,
+            g.Members.Select(m => new ChatGroupMemberDto(
+                m.Id, m.ParentAccountId, m.DisplayName, m.Role,
+                m.MemberEmail != null && coachEmails.Contains(m.MemberEmail),
+                m.AddedAt)).ToList()));
+        return Ok(result);
+    }
+
+    /// <summary>Every TeamCoach email in the DB, normalized (upper-invariant) to match Identity's
+    /// NormalizedEmail column. Callers do a set-lookup to tag members as coaches.</summary>
+    private async Task<HashSet<string>> CoachEmailsAsync(CancellationToken ct)
+    {
+        var rows = await _db.TeamCoaches
+            .Where(tc => tc.Email != null && tc.Email != "")
+            .Select(tc => tc.Email!)
+            .ToListAsync(ct);
+        return rows.Select(e => e.Trim().ToUpperInvariant()).ToHashSet(StringComparer.Ordinal);
     }
 
     [HttpPost]
@@ -331,13 +363,32 @@ public class ChatAdminController : ControllerBase
 
     private async Task<ChatGroupAdminDto> SummarizeAsync(int id, CancellationToken ct)
     {
-        return await _db.ChatGroups
-            .Where(g => g.Id == id)
-            .Select(g => new ChatGroupAdminDto(
-                g.Id, g.Title, g.TeamId, g.Team != null ? g.Team.Name : null,
-                g.Members.Count, g.Messages.Count, g.CreatedAt,
-                g.Members.OrderBy(m => m.DisplayName).Select(m => new ChatGroupMemberDto(
-                    m.Id, m.ParentAccountId, m.DisplayName, m.Role, m.AddedAt)).ToList()))
+        var coachEmails = await CoachEmailsAsync(ct);
+        var g = await _db.ChatGroups
+            .Where(x => x.Id == id)
+            .Select(x => new
+            {
+                x.Id, x.Title, x.TeamId,
+                TeamName = x.Team != null ? x.Team.Name : null,
+                MemberCount = x.Members.Count, MessageCount = x.Messages.Count, x.CreatedAt,
+                Members = x.Members.OrderBy(m => m.DisplayName)
+                    .Select(m => new
+                    {
+                        m.Id, m.ParentAccountId, m.DisplayName, m.Role, m.AddedAt,
+                        MemberEmail = m.ParentAccountId != null && m.ParentAccount != null && m.ParentAccount!.User != null
+                            ? m.ParentAccount!.User!.NormalizedEmail
+                            : (m.UserId != null
+                                ? _db.Users.Where(u => u.Id == m.UserId).Select(u => u.NormalizedEmail).FirstOrDefault()
+                                : null),
+                    }).ToList(),
+            })
             .FirstAsync(ct);
+
+        return new ChatGroupAdminDto(
+            g.Id, g.Title, g.TeamId, g.TeamName, g.MemberCount, g.MessageCount, g.CreatedAt,
+            g.Members.Select(m => new ChatGroupMemberDto(
+                m.Id, m.ParentAccountId, m.DisplayName, m.Role,
+                m.MemberEmail != null && coachEmails.Contains(m.MemberEmail),
+                m.AddedAt)).ToList());
     }
 }

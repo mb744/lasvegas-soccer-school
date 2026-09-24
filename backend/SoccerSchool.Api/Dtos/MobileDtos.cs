@@ -44,6 +44,11 @@ public record MobileMeResponse(
     string? Phone,
     Language Language,
     bool IsAdmin,
+    /// <summary>True when this login's email appears on a TeamCoach card. Same coach-detection
+    /// rule the web uses (see CoachScopeService). Coach-only actions on the mobile app gate on
+    /// IsAdmin || IsCoach.</summary>
+    bool IsCoach,
+    IReadOnlyList<int> CoachTeamIds,
     IReadOnlyList<MobilePlayerDto> Players);
 
 // ---- Players ----
@@ -181,6 +186,10 @@ public record ChatGroupMemberDto(
     int? ParentAccountId,
     string DisplayName,
     ChatMemberRole Role,
+    /// <summary>True when this member's login/email appears on a TeamCoach card (same rule
+    /// CoachScopeService uses). Lets the mobile chat-group admin surface tag coaches distinctly
+    /// from parents and site admins.</summary>
+    bool IsCoach,
     DateTime AddedAt);
 
 public record SaveChatGroupRequest

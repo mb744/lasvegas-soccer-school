@@ -37,6 +37,13 @@ export interface Player {
   teams: PlayerTeam[];
 }
 
+/** A child's login for the separate Daily Training app, managed by the parent. */
+export interface TrainingLogin {
+  hasLogin: boolean;
+  username: string | null;
+  lastLoginAt: string | null;
+}
+
 export interface Me {
   userId: string;
   email: string;
@@ -45,6 +52,10 @@ export interface Me {
   phone?: string | null;
   language: Language;
   isAdmin: boolean;
+  /** True when the login email appears on a TeamCoach card. Same detection rule the web uses. */
+  isCoach: boolean;
+  /** Team IDs the login is coach of. Empty when isCoach is false. */
+  coachTeamIds: number[];
   players: Player[];
 }
 
@@ -222,7 +233,18 @@ export interface AdminChatGroupMember {
   parentAccountId: number | null;
   displayName: string;
   role: number;
+  /** True when the member's login email matches a TeamCoach row. Lets the UI tag coaches distinctly from admins/parents. */
+  isCoach: boolean;
   addedAt: string;
+}
+
+/** Team-wide attendance counts on one event, visible only to admins and coaches of that team. */
+export interface StaffEventAttendance {
+  going: number;
+  maybe: number;
+  notGoing: number;
+  pending: number;
+  rosterSize: number;
 }
 
 export interface AdminPlayerOption {

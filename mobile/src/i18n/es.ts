@@ -88,6 +88,7 @@ export const es: Translations = {
     chatPostFailedMessage: 'Intente de nuevo en un momento.',
     members: 'Miembros',
     admin: 'Admin',
+    coach: 'Entrenador',
     newTeam: 'Nuevo equipo',
     teamNameLabel: 'Nombre del equipo',
     addPlayer: 'Agregar jugador',
