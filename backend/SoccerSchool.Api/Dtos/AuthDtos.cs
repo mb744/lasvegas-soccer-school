@@ -43,3 +43,21 @@ public record MeResponse(
     Language Language,
     bool IsAdmin
 );
+
+public record ForgotPasswordRequest
+{
+    [Required, EmailAddress, MaxLength(256)]
+    public string Email { get; init; } = string.Empty;
+}
+
+public record ResetPasswordRequest
+{
+    [Required, EmailAddress, MaxLength(256)]
+    public string Email { get; init; } = string.Empty;
+
+    [Required]
+    public string Token { get; init; } = string.Empty;
+
+    [Required, MinLength(8), MaxLength(128)]
+    public string NewPassword { get; init; } = string.Empty;
+}

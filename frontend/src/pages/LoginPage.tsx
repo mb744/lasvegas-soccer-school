@@ -110,7 +110,13 @@ export function LoginPage() {
           </button>
         </form>
 
-        <p className="text-sm text-slate-600 mt-6 text-center">
+        <p className="text-sm text-slate-600 mt-4 text-center">
+          <Link to="/forgot-password" className="text-emerald-700 hover:underline">
+            {t('auth.forgotPassword')}
+          </Link>
+        </p>
+
+        <p className="text-sm text-slate-600 mt-2 text-center">
           {t('auth.noAccount')}{' '}
           <Link to={`/signup?next=${encodeURIComponent(next)}`} className="text-emerald-700 hover:underline font-medium">
             {t('auth.signup')}

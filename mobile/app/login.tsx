@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   StyleSheet,
   Text,
@@ -10,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { Redirect } from 'expo-router';
+import Constants from 'expo-constants';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../src/auth/AuthContext';
 import { registerForPush } from '../src/push/register';
@@ -47,6 +49,18 @@ export default function LoginScreen() {
       setBusy(false);
     }
   };
+
+  const openForgotPassword = useCallback(() => {
+    // Password reset flow lives on the web — the mobile app deep-links out to it so parents
+    // land on the same page whether they hit "Forgot password?" from web or from mobile.
+    const base = (Constants.expoConfig?.extra as { apiBaseUrl?: string } | undefined)?.apiBaseUrl
+      ?? 'https://registration.lasvegassoccerschool.org';
+    const trimmed = base.replace(/\/$/, '');
+    const url = email.trim()
+      ? `${trimmed}/forgot-password?email=${encodeURIComponent(email.trim())}`
+      : `${trimmed}/forgot-password`;
+    void Linking.openURL(url);
+  }, [email]);
 
   const runSocial = async (kind: 'google' | 'facebook') => {
     setError(null);
@@ -123,6 +137,10 @@ export default function LoginScreen() {
           )}
         </TouchableOpacity>
 
+        <TouchableOpacity onPress={openForgotPassword} style={styles.forgotBtn}>
+          <Text style={styles.forgotText}>{t('login.forgotPassword')}</Text>
+        </TouchableOpacity>
+
         {showAnySocial && (
           <>
             <View style={styles.dividerRow}>
@@ -173,6 +191,8 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: { opacity: 0.6 },
   buttonText: { color: colors.brand, fontSize: 17, fontWeight: '800' },
+  forgotBtn: { marginTop: spacing.md, alignItems: 'center' },
+  forgotText: { color: colors.white, fontSize: 14, textDecorationLine: 'underline' },
   dividerRow: { flexDirection: 'row', alignItems: 'center', marginVertical: spacing.lg },
   dividerLine: { flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.25)' },
   dividerText: { color: '#cfe0d8', paddingHorizontal: spacing.md, fontSize: 13, fontWeight: '700' },

@@ -21,6 +21,7 @@ public class AuthController : ControllerBase
     private readonly AppDbContext _db;
     private readonly AppOptions _app;
     private readonly IReclaimHasher _reclaim;
+    private readonly IEmailSender _email;
     private readonly ILogger<AuthController> _logger;
 
     public AuthController(
@@ -29,6 +30,7 @@ public class AuthController : ControllerBase
         AppDbContext db,
         IOptions<AppOptions> app,
         IReclaimHasher reclaim,
+        IEmailSender email,
         ILogger<AuthController> logger)
     {
         _users = users;
@@ -36,6 +38,7 @@ public class AuthController : ControllerBase
         _db = db;
         _app = app.Value;
         _reclaim = reclaim;
+        _email = email;
         _logger = logger;
     }
 
@@ -134,6 +137,66 @@ public class AuthController : ControllerBase
     public async Task<IActionResult> Logout()
     {
         await _signIn.SignOutAsync();
+        return NoContent();
+    }
+
+    /// <summary>
+    /// Password reset — step 1. User submits their email; if a matching account exists we mint an
+    /// Identity reset token and email a link that opens the web reset page with the token pre-filled.
+    /// Always returns 204 regardless of whether the email is on file so an attacker can't use this
+    /// endpoint to enumerate registered addresses.
+    /// </summary>
+    [HttpPost("forgot-password")]
+    [AllowAnonymous]
+    public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest req, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(req.Email)) return NoContent();
+        var user = await _users.FindByEmailAsync(req.Email.Trim());
+        // Silently no-op for missing/locked/OAuth-only accounts — mirrored 204 hides the state.
+        if (user is null || await _users.IsLockedOutAsync(user)) return NoContent();
+        // OAuth-only accounts have no password to reset — nothing to email.
+        if (!await _users.HasPasswordAsync(user)) return NoContent();
+
+        var token = await _users.GeneratePasswordResetTokenAsync(user);
+        var baseUrl = (_app.PublicBaseUrl ?? string.Empty).TrimEnd('/');
+        var link = $"{baseUrl}/reset-password?email={Uri.EscapeDataString(req.Email.Trim())}&token={Uri.EscapeDataString(token)}";
+
+        var subject = "Reset your Las Vegas Soccer School password";
+        var body =
+            $"Hi,\n\n" +
+            "Someone (hopefully you) asked to reset the password on your Las Vegas Soccer School account. " +
+            "Open this link within the next hour to choose a new one:\n\n" +
+            $"{link}\n\n" +
+            "If you didn't request this, just ignore this email — your password stays the same.\n\n" +
+            "Thanks,\nLas Vegas Soccer School";
+
+        var send = await _email.SendAsync(req.Email.Trim(), subject, body, ct);
+        if (!send.Success)
+            _logger.LogWarning("Password reset email send failed for {Email}: {Message}", req.Email, send.Message);
+        return NoContent();
+    }
+
+    /// <summary>Password reset — step 2. User submits the email + token from the link and their
+    /// chosen new password. Token is single-use and time-limited by ASP.NET Identity.</summary>
+    [HttpPost("reset-password")]
+    [AllowAnonymous]
+    public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest req, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(req.Email) || string.IsNullOrWhiteSpace(req.Token) || string.IsNullOrWhiteSpace(req.NewPassword))
+            return BadRequest("Missing required fields.");
+
+        var user = await _users.FindByEmailAsync(req.Email.Trim());
+        if (user is null) return BadRequest("Invalid reset link. Request a new one.");
+        if (await _users.IsLockedOutAsync(user)) return BadRequest("Account locked.");
+
+        var result = await _users.ResetPasswordAsync(user, req.Token, req.NewPassword);
+        if (!result.Succeeded)
+            return BadRequest(string.Join(" ", result.Errors.Select(e => e.Description)));
+
+        // Make sure the account isn't locked out from prior bad attempts now that they've proven ownership.
+        await _users.SetLockoutEndDateAsync(user, null);
+        await _users.ResetAccessFailedCountAsync(user);
+        _ = ct;
         return NoContent();
     }
 
