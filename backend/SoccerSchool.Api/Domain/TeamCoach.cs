@@ -36,6 +36,16 @@ public class TeamCoach
     public int? CoachId { get; set; }
     public Coach? Coach { get; set; }
 
+    /// <summary>Optional link to the Identity user this coach card belongs to. Auto-populated at
+    /// sign-in the first time a login's email matches this card's <see cref="Email"/>, then used
+    /// as the definitive "is-this-user-a-coach?" join key going forward. Kept nullable so a card
+    /// can exist before the coach signs up; email is still the reconciliation key, this just makes
+    /// the linkage stable once it's been observed. On user deletion the card survives (SetNull)
+    /// so the team keeps its coach card even after an account reset.</summary>
+    [MaxLength(450)]
+    public string? UserId { get; set; }
+    public ApplicationUser? User { get; set; }
+
     /// <summary>Head vs assistant coach. Surfaced as a badge on the per-team coach editor;
     /// future routing rules (e.g. head coach gets the schedule-change ping but not the
     /// "we need a sub" thread) can branch on this.</summary>

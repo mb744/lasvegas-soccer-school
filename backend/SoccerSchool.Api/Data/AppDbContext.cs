@@ -339,8 +339,15 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
                 .WithMany()
                 .HasForeignKey(c => c.CoachId)
                 .OnDelete(DeleteBehavior.SetNull);
+            // Optional Identity link. Auto-populated when a user signs in with an email that
+            // matches this card. SetNull on user delete so the card outlives an account reset.
+            b.HasOne(c => c.User)
+                .WithMany()
+                .HasForeignKey(c => c.UserId)
+                .OnDelete(DeleteBehavior.SetNull);
             b.HasIndex(c => c.TeamId);
             b.HasIndex(c => c.CoachId);
+            b.HasIndex(c => c.UserId);
         });
 
         modelBuilder.Entity<Coach>(b =>

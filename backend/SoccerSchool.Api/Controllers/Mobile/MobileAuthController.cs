@@ -295,17 +295,28 @@ public class MobileAuthController : ControllerBase
         var account = await _db.ParentAccounts.FirstOrDefaultAsync(p => p.UserId == user.Id, ct);
         var roles = await _users.GetRolesAsync(user);
 
-        // Coach identity = the login's email appears on a TeamCoach card. No separate role; the
-        // team's coach card carrying your email IS what makes you the coach. Inlined here so this
-        // controller doesn't depend on any in-flight service registration.
+        // Coach identity = a TeamCoach card either explicitly linked to this user (TeamCoach.UserId)
+        // or matched by email. Sign-in is the moment we back-fill the UserId so future queries can
+        // use the FK directly — the email-match branch stays as a fallback for cards created
+        // before the coach ever logged in. Handles the common flow: admin creates the coach card,
+        // the coach then installs the app and signs in with Google using the same address.
         var normalizedEmail = user.NormalizedEmail;
-        var coachTeamIds = string.IsNullOrEmpty(normalizedEmail)
-            ? new List<int>()
-            : await _db.TeamCoaches
-                .Where(tc => tc.Email != null && tc.Email.Trim().ToUpper() == normalizedEmail)
-                .Select(tc => tc.TeamId)
-                .Distinct()
-                .ToListAsync(ct);
+        var coachCards = await _db.TeamCoaches
+            .Where(tc => tc.UserId == user.Id
+                || (tc.UserId == null && normalizedEmail != null && tc.Email != null
+                    && tc.Email.Trim().ToUpper() == normalizedEmail))
+            .ToListAsync(ct);
+        var linkedNow = false;
+        foreach (var tc in coachCards)
+        {
+            if (tc.UserId is null)
+            {
+                tc.UserId = user.Id;
+                linkedNow = true;
+            }
+        }
+        if (linkedNow) await _db.SaveChangesAsync(ct);
+        var coachTeamIds = coachCards.Select(tc => tc.TeamId).Distinct().ToList();
 
         var players = account is null
             ? new List<MobilePlayerDto>()

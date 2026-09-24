@@ -49,13 +49,17 @@ public class AdminUsersController : ControllerBase
             .Take(500)
             .ToListAsync(ct);
 
-        // Coach = login email on any TeamCoach card. One set lookup keeps the loop O(users+coaches).
-        var coachEmails = (await _db.TeamCoaches
-                .Where(tc => tc.Email != null && tc.Email != "")
-                .Select(tc => tc.Email!)
-                .ToListAsync(ct))
-            .Select(e => e.Trim().ToUpperInvariant())
-            .ToHashSet(StringComparer.Ordinal);
+        // Coach linkage: cards with an explicit TeamCoach.UserId are the definitive answer.
+        // Any coach card that was created before the coach signed in still has UserId = null and
+        // only carries an email string — those get lazily reconciled here so the tag shows up on
+        // the very first list refresh instead of waiting for the coach's next login.
+        await BackfillCoachUserLinksAsync(ct);
+        var coachUserIds = await _db.TeamCoaches
+            .Where(tc => tc.UserId != null)
+            .Select(tc => tc.UserId!)
+            .Distinct()
+            .ToListAsync(ct);
+        var coachUserIdSet = coachUserIds.ToHashSet(StringComparer.Ordinal);
 
         var now = DateTimeOffset.UtcNow;
         return Ok(users.Select(u => new UserSummary(
@@ -65,13 +69,48 @@ public class AdminUsersController : ControllerBase
             u.Account?.LastName ?? "",
             u.Account?.CellPhone,
             u.IsAdmin,
-            !string.IsNullOrEmpty(u.NormalizedEmail) && coachEmails.Contains(u.NormalizedEmail),
+            coachUserIdSet.Contains(u.Id),
             u.LockoutEnd is { } end && end > now,
             u.Account?.CreatedAt,
             u.LastLoginAt,
             u.RegistrationCount,
             u.Account?.Id
         )).ToList());
+    }
+
+    /// <summary>Reconciles orphaned TeamCoach.UserId nulls with any ApplicationUser whose
+    /// NormalizedEmail matches the card's Email. Runs on every admin-list load — bounded by
+    /// the number of *orphaned* cards (typically zero after the first pass), and matches by a
+    /// single indexed hashset lookup. Same rule the mobile sign-in uses; running it in both spots
+    /// means whichever happens first (admin views the list, coach signs in) resolves the link.</summary>
+    private async Task BackfillCoachUserLinksAsync(CancellationToken ct)
+    {
+        var orphaned = await _db.TeamCoaches
+            .Where(tc => tc.UserId == null && tc.Email != null && tc.Email != "")
+            .ToListAsync(ct);
+        if (orphaned.Count == 0) return;
+
+        var normalizedEmailsForUsers = orphaned
+            .Select(tc => tc.Email!.Trim().ToUpperInvariant())
+            .Distinct()
+            .ToList();
+        var userByNormalizedEmail = (await _db.Users
+                .Where(u => u.NormalizedEmail != null && normalizedEmailsForUsers.Contains(u.NormalizedEmail))
+                .Select(u => new { u.Id, u.NormalizedEmail })
+                .ToListAsync(ct))
+            .ToDictionary(x => x.NormalizedEmail!, x => x.Id, StringComparer.Ordinal);
+
+        var changed = false;
+        foreach (var tc in orphaned)
+        {
+            var key = tc.Email!.Trim().ToUpperInvariant();
+            if (userByNormalizedEmail.TryGetValue(key, out var uid))
+            {
+                tc.UserId = uid;
+                changed = true;
+            }
+        }
+        if (changed) await _db.SaveChangesAsync(ct);
     }
 
     /// <summary>Rename a user (updates their ParentAccount, which is what every other screen
@@ -205,6 +244,9 @@ public class AdminUsersController : ControllerBase
                 Phone = phone,
                 Language = language,
                 Role = Domain.TeamCoachRole.HeadCoach,
+                // The user already exists (we resolved them at the top of the method), so wire the
+                // FK immediately instead of waiting for the coach's next sign-in to reconcile.
+                UserId = user.Id,
             });
         }
 
