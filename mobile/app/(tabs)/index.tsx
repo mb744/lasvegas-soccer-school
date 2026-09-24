@@ -176,6 +176,8 @@ export default function HomeScreen() {
           <UpcomingEventRow
             key={ev.id}
             event={ev}
+            // Admins scan across teams — surfacing the team keeps rows disambiguable.
+            showTeamName={!!me?.isAdmin}
             onPress={() => router.push(`/events/${ev.id}`)}
             onSetAttendance={(playerId, status) =>
               attendanceMutation.mutate({ eventId: ev.id, playerId, status })
@@ -222,10 +224,13 @@ function AnnouncementCard({ announcement }: { announcement: Announcement }) {
 
 function UpcomingEventRow({
   event,
+  showTeamName,
   onPress,
   onSetAttendance,
 }: {
   event: ScheduleEvent;
+  /** Render a small "team X" line under the title so admin viewers can tell cross-team rows apart. */
+  showTeamName: boolean;
   onPress: () => void;
   onSetAttendance: (playerId: number, status: AttendanceStatus) => void;
 }) {
@@ -264,6 +269,11 @@ function UpcomingEventRow({
         {title ? (
           <Text style={styles.upcomingTitle} numberOfLines={2}>
             {title}
+          </Text>
+        ) : null}
+        {showTeamName ? (
+          <Text style={styles.upcomingTeamName} numberOfLines={1}>
+            {event.teamName}
           </Text>
         ) : null}
         {event.players.length > 0 ? (
@@ -466,6 +476,7 @@ const styles = StyleSheet.create({
   upcomingTime: { fontSize: 13, fontWeight: '700', color: colors.text, marginLeft: 'auto' },
   upcomingTitle: { fontSize: 15, fontWeight: '700', color: colors.text, marginTop: spacing.xs },
   upcomingTeam: { fontSize: 13, color: colors.subtext, marginTop: 2 },
+  upcomingTeamName: { fontSize: 12, fontWeight: '700', color: colors.brand, marginTop: 2, textTransform: 'uppercase' },
   upcomingLocation: { fontSize: 12, color: colors.subtext, marginTop: 2 },
 
   upcomingAttendance: {

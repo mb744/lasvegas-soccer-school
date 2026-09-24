@@ -9,6 +9,8 @@ export interface Me {
   phone: string | null
   language: Language
   isAdmin: boolean
+  /** A team's coach card carries this login's email — unlocks Daily Training for their teams. */
+  isCoach: boolean
 }
 
 export interface SignupRequest {
@@ -296,6 +298,9 @@ export interface UserSummary {
   lastName: string
   phone: string | null
   isAdmin: boolean
+  /** Derived: this login's email appears on at least one TeamCoach card. Not a role — set/unset
+   *  by editing the team's coach roster, not from the users screen. */
+  isCoach: boolean
   isBanned: boolean
   createdAt: string | null
   lastLoginAt: string | null
@@ -1978,3 +1983,75 @@ export interface AddHostedTournamentTeamRequest {
   invitedTeamId?: number | null
   notes?: string | null
 }
+
+// ---- Daily Training (kids' at-home drills app) ----
+
+export type DrillCategory = 'fitness' | 'ball-mastery' | 'dribbling' | 'passing' | 'shooting' | 'stretching'
+export const DRILL_CATEGORIES: DrillCategory[] = ['fitness', 'ball-mastery', 'dribbling', 'passing', 'shooting', 'stretching']
+
+export type DrillTargetType = 'player' | 'team' | 'age-group'
+
+export interface AdminDrill {
+  id: number
+  category: DrillCategory
+  titleEn: string
+  titleEs: string
+  descriptionEn: string
+  descriptionEs: string
+  /** One step per line. */
+  stepsEn: string
+  stepsEs: string
+  durationMinutes: number
+  reps: number | null
+  videoUrl: string | null
+  isActive: boolean
+  assignmentCount: number
+  updatedAt: string
+}
+
+export interface SaveDrillRequest {
+  category: DrillCategory
+  titleEn: string
+  titleEs: string
+  descriptionEn: string
+  descriptionEs: string
+  stepsEn: string
+  stepsEs: string
+  durationMinutes: number
+  reps: number | null
+  videoUrl: string | null
+  isActive: boolean
+}
+
+export interface AdminDrillAssignment {
+  id: number
+  drillId: number
+  drillTitle: string
+  targetType: DrillTargetType
+  targetId: number
+  targetName: string
+  startDate: string
+  endDate: string | null
+  createdAt: string
+}
+
+export interface CreateDrillAssignmentRequest {
+  drillId: number
+  targetType: DrillTargetType
+  targetId: number
+  startDate: string
+  endDate: string | null
+}
+
+export interface DrillTargetOption { id: number; name: string }
+export interface DrillTargetPlayer { id: number; name: string; teamName: string }
+/** Shaped by who's asking: admins get every team + age group (players via search); coaches get
+ *  only their teams and those teams' players, and `isAdmin` false hides authoring controls. */
+export interface DrillTargetOptions {
+  isAdmin: boolean
+  teams: DrillTargetOption[]
+  ageGroups: DrillTargetOption[]
+  players: DrillTargetPlayer[]
+}
+
+export interface PlayerPasswordResetInfo { playerFirstName: string; username: string }

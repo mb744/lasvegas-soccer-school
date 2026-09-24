@@ -202,6 +202,9 @@ export default function ScheduleScreen() {
           <EventCard
             event={item}
             isCoachOnly={item.players.length === 0 && !!me && (me.coachTeamIds ?? []).includes(item.teamId)}
+            // Admins see rows across every team they're on and often want to know which team an
+            // event belongs to at a glance. Parents already see their kid's name — no need for the team.
+            showTeamName={!!me?.isAdmin}
             onPress={() => router.push(`/events/${item.id}`)}
             onSet={(playerId, status) => mutation.mutate({ eventId: item.id, playerId, status })}
           />
@@ -253,11 +256,15 @@ function sameDay(a: Date, b: Date): boolean {
 function EventCard({
   event,
   isCoachOnly,
+  showTeamName,
   onPress,
   onSet,
 }: {
   event: ScheduleEvent;
   isCoachOnly: boolean;
+  /** Render the team name row for viewers who span multiple teams (admins). Coach-only rows
+   *  already surface the team as their card title, so this stays false for them. */
+  showTeamName: boolean;
   onPress: () => void;
   onSet: (playerId: number, status: AttendanceStatus) => void;
 }) {
@@ -318,6 +325,11 @@ function EventCard({
         {title ? (
           <Text style={styles.title} numberOfLines={2}>
             {title}
+          </Text>
+        ) : null}
+        {showTeamName && !isCoachOnly ? (
+          <Text style={styles.teamLine} numberOfLines={1}>
+            {event.teamName}
           </Text>
         ) : null}
         {event.players.length > 0 ? (
@@ -494,6 +506,7 @@ const styles = StyleSheet.create({
   coachBadgeText: { color: colors.brand, fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
   time: { fontSize: 13, fontWeight: '700', color: colors.text, marginLeft: 'auto' },
   title: { fontSize: 15, fontWeight: '700', color: colors.text, marginTop: spacing.xs },
+  teamLine: { fontSize: 12, fontWeight: '700', color: colors.brand, marginTop: 2, textTransform: 'uppercase' },
   players: { fontSize: 13, color: colors.subtext, marginTop: 2 },
   location: { fontSize: 12, color: colors.subtext, marginTop: 2 },
   cancelled: { color: colors.danger, fontWeight: '700', marginTop: spacing.xs, fontSize: 13 },
