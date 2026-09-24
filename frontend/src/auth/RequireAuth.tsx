@@ -3,7 +3,10 @@ import { useAuth } from './AuthContext'
 import { Layout } from '../components/Layout'
 import { useTranslation } from 'react-i18next'
 
-export function RequireAuth({ children, adminOnly = false }: { children: React.ReactNode; adminOnly?: boolean }) {
+/** `adminOnly`: admins. `staffOnly`: admins or team coaches (see CoachScopeService). */
+export function RequireAuth({
+  children, adminOnly = false, staffOnly = false,
+}: { children: React.ReactNode; adminOnly?: boolean; staffOnly?: boolean }) {
   const { me, loading } = useAuth()
   const location = useLocation()
   const { t } = useTranslation()
@@ -21,11 +24,12 @@ export function RequireAuth({ children, adminOnly = false }: { children: React.R
     return <Navigate to={`/login?next=${next}`} replace />
   }
 
-  if (adminOnly && !me.isAdmin) {
+  const denied = (adminOnly && !me.isAdmin) || (staffOnly && !me.isAdmin && !me.isCoach)
+  if (denied) {
     return (
       <Layout>
         <div className="max-w-2xl mx-auto px-4 py-16 text-center">
-          <h1 className="text-2xl font-bold text-rose-700">{t('auth.adminOnly')}</h1>
+          <h1 className="text-2xl font-bold text-rose-700">{adminOnly ? t('auth.adminOnly') : t('auth.staffOnly')}</h1>
         </div>
       </Layout>
     )

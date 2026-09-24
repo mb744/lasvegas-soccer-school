@@ -41,7 +41,9 @@ public record MeResponse(
     string LastName,
     string? Phone,
     Language Language,
-    bool IsAdmin
+    bool IsAdmin,
+    /// <summary>True when a team's coach card carries this login's email (see CoachScopeService).</summary>
+    bool IsCoach
 );
 
 public record ForgotPasswordRequest

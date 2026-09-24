@@ -115,9 +115,14 @@ export default function App() {
             path="/admin/announcements"
             element={<RequireAuth adminOnly><AdminAnnouncementsPage /></RequireAuth>}
           />
+          {/* Admins author + assign; team coaches assign to their own teams (page adapts). */}
           <Route
             path="/admin/drills"
-            element={<RequireAuth adminOnly><AdminDrillsPage /></RequireAuth>}
+            element={<RequireAuth staffOnly><AdminDrillsPage /></RequireAuth>}
+          />
+          <Route
+            path="/coach/drills"
+            element={<RequireAuth staffOnly><AdminDrillsPage /></RequireAuth>}
           />
           <Route path="/tournament/:slug" element={<TournamentPublicPage />} />
           <Route path="/reset-player-password" element={<ResetPlayerPasswordPage />} />

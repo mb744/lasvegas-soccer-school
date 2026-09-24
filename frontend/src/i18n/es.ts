@@ -74,6 +74,7 @@ const es: Translations = {
     resetDone: 'Contraseña actualizada. Redirigiendo a iniciar sesión…',
     externalError: 'No se pudo iniciar sesión con ese proveedor. Intente de nuevo o use correo y contraseña.',
     adminOnly: 'Solo administradores.',
+    staffOnly: 'Solo administradores y entrenadores de equipo pueden abrir esta página.',
   },
   landing: {
     hero: 'Donde crecen los jugadores de Las Vegas.',
@@ -1263,6 +1264,10 @@ const es: Translations = {
   drills: {
     title: 'Ejercicios de Entrenamiento Diario',
     blurb: 'Ejercicios que los niños ven en la app Entrenamiento Diario. Escriba cada uno en inglés y español, y asígnelo a un jugador, un equipo o un grupo de edad por un rango de días.',
+    coachBlurb: 'Elija un ejercicio y asígnelo a su equipo o a jugadores individuales por un rango de días. Los administradores de la escuela escriben los ejercicios.',
+    coachLink: 'Entrenamiento Diario (entrenador)',
+    viewHeading: 'Ejercicio',
+    backToSite: 'Volver al sitio',
     listHeading: 'Ejercicios',
     newDrill: '+ Nuevo ejercicio',
     showArchived: 'Mostrar archivados',

@@ -54,6 +54,7 @@ const en = {
     haveAccount: 'Already have an account?',
     externalError: 'Sign-in with that provider failed. Try again or use email and password.',
     adminOnly: 'Admin only.',
+    staffOnly: 'Only admins and team coaches can open this page.',
     forgotPassword: 'Forgot your password?',
     forgotTitle: 'Reset your password',
     forgotSubtitle: 'Enter the email address on your account and we will send you a reset link.',
@@ -1261,6 +1262,10 @@ const en = {
   drills: {
     title: 'Daily Training drills',
     blurb: 'Drills kids see in the Daily Training app. Write each one in English and Spanish, then assign it to a player, a team, or an age group for a range of days.',
+    coachBlurb: 'Pick a drill and assign it to your team or to individual players for a range of days. The school’s admins write the drills.',
+    coachLink: 'Daily Training (coach)',
+    viewHeading: 'Drill',
+    backToSite: 'Back to site',
     listHeading: 'Drills',
     newDrill: '+ New drill',
     showArchived: 'Show archived',

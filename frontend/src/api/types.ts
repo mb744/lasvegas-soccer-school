@@ -9,6 +9,8 @@ export interface Me {
   phone: string | null
   language: Language
   isAdmin: boolean
+  /** A team's coach card carries this login's email — unlocks Daily Training for their teams. */
+  isCoach: boolean
 }
 
 export interface SignupRequest {
@@ -2039,6 +2041,14 @@ export interface CreateDrillAssignmentRequest {
 }
 
 export interface DrillTargetOption { id: number; name: string }
-export interface DrillTargetOptions { teams: DrillTargetOption[]; ageGroups: DrillTargetOption[] }
+export interface DrillTargetPlayer { id: number; name: string; teamName: string }
+/** Shaped by who's asking: admins get every team + age group (players via search); coaches get
+ *  only their teams and those teams' players, and `isAdmin` false hides authoring controls. */
+export interface DrillTargetOptions {
+  isAdmin: boolean
+  teams: DrillTargetOption[]
+  ageGroups: DrillTargetOption[]
+  players: DrillTargetPlayer[]
+}
 
 export interface PlayerPasswordResetInfo { playerFirstName: string; username: string }

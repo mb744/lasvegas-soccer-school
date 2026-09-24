@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Layout } from '../../components/Layout'
+import { useAuth } from '../../auth/AuthContext'
 import { Api } from '../../api/client'
 import { DRILL_CATEGORIES } from '../../api/types'
 import type {
@@ -37,8 +38,12 @@ const EMPTY_DRILL: SaveDrillRequest = {
 const inputCls = 'w-full border border-slate-300 rounded-md px-3 py-2 text-sm'
 const labelCls = 'text-xs font-medium text-slate-600 block mb-1'
 
+/** Admins get the full authoring UI; team coaches (me.isCoach) get a read-only drill view and can
+ *  assign drills to their own teams/players. The server enforces the same split. */
 export function AdminDrillsPage() {
   const { t } = useTranslation()
+  const { me } = useAuth()
+  const isAdmin = !!me?.isAdmin
   const [drills, setDrills] = useState<AdminDrill[]>([])
   const [showArchived, setShowArchived] = useState(false)
   // null = nothing selected; 'new' = creating; number = editing that drill.
@@ -111,9 +116,11 @@ export function AdminDrillsPage() {
     <Layout>
       <div className="max-w-6xl mx-auto px-4 py-10 space-y-6">
         <div>
-          <Link to="/admin" className="text-sm text-emerald-700 hover:underline">← {t('admin.backToHub')}</Link>
+          {isAdmin
+            ? <Link to="/admin" className="text-sm text-emerald-700 hover:underline">← {t('admin.backToHub')}</Link>
+            : <Link to="/" className="text-sm text-emerald-700 hover:underline">← {t('drills.backToSite')}</Link>}
           <h1 className="text-3xl font-bold text-emerald-800 mt-2">{t('drills.title')}</h1>
-          <p className="text-sm text-slate-600 mt-1">{t('drills.blurb')}</p>
+          <p className="text-sm text-slate-600 mt-1">{isAdmin ? t('drills.blurb') : t('drills.coachBlurb')}</p>
         </div>
 
         {error && <div className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-md p-3">{error}</div>}
@@ -124,15 +131,19 @@ export function AdminDrillsPage() {
           <section className="lg:col-span-1 bg-white border border-slate-200 rounded-lg p-5 space-y-4 h-fit">
             <div className="flex items-center justify-between gap-2">
               <h2 className="font-bold text-emerald-800">{t('drills.listHeading')}</h2>
-              <button onClick={() => select('new')}
-                className="bg-emerald-700 text-white text-sm font-semibold px-3 py-2 rounded-md hover:bg-emerald-800">
-                {t('drills.newDrill')}
-              </button>
+              {isAdmin && (
+                <button onClick={() => select('new')}
+                  className="bg-emerald-700 text-white text-sm font-semibold px-3 py-2 rounded-md hover:bg-emerald-800">
+                  {t('drills.newDrill')}
+                </button>
+              )}
             </div>
-            <label className="flex items-center gap-2 text-xs text-slate-600">
-              <input type="checkbox" checked={showArchived} onChange={e => setShowArchived(e.target.checked)} />
-              {t('drills.showArchived')}
-            </label>
+            {isAdmin && (
+              <label className="flex items-center gap-2 text-xs text-slate-600">
+                <input type="checkbox" checked={showArchived} onChange={e => setShowArchived(e.target.checked)} />
+                {t('drills.showArchived')}
+              </label>
+            )}
             <ul className="divide-y divide-slate-100">
               {drills.map(d => (
                 <li key={d.id} className="py-2">
@@ -158,6 +169,9 @@ export function AdminDrillsPage() {
               </div>
             ) : (
               <>
+                {!isAdmin ? (
+                  <DrillView drill={drills.find(d => d.id === selected)} />
+                ) : (
                 <form onSubmit={save} noValidate className="bg-white border border-slate-200 rounded-lg p-5 space-y-4">
                   <h2 className="font-bold text-emerald-800">
                     {selected === 'new' ? t('drills.createHeading') : t('drills.editHeading')}
@@ -234,6 +248,7 @@ export function AdminDrillsPage() {
                     )}
                   </div>
                 </form>
+                )}
 
                 {typeof selected === 'number' ? (
                   <AssignmentsPanel drillId={selected} onChanged={refresh} onError={setError} onNotice={setNotice} />
@@ -251,6 +266,32 @@ export function AdminDrillsPage() {
   )
 }
 
+/** Read-only drill card for coaches (admins see the editor instead). */
+function DrillView({ drill }: { drill: AdminDrill | undefined }) {
+  const { t, i18n } = useTranslation()
+  if (!drill) return null
+  const es = i18n.language.startsWith('es')
+  const steps = (es && drill.stepsEs ? drill.stepsEs : drill.stepsEn).split('\n').filter(Boolean)
+  return (
+    <section className="bg-white border border-slate-200 rounded-lg p-5 space-y-3">
+      <p className="text-xs font-semibold uppercase text-emerald-700">{t(`drills.categories.${drill.category}`)}</p>
+      <h2 className="text-xl font-bold text-emerald-800">{es ? drill.titleEs : drill.titleEn}</h2>
+      <p className="text-sm text-slate-600">{es ? drill.descriptionEs : drill.descriptionEn}</p>
+      <p className="text-sm text-slate-500">
+        {drill.durationMinutes} min{drill.reps ? ` · ${drill.reps} reps` : ''}
+      </p>
+      {steps.length > 0 && (
+        <ol className="list-decimal pl-5 text-sm text-slate-700 space-y-1">
+          {steps.map((s, i) => <li key={i}>{s}</li>)}
+        </ol>
+      )}
+      {drill.videoUrl && (
+        <a href={drill.videoUrl} target="_blank" rel="noreferrer" className="text-sm text-emerald-700 hover:underline">▶ Video</a>
+      )}
+    </section>
+  )
+}
+
 /** Lists a drill's assignments and adds new ones (player / team / age group + date range). */
 function AssignmentsPanel({
   drillId, onChanged, onError, onNotice,
@@ -262,7 +303,7 @@ function AssignmentsPanel({
 }) {
   const { t } = useTranslation()
   const [rows, setRows] = useState<AdminDrillAssignment[]>([])
-  const [targets, setTargets] = useState<DrillTargetOptions>({ teams: [], ageGroups: [] })
+  const [targets, setTargets] = useState<DrillTargetOptions>({ isAdmin: false, teams: [], ageGroups: [], players: [] })
   const [targetType, setTargetType] = useState<DrillTargetType>('team')
   const [targetId, setTargetId] = useState<number | ''>('')
   const [startDate, setStartDate] = useState(todayIso())
@@ -279,14 +320,15 @@ function AssignmentsPanel({
   useEffect(() => { load() }, [drillId])
   useEffect(() => { Api.drillTargetOptions().then(setTargets).catch(e => onError(errMsg(e))) }, [])
 
-  // Debounced player search (same 200ms cadence as the admin players page).
+  // Admins: debounced search over every player (same 200ms cadence as the admin players page).
+  // Coaches get their own roster inline from drillTargetOptions instead.
   useEffect(() => {
-    if (targetType !== 'player' || playerQuery.trim().length < 2) { setPlayerResults([]); return }
+    if (!targets.isAdmin || targetType !== 'player' || playerQuery.trim().length < 2) { setPlayerResults([]); return }
     const h = setTimeout(() => {
       Api.listAdminPlayers(playerQuery).then(r => setPlayerResults(r.slice(0, 20))).catch(() => setPlayerResults([]))
     }, 200)
     return () => clearTimeout(h)
-  }, [playerQuery, targetType])
+  }, [playerQuery, targetType, targets.isAdmin])
 
   const changeType = (type: DrillTargetType) => {
     setTargetType(type)
@@ -331,13 +373,20 @@ function AssignmentsPanel({
           <label className={labelCls}>{t('drills.targetType')}</label>
           <select value={targetType} onChange={e => changeType(e.target.value as DrillTargetType)} className={inputCls}>
             <option value="team">{t('drills.targetTeam')}</option>
-            <option value="age-group">{t('drills.targetAgeGroup')}</option>
+            {targets.isAdmin && <option value="age-group">{t('drills.targetAgeGroup')}</option>}
             <option value="player">{t('drills.targetPlayer')}</option>
           </select>
         </div>
 
         <div className="sm:col-span-1 lg:col-span-1">
-          {targetType === 'player' ? (
+          {targetType === 'player' && !targets.isAdmin ? (
+            <select value={targetId} onChange={e => setTargetId(e.target.value === '' ? '' : Number(e.target.value))} className={inputCls}>
+              <option value="">{t('drills.pickPlayer')}</option>
+              {targets.players.map(p => (
+                <option key={`${p.id}-${p.teamName}`} value={p.id}>{p.name} — {p.teamName}</option>
+              ))}
+            </select>
+          ) : targetType === 'player' ? (
             <>
               <input value={playerQuery} onChange={e => { setPlayerQuery(e.target.value); setTargetId('') }}
                 placeholder={t('drills.searchPlayer')} className={`${inputCls} mb-1`} />

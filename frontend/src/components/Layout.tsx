@@ -82,6 +82,9 @@ export function Layout({ children }: { children: ReactNode }) {
           <div className="flex items-center gap-4">
             <Link to="/privacy" className="text-slate-400 hover:text-slate-600">{t('common.privacy')}</Link>
             <Link to="/data-deletion" className="text-slate-400 hover:text-slate-600">{t('common.dataDeletion')}</Link>
+            {me?.isCoach && !me.isAdmin && (
+              <Link to="/coach/drills" className="text-slate-400 hover:text-slate-600">{t('drills.coachLink')}</Link>
+            )}
             {me?.isAdmin && (
               <Link to="/admin" className="text-slate-400 hover:text-slate-600">Admin</Link>
             )}

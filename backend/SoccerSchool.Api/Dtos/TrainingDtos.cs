@@ -163,7 +163,15 @@ public record CreateDrillAssignmentRequest
 
 public record DrillTargetOptionDto(int Id, string Name);
 
-public record DrillTargetOptionsDto(IReadOnlyList<DrillTargetOptionDto> Teams, IReadOnlyList<DrillTargetOptionDto> AgeGroups);
+public record DrillTargetPlayerDto(int Id, string Name, string TeamName);
+
+/// <summary>Assignment-picker options, shaped by who's asking. <see cref="IsAdmin"/> tells the page
+/// whether to show authoring controls; coaches get their own teams' players inline.</summary>
+public record DrillTargetOptionsDto(
+    bool IsAdmin,
+    IReadOnlyList<DrillTargetOptionDto> Teams,
+    IReadOnlyList<DrillTargetOptionDto> AgeGroups,
+    IReadOnlyList<DrillTargetPlayerDto> Players);
 
 /// <summary>Wire names for <see cref="DrillCategory"/> and <see cref="DrillTargetType"/>. Kebab-case
 /// strings (not enum ints) so the apps' TypeScript unions read naturally.</summary>

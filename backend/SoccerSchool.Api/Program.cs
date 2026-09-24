@@ -225,6 +225,7 @@ builder.Services.AddHostedService<AttendanceReminderJob>();
 builder.Services.AddScoped<IPasswordHasher<PlayerLogin>, PasswordHasher<PlayerLogin>>();
 builder.Services.AddScoped<IPlayerTokenService, PlayerTokenService>();
 builder.Services.AddScoped<ITrainingPlanService, TrainingPlanService>();
+builder.Services.AddScoped<ICoachScopeService, CoachScopeService>();
 // SignalR powers the real-time chat fan-out on top of the persisted ChatMessages history.
 builder.Services.AddSignalR();
 
