@@ -544,6 +544,27 @@ public class AdminPlayersController : ControllerBase
         var dropInvoices = await _db.Invoices.Where(i => i.PlayerId == deleteId).ToListAsync(ct);
         foreach (var i in dropInvoices) i.PlayerId = keepId;
 
+        // Daily Training. DrillCompletion: unique (PlayerId, Date, DrillId) — same collision handling.
+        var dropCompletions = await _db.DrillCompletions.Where(c => c.PlayerId == deleteId).ToListAsync(ct);
+        var keepCompletionKeys = (await _db.DrillCompletions
+            .Where(c => c.PlayerId == keepId)
+            .Select(c => new { c.Date, c.DrillId }).ToListAsync(ct))
+            .ToHashSet();
+        foreach (var c in dropCompletions)
+        {
+            if (keepCompletionKeys.Contains(new { c.Date, c.DrillId })) _db.DrillCompletions.Remove(c);
+            else c.PlayerId = keepId;
+        }
+        var dropAssignments = await _db.DrillAssignments.Where(a => a.PlayerId == deleteId).ToListAsync(ct);
+        foreach (var a in dropAssignments) a.PlayerId = keepId;
+
+        // PlayerLogin: one per player. Keep the keeper's login if it has one; otherwise move the
+        // duplicate's over so the kid's username keeps working. (A remaining duplicate login
+        // cascades away with the deleted player.)
+        var dropLogin = await _db.PlayerLogins.FirstOrDefaultAsync(l => l.PlayerId == deleteId, ct);
+        if (dropLogin is not null && !await _db.PlayerLogins.AnyAsync(l => l.PlayerId == keepId, ct))
+            dropLogin.PlayerId = keepId;
+
         _db.Players.Remove(drop);
         await _db.SaveChangesAsync(ct);
         return NoContent();

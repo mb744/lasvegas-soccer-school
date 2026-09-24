@@ -101,6 +101,13 @@ public class AccountDeletionService : IAccountDeletionService
             account.City = null;
             account.PostalCode = null;
             account.NoCommunications = true;
+
+            // Kids' Daily Training logins are credentials, not school records — remove them
+            // (cascades to their sessions and reset links). Drill history stays on the players.
+            var kidLogins = await _db.PlayerLogins
+                .Where(l => l.Player!.ParentAccountId == account.Id)
+                .ToListAsync(ct);
+            _db.PlayerLogins.RemoveRange(kidLogins);
         }
         else
         {

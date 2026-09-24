@@ -27,6 +27,7 @@ import type {
   TeamOption,
   TokenResponse,
 } from './types';
+import type { TrainingLogin } from './types';
 
 // ---- Auth ----
 
@@ -53,6 +54,26 @@ export async function deleteAccount(): Promise<void> {
 export async function fetchPlayers(): Promise<Player[]> {
   const { data } = await api.get<Player[]>('/mobile/players');
   return data;
+}
+
+// ---- Daily Training login (the kid's username/password for the Daily Training app) ----
+
+export async function fetchTrainingLogin(playerId: number): Promise<TrainingLogin> {
+  const { data } = await api.get<TrainingLogin>(`/players/${playerId}/training-login`);
+  return data;
+}
+
+/** Creates the login or updates it. Omit `password` to keep the current one. */
+export async function saveTrainingLogin(
+  playerId: number,
+  payload: { username: string; password?: string },
+): Promise<TrainingLogin> {
+  const { data } = await api.put<TrainingLogin>(`/players/${playerId}/training-login`, payload);
+  return data;
+}
+
+export async function deleteTrainingLogin(playerId: number): Promise<void> {
+  await api.delete(`/players/${playerId}/training-login`);
 }
 
 // ---- Schedule + attendance ----

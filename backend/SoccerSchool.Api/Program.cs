@@ -165,6 +165,26 @@ if (jwt.IsConfigured)
             }
         };
     });
+
+    // Daily Training app (kids). Same signing key + issuer, different audience: a kid's token
+    // fails audience validation on every MobileJwt endpoint, and a parent's fails here.
+    authBuilder.AddJwtBearer(AuthSchemes.PlayerJwt, opts =>
+    {
+        // Keep claim names as issued ("sub", "plid", "pwv") — no mapping to NameIdentifier, so
+        // nothing that reads the Identity user id can ever resolve one from a kid's token.
+        opts.MapInboundClaims = false;
+        opts.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = jwt.Issuer,
+            ValidAudience = jwt.PlayerAudience,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt.SigningKey)),
+            ClockSkew = TimeSpan.FromSeconds(30),
+        };
+    });
 }
 
 builder.Services.AddAuthorization();
@@ -201,6 +221,10 @@ builder.Services.AddHttpClient<IExternalIdentityService, ExternalIdentityService
 builder.Services.AddSingleton<IPushSender, ExpoPushSender>();
 // Attendance reminder pushes for events 6–48h out; runs every 3h.
 builder.Services.AddHostedService<AttendanceReminderJob>();
+// Daily Training app (kids): player logins, tokens, and daily drill plans.
+builder.Services.AddScoped<IPasswordHasher<PlayerLogin>, PasswordHasher<PlayerLogin>>();
+builder.Services.AddScoped<IPlayerTokenService, PlayerTokenService>();
+builder.Services.AddScoped<ITrainingPlanService, TrainingPlanService>();
 // SignalR powers the real-time chat fan-out on top of the persisted ChatMessages history.
 builder.Services.AddSignalR();
 

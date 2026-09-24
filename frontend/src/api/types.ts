@@ -1978,3 +1978,67 @@ export interface AddHostedTournamentTeamRequest {
   invitedTeamId?: number | null
   notes?: string | null
 }
+
+// ---- Daily Training (kids' at-home drills app) ----
+
+export type DrillCategory = 'fitness' | 'ball-mastery' | 'dribbling' | 'passing' | 'shooting' | 'stretching'
+export const DRILL_CATEGORIES: DrillCategory[] = ['fitness', 'ball-mastery', 'dribbling', 'passing', 'shooting', 'stretching']
+
+export type DrillTargetType = 'player' | 'team' | 'age-group'
+
+export interface AdminDrill {
+  id: number
+  category: DrillCategory
+  titleEn: string
+  titleEs: string
+  descriptionEn: string
+  descriptionEs: string
+  /** One step per line. */
+  stepsEn: string
+  stepsEs: string
+  durationMinutes: number
+  reps: number | null
+  videoUrl: string | null
+  isActive: boolean
+  assignmentCount: number
+  updatedAt: string
+}
+
+export interface SaveDrillRequest {
+  category: DrillCategory
+  titleEn: string
+  titleEs: string
+  descriptionEn: string
+  descriptionEs: string
+  stepsEn: string
+  stepsEs: string
+  durationMinutes: number
+  reps: number | null
+  videoUrl: string | null
+  isActive: boolean
+}
+
+export interface AdminDrillAssignment {
+  id: number
+  drillId: number
+  drillTitle: string
+  targetType: DrillTargetType
+  targetId: number
+  targetName: string
+  startDate: string
+  endDate: string | null
+  createdAt: string
+}
+
+export interface CreateDrillAssignmentRequest {
+  drillId: number
+  targetType: DrillTargetType
+  targetId: number
+  startDate: string
+  endDate: string | null
+}
+
+export interface DrillTargetOption { id: number; name: string }
+export interface DrillTargetOptions { teams: DrillTargetOption[]; ageGroups: DrillTargetOption[] }
+
+export interface PlayerPasswordResetInfo { playerFirstName: string; username: string }

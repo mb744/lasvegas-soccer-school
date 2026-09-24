@@ -37,6 +37,13 @@ export interface Player {
   teams: PlayerTeam[];
 }
 
+/** A child's login for the separate Daily Training app, managed by the parent. */
+export interface TrainingLogin {
+  hasLogin: boolean;
+  username: string | null;
+  lastLoginAt: string | null;
+}
+
 export interface Me {
   userId: string;
   email: string;
