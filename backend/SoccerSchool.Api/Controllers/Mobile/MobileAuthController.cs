@@ -2,9 +2,11 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using SoccerSchool.Api.Data;
 using SoccerSchool.Api.Domain;
 using SoccerSchool.Api.Dtos;
+using SoccerSchool.Api.Options;
 using SoccerSchool.Api.Services;
 
 namespace SoccerSchool.Api.Controllers.Mobile;
@@ -24,6 +26,8 @@ public class MobileAuthController : ControllerBase
     private readonly IAccountDeletionService _deletion;
     private readonly IExternalIdentityService _external;
     private readonly IReclaimHasher _reclaim;
+    private readonly IEmailSender _emailSender;
+    private readonly AppOptions _app;
     private readonly AppDbContext _db;
     private readonly ILogger<MobileAuthController> _logger;
 
@@ -34,6 +38,8 @@ public class MobileAuthController : ControllerBase
         IAccountDeletionService deletion,
         IExternalIdentityService external,
         IReclaimHasher reclaim,
+        IEmailSender emailSender,
+        IOptions<AppOptions> app,
         AppDbContext db,
         ILogger<MobileAuthController> logger)
     {
@@ -43,6 +49,8 @@ public class MobileAuthController : ControllerBase
         _deletion = deletion;
         _external = external;
         _reclaim = reclaim;
+        _emailSender = emailSender;
+        _app = app.Value;
         _db = db;
         _logger = logger;
     }
@@ -135,9 +143,15 @@ public class MobileAuthController : ControllerBase
             user = await _users.FindByEmailAsync(identity.Email);
         }
 
+        // Track whether we spawn a genuinely new account this call so the admin notification only
+        // fires on real first-time signups, not every OAuth re-login.
+        var isFreshSignup = false;
+        var reunionAccountId = (int?)null;
+
         // 3. Nothing yet — mint a fresh user + parent record (with reunion of any deleted family).
         if (user is null)
         {
+            isFreshSignup = true;
             user = new ApplicationUser
             {
                 UserName = identity.Email,
@@ -163,6 +177,7 @@ public class MobileAuthController : ControllerBase
                 account.LastName = string.IsNullOrWhiteSpace(identity.LastName) ? account.LastName : identity.LastName;
                 account.ReclaimEmailHash = null;
                 account.NoCommunications = false;
+                reunionAccountId = account.Id;
                 _logger.LogInformation("Reunited external signup {Email} with previously-deleted family {AccountId}.", identity.Email, account.Id);
             }
             else
@@ -192,8 +207,50 @@ public class MobileAuthController : ControllerBase
         user.LastLoginAt = DateTime.UtcNow;
         await _users.UpdateAsync(user);
 
+        if (isFreshSignup)
+        {
+            // Fire-and-forget notification — never block the sign-in on ACS latency or failure.
+            _ = NotifyAdminOfSignupAsync(
+                $"Mobile ({provider})",
+                identity.Email,
+                $"{identity.FirstName} {identity.LastName}".Trim(),
+                reunionAccountId,
+                CancellationToken.None);
+        }
+
         var pair = await _tokens.IssueAsync(user, ct);
         return Ok(await BuildTokenResponseAsync(user, pair, ct));
+    }
+
+    /// <summary>Emails the configured admin bootstrap address a heads-up whenever a new parent
+    /// account is minted. Called only after the sign-up path — normal re-logins are quiet.
+    /// Failures are logged and swallowed so a flaky email service never blocks a working sign-in.</summary>
+    private async Task NotifyAdminOfSignupAsync(
+        string channel, string email, string displayName, int? reunionAccountId, CancellationToken ct)
+    {
+        var adminEmail = _app.Admin.Email;
+        if (string.IsNullOrWhiteSpace(adminEmail) || !_emailSender.IsAvailable) return;
+
+        try
+        {
+            var subject = $"New LVSS signup: {(string.IsNullOrWhiteSpace(displayName) ? email : displayName)}";
+            var body =
+                "A new parent just signed up.\n\n" +
+                $"Name: {(string.IsNullOrWhiteSpace(displayName) ? "(not provided)" : displayName)}\n" +
+                $"Email: {email}\n" +
+                $"Channel: {channel}\n" +
+                (reunionAccountId is int rid
+                    ? $"Reunion: reconnected to previously-deleted family #{rid} via ReclaimEmailHash.\n"
+                    : "New family record created.\n") +
+                "\nSee /admin/users on the admin site for the full profile.";
+            var send = await _emailSender.SendAsync(adminEmail, subject, body, ct);
+            if (!send.Success)
+                _logger.LogWarning("Admin signup notification failed for {Email}: {Message}", email, send.Message);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Admin signup notification threw for {Email}.", email);
+        }
     }
 
     [HttpGet("me")]
@@ -238,10 +295,90 @@ public class MobileAuthController : ControllerBase
         var account = await _db.ParentAccounts.FirstOrDefaultAsync(p => p.UserId == user.Id, ct);
         var roles = await _users.GetRolesAsync(user);
 
-        var players = account is null
+        // Coach identity = a TeamCoach card either explicitly linked to this user (TeamCoach.UserId)
+        // or matched by email. Sign-in is the moment we back-fill the UserId so future queries can
+        // use the FK directly — the email-match branch stays as a fallback for cards created
+        // before the coach ever logged in. Handles the common flow: admin creates the coach card,
+        // the coach then installs the app and signs in with Google using the same address.
+        var normalizedEmail = user.NormalizedEmail;
+        var coachCards = await _db.TeamCoaches
+            .Where(tc => tc.UserId == user.Id
+                || (tc.UserId == null && normalizedEmail != null && tc.Email != null
+                    && tc.Email.Trim().ToUpper() == normalizedEmail))
+            .ToListAsync(ct);
+        var linkedNow = false;
+        foreach (var tc in coachCards)
+        {
+            if (tc.UserId is null)
+            {
+                tc.UserId = user.Id;
+                linkedNow = true;
+            }
+        }
+        if (linkedNow) await _db.SaveChangesAsync(ct);
+        var coachTeamIds = coachCards.Select(tc => tc.TeamId).Distinct().ToList();
+
+        // Additional-parent auto-link: any ParentContact whose email matches this login gets
+        // stamped with UserId now, and — critically — we drop a ParentAccountCollaborator row so
+        // the rest of the app (schedule, chat, roster) already treats this user as part of the
+        // family without every downstream endpoint needing to know about ParentContact. Same
+        // reconcile-on-first-sign-in idea as TeamCoach.UserId.
+        var contactMatches = await _db.ParentContacts
+            .Where(c => c.UserId == user.Id
+                || (c.UserId == null && normalizedEmail != null && c.Email != null
+                    && c.Email.Trim().ToUpper() == normalizedEmail))
+            .ToListAsync(ct);
+        var contactLinkChanged = false;
+        foreach (var c in contactMatches)
+        {
+            if (c.UserId is null)
+            {
+                c.UserId = user.Id;
+                contactLinkChanged = true;
+            }
+        }
+
+        // Collaborated families this contact grants access to. Skip the user's own owned account
+        // (a stray self-referencing contact shouldn't add a collab row against themselves).
+        var contactAccountIds = contactMatches
+            .Select(c => c.ParentAccountId)
+            .Where(id => account is null || id != account.Id)
+            .Distinct()
+            .ToList();
+        if (contactAccountIds.Count > 0)
+        {
+            var alreadyCollabing = await _db.ParentAccountCollaborators
+                .Where(x => x.UserId == user.Id && contactAccountIds.Contains(x.ParentAccountId))
+                .Select(x => x.ParentAccountId)
+                .ToListAsync(ct);
+            var missing = contactAccountIds.Except(alreadyCollabing).ToList();
+            foreach (var aid in missing)
+            {
+                _db.ParentAccountCollaborators.Add(new ParentAccountCollaborator
+                {
+                    ParentAccountId = aid,
+                    UserId = user.Id,
+                });
+                contactLinkChanged = true;
+            }
+        }
+        if (contactLinkChanged) await _db.SaveChangesAsync(ct);
+
+        // Every family this login can see: their owned one plus every collaborated one (which
+        // now includes any families they were listed as an additional parent on). One Players
+        // query fans out across all of them.
+        var accessibleAccountIds = new List<int>();
+        if (account is not null) accessibleAccountIds.Add(account.Id);
+        var collabIds = await _db.ParentAccountCollaborators
+            .Where(x => x.UserId == user.Id)
+            .Select(x => x.ParentAccountId)
+            .ToListAsync(ct);
+        accessibleAccountIds.AddRange(collabIds.Where(id => !accessibleAccountIds.Contains(id)));
+
+        var players = accessibleAccountIds.Count == 0
             ? new List<MobilePlayerDto>()
             : await _db.Players
-                .Where(p => p.ParentAccountId == account.Id)
+                .Where(p => accessibleAccountIds.Contains(p.ParentAccountId))
                 .OrderBy(p => p.FirstName).ThenBy(p => p.LastName)
                 .Select(p => new MobilePlayerDto(
                     p.Id, p.FirstName, p.LastName, p.DateOfBirth,
@@ -259,6 +396,8 @@ public class MobileAuthController : ControllerBase
             account?.CellPhone,
             account?.Language ?? Language.English,
             roles.Contains(Roles.Admin),
+            coachTeamIds.Count > 0,
+            coachTeamIds,
             players);
     }
 

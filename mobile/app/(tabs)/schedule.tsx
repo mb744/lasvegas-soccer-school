@@ -14,8 +14,9 @@ import {
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { fetchSchedule, setAttendance } from '../../src/api/endpoints';
-import { AttendanceStatus, ScheduledEventKind, type EventPlayer, type ScheduleEvent } from '../../src/api/types';
+import { fetchSchedule, fetchStaffEventAttendance, setAttendance } from '../../src/api/endpoints';
+import { AttendanceStatus, ScheduledEventKind, type EventPlayer, type ScheduleEvent, type StaffEventAttendance } from '../../src/api/types';
+import { useAuth } from '../../src/auth/AuthContext';
 import { dayKey, timeLabel } from '../../src/format';
 import { colors, radius, spacing } from '../../src/theme';
 
@@ -25,6 +26,7 @@ export default function ScheduleScreen() {
   const { t } = useTranslation();
   const router = useRouter();
   const qc = useQueryClient();
+  const { me } = useAuth();
 
   const { data, isLoading, isError, refetch, isRefetching } = useQuery({
     queryKey: ['schedule'],
@@ -199,6 +201,10 @@ export default function ScheduleScreen() {
         renderItem={({ item }) => (
           <EventCard
             event={item}
+            isCoachOnly={item.players.length === 0 && !!me && (me.coachTeamIds ?? []).includes(item.teamId)}
+            // Admins see rows across every team they're on and often want to know which team an
+            // event belongs to at a glance. Parents already see their kid's name — no need for the team.
+            showTeamName={!!me?.isAdmin}
             onPress={() => router.push(`/events/${item.id}`)}
             onSet={(playerId, status) => mutation.mutate({ eventId: item.id, playerId, status })}
           />
@@ -249,10 +255,16 @@ function sameDay(a: Date, b: Date): boolean {
  */
 function EventCard({
   event,
+  isCoachOnly,
+  showTeamName,
   onPress,
   onSet,
 }: {
   event: ScheduleEvent;
+  isCoachOnly: boolean;
+  /** Render the team name row for viewers who span multiple teams (admins). Coach-only rows
+   *  already surface the team as their card title, so this stays false for them. */
+  showTeamName: boolean;
   onPress: () => void;
   onSet: (playerId: number, status: AttendanceStatus) => void;
 }) {
@@ -273,6 +285,16 @@ function EventCard({
       : event.summary!
     : null;
 
+  // Coach viewing their team's event with no kids on that team: no per-player chips, instead show
+  // team-wide Going/Maybe/Not-going counts fetched from the staff endpoint. Only enabled for
+  // coach-only rows so parent cards don't fire the extra request.
+  const { data: staffCounts } = useQuery({
+    queryKey: ['staff-event-attendance', event.id],
+    queryFn: () => fetchStaffEventAttendance(event.id),
+    enabled: isCoachOnly && !event.isCancelled,
+    staleTime: 30_000,
+  });
+
   return (
     <TouchableOpacity
       style={[styles.card, event.isCancelled && styles.cardCancelled]}
@@ -288,11 +310,26 @@ function EventCard({
           <View style={[styles.kindBadge, badgeStyle(event.kind)]}>
             <Text style={styles.kindBadgeText}>{kindLabel}</Text>
           </View>
+          {isCoachOnly ? (
+            <View style={styles.coachBadge}>
+              <Text style={styles.coachBadgeText}>{t('admin.coach')}</Text>
+            </View>
+          ) : null}
           <Text style={styles.time}>{timeLabel(event.startsAt)}</Text>
         </View>
+        {isCoachOnly ? (
+          <Text style={styles.title} numberOfLines={1}>
+            {event.teamName}
+          </Text>
+        ) : null}
         {title ? (
           <Text style={styles.title} numberOfLines={2}>
             {title}
+          </Text>
+        ) : null}
+        {showTeamName && !isCoachOnly ? (
+          <Text style={styles.teamLine} numberOfLines={1}>
+            {event.teamName}
           </Text>
         ) : null}
         {event.players.length > 0 ? (
@@ -323,8 +360,36 @@ function EventCard({
             ))}
           </View>
         ) : null}
+        {isCoachOnly && !event.isCancelled ? (
+          <StaffCounts counts={staffCounts} />
+        ) : null}
       </View>
     </TouchableOpacity>
+  );
+}
+
+function StaffCounts({ counts }: { counts: StaffEventAttendance | undefined }) {
+  const { t } = useTranslation();
+  const items = [
+    { label: t('attendance.going'), color: colors.success, count: counts?.going ?? 0 },
+    { label: t('attendance.maybe'), color: colors.warning, count: counts?.maybe ?? 0 },
+    { label: t('attendance.notGoing'), color: colors.danger, count: counts?.notGoing ?? 0 },
+  ];
+  return (
+    <View style={styles.attendanceBlock}>
+      <View style={styles.chips}>
+        {items.map((it) => (
+          <View
+            key={it.label}
+            style={[styles.chip, { backgroundColor: it.color, borderColor: it.color }]}
+          >
+            <Text style={[styles.chipText, styles.chipTextActive]}>
+              {it.label} · {it.count}
+            </Text>
+          </View>
+        ))}
+      </View>
+    </View>
   );
 }
 
@@ -431,8 +496,17 @@ const styles = StyleSheet.create({
   cardHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   kindBadge: { paddingHorizontal: spacing.sm, paddingVertical: 2, borderRadius: radius.sm },
   kindBadgeText: { color: colors.white, fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
+  coachBadge: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.brand,
+  },
+  coachBadgeText: { color: colors.brand, fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
   time: { fontSize: 13, fontWeight: '700', color: colors.text, marginLeft: 'auto' },
   title: { fontSize: 15, fontWeight: '700', color: colors.text, marginTop: spacing.xs },
+  teamLine: { fontSize: 12, fontWeight: '700', color: colors.brand, marginTop: 2, textTransform: 'uppercase' },
   players: { fontSize: 13, color: colors.subtext, marginTop: 2 },
   location: { fontSize: 12, color: colors.subtext, marginTop: 2 },
   cancelled: { color: colors.danger, fontWeight: '700', marginTop: spacing.xs, fontSize: 13 },

@@ -12,7 +12,7 @@ import {
 import { Stack, useFocusEffect, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { cancelAdminEvent, fetchAdminEvents, uncancelAdminEvent } from '../../../src/api/endpoints';
+import { cancelAdminEvent, fetchAdminEvents, fetchAdminTeams, uncancelAdminEvent } from '../../../src/api/endpoints';
 import type { AdminEvent } from '../../../src/api/types';
 import { ScheduledEventKind } from '../../../src/api/types';
 import { longDate, timeLabel } from '../../../src/format';
@@ -23,9 +23,14 @@ export default function AdminEventsListScreen() {
   const router = useRouter();
   const qc = useQueryClient();
 
+  // null = All teams. Server already accepts an optional teamId; sending null omits it.
+  const [teamFilter, setTeamFilter] = React.useState<number | null>(null);
+
+  const teams = useQuery({ queryKey: ['adminTeams'], queryFn: fetchAdminTeams });
+
   const { data, isLoading, isRefetching, refetch } = useQuery({
-    queryKey: ['adminEvents'],
-    queryFn: () => fetchAdminEvents(),
+    queryKey: ['adminEvents', teamFilter],
+    queryFn: () => fetchAdminEvents(teamFilter ?? undefined),
   });
 
   useFocusEffect(
@@ -37,6 +42,8 @@ export default function AdminEventsListScreen() {
 
   const cancelMut = useMutation({
     mutationFn: (id: number) => cancelAdminEvent(id),
+    // Invalidate every filtered slice — team pill filters key on teamFilter, so a bare
+    // ['adminEvents'] key would miss them.
     onSuccess: () => qc.invalidateQueries({ queryKey: ['adminEvents'] }),
   });
   const uncancelMut = useMutation({
@@ -60,9 +67,36 @@ export default function AdminEventsListScreen() {
     );
   };
 
+  const showTeamName = teamFilter === null;
+
   return (
     <View style={styles.container}>
       <Stack.Screen options={{ title: t('admin.hubEvents') }} />
+
+      <View style={styles.filterBar}>
+        <FlatList
+          horizontal
+          data={[{ id: null as number | null, name: t('admin.allTeams') }, ...(teams.data ?? []).map((tm) => ({ id: tm.id as number | null, name: tm.name }))]}
+          keyExtractor={(item) => (item.id === null ? 'all' : String(item.id))}
+          contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: spacing.sm }}
+          showsHorizontalScrollIndicator={false}
+          renderItem={({ item }) => {
+            const active = teamFilter === item.id;
+            return (
+              <TouchableOpacity
+                onPress={() => setTeamFilter(item.id)}
+                style={[styles.filterPill, active && styles.filterPillActive]}
+                activeOpacity={0.85}
+              >
+                <Text style={[styles.filterPillText, active && styles.filterPillTextActive]}>
+                  {item.name}
+                </Text>
+              </TouchableOpacity>
+            );
+          }}
+        />
+      </View>
+
       {isLoading ? (
         <View style={styles.center}>
           <ActivityIndicator size="large" color={colors.brand} />
@@ -77,6 +111,7 @@ export default function AdminEventsListScreen() {
           renderItem={({ item }) => (
             <EventRow
               event={item}
+              showTeamName={showTeamName}
               onPress={() => router.push(`/admin/events/${item.id}`)}
               onToggleCancel={() => confirmCancel(item)}
             />
@@ -97,10 +132,14 @@ export default function AdminEventsListScreen() {
 
 function EventRow({
   event,
+  showTeamName,
   onPress,
   onToggleCancel,
 }: {
   event: AdminEvent;
+  /** When true (All-teams filter), show the team name on the card so cross-team rows are
+   *  distinguishable at a glance. Hidden when a single team is filtered (redundant). */
+  showTeamName: boolean;
   onPress: () => void;
   onToggleCancel: () => void;
 }) {
@@ -131,7 +170,7 @@ function EventRow({
         </Text>
       </View>
       <Text style={styles.title}>{title}</Text>
-      <Text style={styles.team}>{event.teamName}</Text>
+      {showTeamName ? <Text style={styles.team}>{event.teamName}</Text> : null}
       {event.venueName || event.location ? (
         <Text style={styles.meta}>📍 {event.venueName ?? event.location}</Text>
       ) : null}
@@ -203,4 +242,22 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   fabText: { color: colors.white, fontSize: 15, fontWeight: '800' },
+
+  filterBar: {
+    backgroundColor: colors.bg,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  filterPill: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+  },
+  filterPillActive: { backgroundColor: colors.brand, borderColor: colors.brand },
+  filterPillText: { fontSize: 13, fontWeight: '800', color: colors.subtext },
+  filterPillTextActive: { color: colors.white },
 });

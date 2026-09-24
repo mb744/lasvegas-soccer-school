@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SoccerSchool.Api.Data;
@@ -23,26 +24,39 @@ public class MobileAttendanceController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly IParentAccountResolver _accounts;
+    private readonly UserManager<ApplicationUser> _users;
 
-    public MobileAttendanceController(AppDbContext db, IParentAccountResolver accounts)
+    public MobileAttendanceController(
+        AppDbContext db, IParentAccountResolver accounts, UserManager<ApplicationUser> users)
     {
         _db = db;
         _accounts = accounts;
+        _users = users;
     }
 
     [HttpPut("{eventId:int}/attendance")]
     public async Task<ActionResult<MobileEventPlayerDto>> SetAttendance(
         int eventId, [FromBody] MobileSetAttendanceRequest req, CancellationToken ct)
     {
+        var user = await _users.GetUserAsync(User);
+        if (user is null) return Unauthorized();
         var account = await _accounts.ResolveAsync(User, ct);
-        if (account is null) return Unauthorized();
 
         var ev = await _db.ScheduledGames.FirstOrDefaultAsync(g => g.Id == eventId, ct);
         if (ev is null) return NotFound("Event not found.");
 
-        // Player must be the caller's child.
+        // Player must be in one of the families this login can see (owned or collaborated —
+        // covers additional-parent auto-links).
+        var accessibleAccountIds = new List<int>();
+        if (account is not null) accessibleAccountIds.Add(account.Id);
+        var collabIds = await _db.ParentAccountCollaborators
+            .Where(x => x.UserId == user.Id)
+            .Select(x => x.ParentAccountId)
+            .ToListAsync(ct);
+        accessibleAccountIds.AddRange(collabIds.Where(id => !accessibleAccountIds.Contains(id)));
+
         var player = await _db.Players
-            .FirstOrDefaultAsync(p => p.Id == req.PlayerId && p.ParentAccountId == account.Id, ct);
+            .FirstOrDefaultAsync(p => p.Id == req.PlayerId && accessibleAccountIds.Contains(p.ParentAccountId), ct);
         if (player is null) return Forbid();
 
         // ...and on this event's team.

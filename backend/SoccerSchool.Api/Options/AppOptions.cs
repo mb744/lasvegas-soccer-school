@@ -108,6 +108,17 @@ public class AcsOptions
 
     public string ConnectionString { get; set; } = string.Empty;
     public string EmailFromAddress { get; set; } = string.Empty;
+
+    /// <summary>Friendly Reply-To address stamped on every outbound email. When a recipient replies
+    /// to a broadcast / notification, their reply routes here instead of to the ACS-verified
+    /// technical sender in <see cref="EmailFromAddress"/>. Defaults to
+    /// <c>info@lasvegassoccerschool.org</c>; override in config for other environments.</summary>
+    public string EmailReplyToAddress { get; set; } = "info@lasvegassoccerschool.org";
+
+    /// <summary>Display name paired with the reply-to header so inbox clients render "Las Vegas
+    /// Soccer School <info@lasvegassoccerschool.org>" instead of just the bare address.</summary>
+    public string EmailReplyToDisplayName { get; set; } = "Las Vegas Soccer School";
+
     public string SmsFromNumber { get; set; } = string.Empty;
 
     public bool IsEmailConfigured =>

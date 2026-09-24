@@ -42,6 +42,13 @@ export default function AdminHubScreen() {
       blurb: t('admin.hubChatGroupsBlurb'),
       path: '/admin/chat-groups',
     },
+    {
+      key: 'users',
+      icon: '👥',
+      label: t('admin.hubUsers'),
+      blurb: t('admin.hubUsersBlurb'),
+      path: '/admin/users',
+    },
   ];
 
   return (

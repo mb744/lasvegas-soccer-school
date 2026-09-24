@@ -151,6 +151,7 @@ import type {
   SaveVenueFieldRequest,
   TranslateRequest,
   TranslateResponse,
+  UserCoachTeam,
   UserSummary,
   WhatsAppTemplate,
   ChatGroupAdmin,
@@ -401,6 +402,19 @@ export const Api = {
   },
   async unbanUser(id: string) {
     await api.post(`/admin/users/${id}/unban`, {})
+  },
+  async updateUserProfile(id: string, payload: { firstName: string; lastName: string }) {
+    await api.put(`/admin/users/${encodeURIComponent(id)}/profile`, payload)
+  },
+  async setUserAdmin(id: string, isAdmin: boolean) {
+    await api.put(`/admin/users/${encodeURIComponent(id)}/role`, { isAdmin })
+  },
+  async listUserCoachTeams(id: string) {
+    const r = await api.get<UserCoachTeam[]>(`/admin/users/${encodeURIComponent(id)}/coach-teams`)
+    return r.data
+  },
+  async setUserCoachTeams(id: string, teamIds: number[]) {
+    await api.put(`/admin/users/${encodeURIComponent(id)}/coach-teams`, { teamIds })
   },
 
   // --- Messaging (admin chat/broadcast) ---

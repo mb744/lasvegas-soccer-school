@@ -52,6 +52,10 @@ export interface Me {
   phone?: string | null;
   language: Language;
   isAdmin: boolean;
+  /** True when the login email appears on a TeamCoach card. Same detection rule the web uses. */
+  isCoach: boolean;
+  /** Team IDs the login is coach of. Empty when isCoach is false. */
+  coachTeamIds: number[];
   players: Player[];
 }
 
@@ -229,7 +233,18 @@ export interface AdminChatGroupMember {
   parentAccountId: number | null;
   displayName: string;
   role: number;
+  /** True when the member's login email matches a TeamCoach row. Lets the UI tag coaches distinctly from admins/parents. */
+  isCoach: boolean;
   addedAt: string;
+}
+
+/** Team-wide attendance counts on one event, visible only to admins and coaches of that team. */
+export interface StaffEventAttendance {
+  going: number;
+  maybe: number;
+  notGoing: number;
+  pending: number;
+  rosterSize: number;
 }
 
 export interface AdminPlayerOption {
@@ -302,4 +317,28 @@ export interface SaveGameRequest {
 export interface SaveChatGroupRequest {
   title: string;
   seedFromTeamId: number | null;
+}
+
+/** One team the user has a coach card on (email match). Used to hydrate the coach-teams picker. */
+export interface UserCoachTeam {
+  teamCoachId: number;
+  teamId: number;
+  teamName: string;
+}
+
+/** Row from /api/admin/users — one Identity user with derived staff flags and profile. */
+export interface AdminUserRow {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  phone: string | null;
+  isAdmin: boolean;
+  /** Derived: this login's email appears on at least one TeamCoach card. */
+  isCoach: boolean;
+  isBanned: boolean;
+  createdAt: string | null;
+  lastLoginAt: string | null;
+  registrationCount: number;
+  parentAccountId: number | null;
 }

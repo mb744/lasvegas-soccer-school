@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using SoccerSchool.Api.Data;
 
@@ -11,9 +12,11 @@ using SoccerSchool.Api.Data;
 namespace SoccerSchool.Api.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260924200033_AddTeamCoachUserLink")]
+    partial class AddTeamCoachUserLink
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -833,157 +836,6 @@ namespace SoccerSchool.Api.Data.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("DeviceTokens");
-                });
-
-            modelBuilder.Entity("SoccerSchool.Api.Domain.Drill", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("Category")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("DescriptionEn")
-                        .IsRequired()
-                        .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)");
-
-                    b.Property<string>("DescriptionEs")
-                        .IsRequired()
-                        .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)");
-
-                    b.Property<int>("DurationMinutes")
-                        .HasColumnType("int");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("bit");
-
-                    b.Property<int?>("Reps")
-                        .HasColumnType("int");
-
-                    b.Property<string>("StepsEn")
-                        .IsRequired()
-                        .HasMaxLength(4000)
-                        .HasColumnType("nvarchar(4000)");
-
-                    b.Property<string>("StepsEs")
-                        .IsRequired()
-                        .HasMaxLength(4000)
-                        .HasColumnType("nvarchar(4000)");
-
-                    b.Property<string>("TitleEn")
-                        .IsRequired()
-                        .HasMaxLength(120)
-                        .HasColumnType("nvarchar(120)");
-
-                    b.Property<string>("TitleEs")
-                        .IsRequired()
-                        .HasMaxLength(120)
-                        .HasColumnType("nvarchar(120)");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("VideoUrl")
-                        .HasMaxLength(512)
-                        .HasColumnType("nvarchar(512)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("IsActive");
-
-                    b.ToTable("Drills");
-                });
-
-            modelBuilder.Entity("SoccerSchool.Api.Domain.DrillAssignment", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<int?>("AgeClassificationId")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("CreatedByUserId")
-                        .HasMaxLength(450)
-                        .HasColumnType("nvarchar(450)");
-
-                    b.Property<int>("DrillId")
-                        .HasColumnType("int");
-
-                    b.Property<DateOnly?>("EndDate")
-                        .HasColumnType("date");
-
-                    b.Property<int?>("PlayerId")
-                        .HasColumnType("int");
-
-                    b.Property<DateOnly>("StartDate")
-                        .HasColumnType("date");
-
-                    b.Property<int>("TargetType")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("TeamId")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AgeClassificationId");
-
-                    b.HasIndex("DrillId");
-
-                    b.HasIndex("PlayerId");
-
-                    b.HasIndex("TeamId");
-
-                    b.HasIndex("StartDate", "EndDate");
-
-                    b.ToTable("DrillAssignments", t =>
-                        {
-                            t.HasCheckConstraint("CK_DrillAssignments_Target", "([TargetType] = 0 AND [PlayerId] IS NOT NULL AND [TeamId] IS NULL AND [AgeClassificationId] IS NULL) OR ([TargetType] = 1 AND [TeamId] IS NOT NULL AND [PlayerId] IS NULL AND [AgeClassificationId] IS NULL) OR ([TargetType] = 2 AND [AgeClassificationId] IS NOT NULL AND [PlayerId] IS NULL AND [TeamId] IS NULL)");
-                        });
-                });
-
-            modelBuilder.Entity("SoccerSchool.Api.Domain.DrillCompletion", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("CompletedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<DateOnly>("Date")
-                        .HasColumnType("date");
-
-                    b.Property<int>("DrillId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("PlayerId")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("DrillId");
-
-                    b.HasIndex("PlayerId", "Date", "DrillId")
-                        .IsUnique();
-
-                    b.ToTable("DrillCompletions");
                 });
 
             modelBuilder.Entity("SoccerSchool.Api.Domain.EmailTemplate", b =>
@@ -2062,15 +1914,9 @@ namespace SoccerSchool.Api.Data.Migrations
                     b.Property<int>("ParentAccountId")
                         .HasColumnType("int");
 
-                    b.Property<string>("UserId")
-                        .HasMaxLength(450)
-                        .HasColumnType("nvarchar(450)");
-
                     b.HasKey("Id");
 
                     b.HasIndex("ParentAccountId");
-
-                    b.HasIndex("UserId");
 
                     b.ToTable("ParentContacts");
                 });
@@ -2140,126 +1986,6 @@ namespace SoccerSchool.Api.Data.Migrations
                     b.HasIndex("ParentAccountId");
 
                     b.ToTable("Players");
-                });
-
-            modelBuilder.Entity("SoccerSchool.Api.Domain.PlayerLogin", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("AccessFailedCount")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<DateTime?>("LastLoginAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<DateTime?>("LockoutEnd")
-                        .HasColumnType("datetime2");
-
-                    b.Property<DateTime>("PasswordChangedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("PasswordHash")
-                        .IsRequired()
-                        .HasMaxLength(512)
-                        .HasColumnType("nvarchar(512)");
-
-                    b.Property<int>("PlayerId")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("Username")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("nvarchar(32)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("PlayerId")
-                        .IsUnique();
-
-                    b.HasIndex("Username")
-                        .IsUnique();
-
-                    b.ToTable("PlayerLogins");
-                });
-
-            modelBuilder.Entity("SoccerSchool.Api.Domain.PlayerPasswordResetToken", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<DateTime>("ExpiresAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int>("PlayerLoginId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("TokenHash")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<DateTime?>("UsedAt")
-                        .HasColumnType("datetime2");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("PlayerLoginId");
-
-                    b.HasIndex("TokenHash")
-                        .IsUnique();
-
-                    b.ToTable("PlayerPasswordResetTokens");
-                });
-
-            modelBuilder.Entity("SoccerSchool.Api.Domain.PlayerRefreshToken", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<DateTime>("ExpiresAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int>("PlayerLoginId")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime?>("RevokedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("TokenHash")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("PlayerLoginId");
-
-                    b.HasIndex("TokenHash")
-                        .IsUnique();
-
-                    b.ToTable("PlayerRefreshTokens");
                 });
 
             modelBuilder.Entity("SoccerSchool.Api.Domain.PlayerUniformAssignment", b =>
@@ -3201,57 +2927,6 @@ namespace SoccerSchool.Api.Data.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("SoccerSchool.Api.Domain.DrillAssignment", b =>
-                {
-                    b.HasOne("SoccerSchool.Api.Domain.AgeClassification", "AgeClassification")
-                        .WithMany()
-                        .HasForeignKey("AgeClassificationId")
-                        .OnDelete(DeleteBehavior.Cascade);
-
-                    b.HasOne("SoccerSchool.Api.Domain.Drill", "Drill")
-                        .WithMany("Assignments")
-                        .HasForeignKey("DrillId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("SoccerSchool.Api.Domain.Player", "Player")
-                        .WithMany()
-                        .HasForeignKey("PlayerId")
-                        .OnDelete(DeleteBehavior.Cascade);
-
-                    b.HasOne("SoccerSchool.Api.Domain.Team", "Team")
-                        .WithMany()
-                        .HasForeignKey("TeamId")
-                        .OnDelete(DeleteBehavior.Cascade);
-
-                    b.Navigation("AgeClassification");
-
-                    b.Navigation("Drill");
-
-                    b.Navigation("Player");
-
-                    b.Navigation("Team");
-                });
-
-            modelBuilder.Entity("SoccerSchool.Api.Domain.DrillCompletion", b =>
-                {
-                    b.HasOne("SoccerSchool.Api.Domain.Drill", "Drill")
-                        .WithMany()
-                        .HasForeignKey("DrillId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("SoccerSchool.Api.Domain.Player", "Player")
-                        .WithMany()
-                        .HasForeignKey("PlayerId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Drill");
-
-                    b.Navigation("Player");
-                });
-
             modelBuilder.Entity("SoccerSchool.Api.Domain.EmailTemplateVariable", b =>
                 {
                     b.HasOne("SoccerSchool.Api.Domain.EmailTemplate", "Template")
@@ -3540,14 +3215,7 @@ namespace SoccerSchool.Api.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("SoccerSchool.Api.Domain.ApplicationUser", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.Navigation("ParentAccount");
-
-                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("SoccerSchool.Api.Domain.Player", b =>
@@ -3559,39 +3227,6 @@ namespace SoccerSchool.Api.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("ParentAccount");
-                });
-
-            modelBuilder.Entity("SoccerSchool.Api.Domain.PlayerLogin", b =>
-                {
-                    b.HasOne("SoccerSchool.Api.Domain.Player", "Player")
-                        .WithMany()
-                        .HasForeignKey("PlayerId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Player");
-                });
-
-            modelBuilder.Entity("SoccerSchool.Api.Domain.PlayerPasswordResetToken", b =>
-                {
-                    b.HasOne("SoccerSchool.Api.Domain.PlayerLogin", "PlayerLogin")
-                        .WithMany()
-                        .HasForeignKey("PlayerLoginId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("PlayerLogin");
-                });
-
-            modelBuilder.Entity("SoccerSchool.Api.Domain.PlayerRefreshToken", b =>
-                {
-                    b.HasOne("SoccerSchool.Api.Domain.PlayerLogin", "PlayerLogin")
-                        .WithMany("RefreshTokens")
-                        .HasForeignKey("PlayerLoginId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("PlayerLogin");
                 });
 
             modelBuilder.Entity("SoccerSchool.Api.Domain.PlayerUniformAssignment", b =>
@@ -3828,11 +3463,6 @@ namespace SoccerSchool.Api.Data.Migrations
                     b.Navigation("Certifications");
                 });
 
-            modelBuilder.Entity("SoccerSchool.Api.Domain.Drill", b =>
-                {
-                    b.Navigation("Assignments");
-                });
-
             modelBuilder.Entity("SoccerSchool.Api.Domain.EmailTemplate", b =>
                 {
                     b.Navigation("Variables");
@@ -3875,11 +3505,6 @@ namespace SoccerSchool.Api.Data.Migrations
                     b.Navigation("Players");
 
                     b.Navigation("Registrations");
-                });
-
-            modelBuilder.Entity("SoccerSchool.Api.Domain.PlayerLogin", b =>
-                {
-                    b.Navigation("RefreshTokens");
                 });
 
             modelBuilder.Entity("SoccerSchool.Api.Domain.Registration", b =>

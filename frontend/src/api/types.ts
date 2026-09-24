@@ -291,6 +291,12 @@ export interface OutreachResponse {
 
 // --- Admin: user management ---
 
+export interface UserCoachTeam {
+  teamCoachId: number
+  teamId: number
+  teamName: string
+}
+
 export interface UserSummary {
   id: string
   email: string
@@ -298,6 +304,9 @@ export interface UserSummary {
   lastName: string
   phone: string | null
   isAdmin: boolean
+  /** Derived: this login's email appears on at least one TeamCoach card. Not a role — set/unset
+   *  by editing the team's coach roster, not from the users screen. */
+  isCoach: boolean
   isBanned: boolean
   createdAt: string | null
   lastLoginAt: string | null

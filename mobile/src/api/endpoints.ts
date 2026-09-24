@@ -6,6 +6,7 @@ import type {
   AdminPlayerOption,
   AdminTeamDetail,
   AdminUniform,
+  AdminUserRow,
   AdminVenue,
   Announcement,
   AttendanceStatus,
@@ -24,8 +25,10 @@ import type {
   SaveTeamCoachRequest,
   SaveTeamRequest,
   ScheduleEvent,
+  StaffEventAttendance,
   TeamOption,
   TokenResponse,
+  UserCoachTeam,
 } from './types';
 import type { TrainingLogin } from './types';
 
@@ -89,6 +92,16 @@ export async function setAttendance(
   status: AttendanceStatus,
 ): Promise<void> {
   await api.put(`/mobile/events/${eventId}/attendance`, { playerId, status });
+}
+
+/**
+ * Team-wide attendance counts on one event. Backend returns 403 for callers who are neither
+ * admin nor the coach of the event's team; callers should gate the fetch on Me.isAdmin ||
+ * Me.coachTeamIds.includes(event.teamId).
+ */
+export async function fetchStaffEventAttendance(eventId: number): Promise<StaffEventAttendance> {
+  const { data } = await api.get<StaffEventAttendance>(`/mobile/staff-events/${eventId}/attendance`);
+  return data;
 }
 
 // ---- Chat ----
@@ -350,4 +363,34 @@ export async function updateMiscEvent(id: number, req: SavePracticeRequest): Pro
 
 export async function deleteMiscEvent(id: number): Promise<void> {
   await api.delete(`/schedule/misc-events/${id}`);
+}
+
+// ---- Admin: user management ----
+
+export async function fetchAdminUsers(): Promise<AdminUserRow[]> {
+  const { data } = await api.get<AdminUserRow[]>('/admin/users');
+  return data;
+}
+
+export async function updateAdminUserProfile(
+  id: string,
+  payload: { firstName: string; lastName: string },
+): Promise<void> {
+  await api.put(`/admin/users/${encodeURIComponent(id)}/profile`, payload);
+}
+
+export async function setAdminUserRole(id: string, isAdmin: boolean): Promise<void> {
+  await api.put(`/admin/users/${encodeURIComponent(id)}/role`, { isAdmin });
+}
+
+/** Teams this user currently coaches — one entry per TeamCoach card whose Email matches them. */
+export async function fetchUserCoachTeams(id: string): Promise<UserCoachTeam[]> {
+  const { data } = await api.get<UserCoachTeam[]>(`/admin/users/${encodeURIComponent(id)}/coach-teams`);
+  return data;
+}
+
+/** Full-state replacement of the user's coach-team set. Backend adds cards for new teams and
+ *  deletes cards for teams the caller removed, all keyed on the user's email. */
+export async function setUserCoachTeams(id: string, teamIds: number[]): Promise<void> {
+  await api.put(`/admin/users/${encodeURIComponent(id)}/coach-teams`, { teamIds });
 }
