@@ -2,9 +2,11 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using SoccerSchool.Api.Data;
 using SoccerSchool.Api.Domain;
 using SoccerSchool.Api.Dtos;
+using SoccerSchool.Api.Options;
 using SoccerSchool.Api.Services;
 
 namespace SoccerSchool.Api.Controllers.Mobile;
@@ -24,6 +26,8 @@ public class MobileAuthController : ControllerBase
     private readonly IAccountDeletionService _deletion;
     private readonly IExternalIdentityService _external;
     private readonly IReclaimHasher _reclaim;
+    private readonly IEmailSender _emailSender;
+    private readonly AppOptions _app;
     private readonly AppDbContext _db;
     private readonly ILogger<MobileAuthController> _logger;
 
@@ -34,6 +38,8 @@ public class MobileAuthController : ControllerBase
         IAccountDeletionService deletion,
         IExternalIdentityService external,
         IReclaimHasher reclaim,
+        IEmailSender emailSender,
+        IOptions<AppOptions> app,
         AppDbContext db,
         ILogger<MobileAuthController> logger)
     {
@@ -43,6 +49,8 @@ public class MobileAuthController : ControllerBase
         _deletion = deletion;
         _external = external;
         _reclaim = reclaim;
+        _emailSender = emailSender;
+        _app = app.Value;
         _db = db;
         _logger = logger;
     }
@@ -135,9 +143,15 @@ public class MobileAuthController : ControllerBase
             user = await _users.FindByEmailAsync(identity.Email);
         }
 
+        // Track whether we spawn a genuinely new account this call so the admin notification only
+        // fires on real first-time signups, not every OAuth re-login.
+        var isFreshSignup = false;
+        var reunionAccountId = (int?)null;
+
         // 3. Nothing yet — mint a fresh user + parent record (with reunion of any deleted family).
         if (user is null)
         {
+            isFreshSignup = true;
             user = new ApplicationUser
             {
                 UserName = identity.Email,
@@ -163,6 +177,7 @@ public class MobileAuthController : ControllerBase
                 account.LastName = string.IsNullOrWhiteSpace(identity.LastName) ? account.LastName : identity.LastName;
                 account.ReclaimEmailHash = null;
                 account.NoCommunications = false;
+                reunionAccountId = account.Id;
                 _logger.LogInformation("Reunited external signup {Email} with previously-deleted family {AccountId}.", identity.Email, account.Id);
             }
             else
@@ -192,8 +207,50 @@ public class MobileAuthController : ControllerBase
         user.LastLoginAt = DateTime.UtcNow;
         await _users.UpdateAsync(user);
 
+        if (isFreshSignup)
+        {
+            // Fire-and-forget notification — never block the sign-in on ACS latency or failure.
+            _ = NotifyAdminOfSignupAsync(
+                $"Mobile ({provider})",
+                identity.Email,
+                $"{identity.FirstName} {identity.LastName}".Trim(),
+                reunionAccountId,
+                CancellationToken.None);
+        }
+
         var pair = await _tokens.IssueAsync(user, ct);
         return Ok(await BuildTokenResponseAsync(user, pair, ct));
+    }
+
+    /// <summary>Emails the configured admin bootstrap address a heads-up whenever a new parent
+    /// account is minted. Called only after the sign-up path — normal re-logins are quiet.
+    /// Failures are logged and swallowed so a flaky email service never blocks a working sign-in.</summary>
+    private async Task NotifyAdminOfSignupAsync(
+        string channel, string email, string displayName, int? reunionAccountId, CancellationToken ct)
+    {
+        var adminEmail = _app.Admin.Email;
+        if (string.IsNullOrWhiteSpace(adminEmail) || !_emailSender.IsAvailable) return;
+
+        try
+        {
+            var subject = $"New LVSS signup: {(string.IsNullOrWhiteSpace(displayName) ? email : displayName)}";
+            var body =
+                "A new parent just signed up.\n\n" +
+                $"Name: {(string.IsNullOrWhiteSpace(displayName) ? "(not provided)" : displayName)}\n" +
+                $"Email: {email}\n" +
+                $"Channel: {channel}\n" +
+                (reunionAccountId is int rid
+                    ? $"Reunion: reconnected to previously-deleted family #{rid} via ReclaimEmailHash.\n"
+                    : "New family record created.\n") +
+                "\nSee /admin/users on the admin site for the full profile.";
+            var send = await _emailSender.SendAsync(adminEmail, subject, body, ct);
+            if (!send.Success)
+                _logger.LogWarning("Admin signup notification failed for {Email}: {Message}", email, send.Message);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Admin signup notification threw for {Email}.", email);
+        }
     }
 
     [HttpGet("me")]

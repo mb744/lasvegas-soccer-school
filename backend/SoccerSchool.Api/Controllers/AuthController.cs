@@ -78,6 +78,7 @@ public class AuthController : ControllerBase
         ParentAccount? account = reclaimHash is null
             ? null
             : await _db.ParentAccounts.FirstOrDefaultAsync(p => p.ReclaimEmailHash == reclaimHash, ct);
+        var wasReunion = account is not null;
 
         if (account is not null)
         {
@@ -106,9 +107,47 @@ public class AuthController : ControllerBase
 
         await AttributeOutreachAsync(req.Email, req.Phone, account.Id, OutreachStatus.AccountCreated, ct);
 
+        // Heads-up email to the admin — fire-and-forget so a slow ACS send doesn't stretch the
+        // sign-up round-trip.
+        _ = NotifyAdminOfSignupAsync(
+            "Web (password)",
+            req.Email,
+            $"{req.FirstName} {req.LastName}".Trim(),
+            reunionAccountId: wasReunion ? account.Id : null,
+            CancellationToken.None);
+
         await _signIn.SignInAsync(user, isPersistent: true);
         await StampLastLoginAsync(user);
         return Ok(await BuildMeAsync(user, account));
+    }
+
+    /// <summary>See <c>MobileAuthController.NotifyAdminOfSignupAsync</c> — same shape.</summary>
+    private async Task NotifyAdminOfSignupAsync(
+        string channel, string email, string displayName, int? reunionAccountId, CancellationToken ct)
+    {
+        var adminEmail = _app.Admin.Email;
+        if (string.IsNullOrWhiteSpace(adminEmail) || !_email.IsAvailable) return;
+
+        try
+        {
+            var subject = $"New LVSS signup: {(string.IsNullOrWhiteSpace(displayName) ? email : displayName)}";
+            var body =
+                "A new parent just signed up.\n\n" +
+                $"Name: {(string.IsNullOrWhiteSpace(displayName) ? "(not provided)" : displayName)}\n" +
+                $"Email: {email}\n" +
+                $"Channel: {channel}\n" +
+                (reunionAccountId is int rid
+                    ? $"Reunion: reconnected to previously-deleted family #{rid} via ReclaimEmailHash.\n"
+                    : "New family record created.\n") +
+                "\nSee /admin/users on the admin site for the full profile.";
+            var send = await _email.SendAsync(adminEmail, subject, body, ct);
+            if (!send.Success)
+                _logger.LogWarning("Admin signup notification failed for {Email}: {Message}", email, send.Message);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Admin signup notification threw for {Email}.", email);
+        }
     }
 
     [HttpPost("login")]

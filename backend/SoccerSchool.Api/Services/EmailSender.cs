@@ -56,6 +56,18 @@ public class EmailSender : IEmailSender
             var recipients = new EmailRecipients(new[] { new EmailAddress(toEmail) });
             var message = new EmailMessage(_acs.EmailFromAddress, recipients, content);
 
+            // ReplyTo routes user replies to the friendly public inbox (info@…) rather than
+            // the ACS-verified technical sender. Recipients see and reply to a real mailbox
+            // the office actually reads. EmailAddress in this SDK version takes the display
+            // name via its constructor rather than a settable property.
+            if (!string.IsNullOrWhiteSpace(_acs.EmailReplyToAddress))
+            {
+                var displayName = string.IsNullOrWhiteSpace(_acs.EmailReplyToDisplayName)
+                    ? _acs.EmailReplyToAddress
+                    : _acs.EmailReplyToDisplayName;
+                message.ReplyTo.Add(new EmailAddress(_acs.EmailReplyToAddress, displayName));
+            }
+
             var op = await client.SendAsync(WaitUntil.Completed, message, ct);
             var status = op.Value.Status;
             // op.Id is the ACS operation tracking id (used for status callbacks); the per-message
