@@ -16,15 +16,16 @@ public record StaffScope(bool IsAdmin, IReadOnlyList<int> CoachTeamIds)
 }
 
 /// <summary>
-/// Resolves coach access by matching the login's email against <see cref="TeamCoach.Email"/> —
-/// the same rule <c>ChatAdminController</c> uses to add coaches to team chats. There is no separate
-/// coach role: a coach card with your email on a team is what makes you that team's coach.
+/// Resolves coach access from the explicit <see cref="TeamCoach.UserId"/> link: a coach card linked
+/// to your login is what makes you that team's coach. Links are made by an admin (Users page) or by
+/// the sign-in reconcile that matches card emails — never by an email match here, so nothing reads
+/// an unlinked card's email as proof of identity.
 /// </summary>
 public interface ICoachScopeService
 {
     Task<StaffScope> GetScopeAsync(ClaimsPrincipal principal, CancellationToken ct);
 
-    /// <summary>Team ids whose coach card matches this user's email. Empty for non-coaches.</summary>
+    /// <summary>Team ids whose coach card is linked to this user. Empty for non-coaches.</summary>
     Task<IReadOnlyList<int>> GetCoachTeamIdsAsync(ApplicationUser user, CancellationToken ct);
 }
 
@@ -47,14 +48,10 @@ public class CoachScopeService : ICoachScopeService
         return new StaffScope(isAdmin, await GetCoachTeamIdsAsync(user, ct));
     }
 
-    public async Task<IReadOnlyList<int>> GetCoachTeamIdsAsync(ApplicationUser user, CancellationToken ct)
-    {
-        var normalized = user.NormalizedEmail;
-        if (string.IsNullOrEmpty(normalized)) return Array.Empty<int>();
-        return await _db.TeamCoaches
-            .Where(tc => tc.Email != null && tc.Email.Trim().ToUpper() == normalized)
+    public async Task<IReadOnlyList<int>> GetCoachTeamIdsAsync(ApplicationUser user, CancellationToken ct) =>
+        await _db.TeamCoaches
+            .Where(tc => tc.UserId == user.Id)
             .Select(tc => tc.TeamId)
             .Distinct()
             .ToListAsync(ct);
-    }
 }
