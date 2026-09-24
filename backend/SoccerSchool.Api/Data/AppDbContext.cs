@@ -153,7 +153,14 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
                 .WithMany(a => a.Contacts)
                 .HasForeignKey(c => c.ParentAccountId)
                 .OnDelete(DeleteBehavior.Cascade);
+            // Optional Identity link, populated when the additional-parent signs in with a
+            // matching email. Same SetNull-on-user-delete rule as the TeamCoach FK.
+            b.HasOne(c => c.User)
+                .WithMany()
+                .HasForeignKey(c => c.UserId)
+                .OnDelete(DeleteBehavior.SetNull);
             b.HasIndex(c => c.ParentAccountId);
+            b.HasIndex(c => c.UserId);
         });
 
         modelBuilder.Entity<Player>(b =>

@@ -31,5 +31,16 @@ public class ParentContact
 
     public Language Language { get; set; } = Language.English;
 
+    /// <summary>Optional link to the Identity user this contact resolves to. Auto-populated when
+    /// the additional parent first signs in with a matching email — the same auto-reconciliation
+    /// pattern <see cref="TeamCoach.UserId"/> uses. Once linked, sign-in also spawns a
+    /// <see cref="ParentAccountCollaborator"/> row so the new login sees the family's kids /
+    /// schedule / chat automatically. Kept nullable so contacts can pre-exist before the person
+    /// ever creates an account; SetNull on user delete so the contact row survives account
+    /// resets.</summary>
+    [MaxLength(450)]
+    public string? UserId { get; set; }
+    public ApplicationUser? User { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

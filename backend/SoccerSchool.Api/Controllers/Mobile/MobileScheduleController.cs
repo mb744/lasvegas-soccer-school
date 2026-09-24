@@ -51,11 +51,20 @@ public class MobileScheduleController : ControllerBase
         var fromUtc = (from ?? DateTime.UtcNow.AddDays(-1)).ToUniversalTime();
         var toUtc = (to ?? DateTime.UtcNow.AddDays(60)).ToUniversalTime();
 
-        // The caller's kids (empty for a pure coach with no kids in the program).
-        var myPlayerIds = account is null
+        // The caller's kids across every family they're a member of — owned + collaborated. The
+        // collaborator table already carries additional-parent auto-links (see BuildMeAsync).
+        var accessibleAccountIds = new List<int>();
+        if (account is not null) accessibleAccountIds.Add(account.Id);
+        var collabIds = await _db.ParentAccountCollaborators
+            .Where(x => x.UserId == user.Id)
+            .Select(x => x.ParentAccountId)
+            .ToListAsync(ct);
+        accessibleAccountIds.AddRange(collabIds.Where(id => !accessibleAccountIds.Contains(id)));
+
+        var myPlayerIds = accessibleAccountIds.Count == 0
             ? new List<int>()
             : await _db.Players
-                .Where(p => p.ParentAccountId == account.Id)
+                .Where(p => accessibleAccountIds.Contains(p.ParentAccountId))
                 .Select(p => p.Id)
                 .ToListAsync(ct);
 

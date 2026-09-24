@@ -318,10 +318,67 @@ public class MobileAuthController : ControllerBase
         if (linkedNow) await _db.SaveChangesAsync(ct);
         var coachTeamIds = coachCards.Select(tc => tc.TeamId).Distinct().ToList();
 
-        var players = account is null
+        // Additional-parent auto-link: any ParentContact whose email matches this login gets
+        // stamped with UserId now, and — critically — we drop a ParentAccountCollaborator row so
+        // the rest of the app (schedule, chat, roster) already treats this user as part of the
+        // family without every downstream endpoint needing to know about ParentContact. Same
+        // reconcile-on-first-sign-in idea as TeamCoach.UserId.
+        var contactMatches = await _db.ParentContacts
+            .Where(c => c.UserId == user.Id
+                || (c.UserId == null && normalizedEmail != null && c.Email != null
+                    && c.Email.Trim().ToUpper() == normalizedEmail))
+            .ToListAsync(ct);
+        var contactLinkChanged = false;
+        foreach (var c in contactMatches)
+        {
+            if (c.UserId is null)
+            {
+                c.UserId = user.Id;
+                contactLinkChanged = true;
+            }
+        }
+
+        // Collaborated families this contact grants access to. Skip the user's own owned account
+        // (a stray self-referencing contact shouldn't add a collab row against themselves).
+        var contactAccountIds = contactMatches
+            .Select(c => c.ParentAccountId)
+            .Where(id => account is null || id != account.Id)
+            .Distinct()
+            .ToList();
+        if (contactAccountIds.Count > 0)
+        {
+            var alreadyCollabing = await _db.ParentAccountCollaborators
+                .Where(x => x.UserId == user.Id && contactAccountIds.Contains(x.ParentAccountId))
+                .Select(x => x.ParentAccountId)
+                .ToListAsync(ct);
+            var missing = contactAccountIds.Except(alreadyCollabing).ToList();
+            foreach (var aid in missing)
+            {
+                _db.ParentAccountCollaborators.Add(new ParentAccountCollaborator
+                {
+                    ParentAccountId = aid,
+                    UserId = user.Id,
+                });
+                contactLinkChanged = true;
+            }
+        }
+        if (contactLinkChanged) await _db.SaveChangesAsync(ct);
+
+        // Every family this login can see: their owned one plus every collaborated one (which
+        // now includes any families they were listed as an additional parent on). One Players
+        // query fans out across all of them.
+        var accessibleAccountIds = new List<int>();
+        if (account is not null) accessibleAccountIds.Add(account.Id);
+        var collabIds = await _db.ParentAccountCollaborators
+            .Where(x => x.UserId == user.Id)
+            .Select(x => x.ParentAccountId)
+            .ToListAsync(ct);
+        accessibleAccountIds.AddRange(collabIds.Where(id => !accessibleAccountIds.Contains(id)));
+
+        var players = accessibleAccountIds.Count == 0
             ? new List<MobilePlayerDto>()
             : await _db.Players
-                .Where(p => p.ParentAccountId == account.Id)
+                .Where(p => accessibleAccountIds.Contains(p.ParentAccountId))
                 .OrderBy(p => p.FirstName).ThenBy(p => p.LastName)
                 .Select(p => new MobilePlayerDto(
                     p.Id, p.FirstName, p.LastName, p.DateOfBirth,
