@@ -6,6 +6,7 @@ import type {
   AdminPlayerOption,
   AdminTeamDetail,
   AdminUniform,
+  AdminUserRow,
   AdminVenue,
   Announcement,
   AttendanceStatus,
@@ -361,4 +362,22 @@ export async function updateMiscEvent(id: number, req: SavePracticeRequest): Pro
 
 export async function deleteMiscEvent(id: number): Promise<void> {
   await api.delete(`/schedule/misc-events/${id}`);
+}
+
+// ---- Admin: user management ----
+
+export async function fetchAdminUsers(): Promise<AdminUserRow[]> {
+  const { data } = await api.get<AdminUserRow[]>('/admin/users');
+  return data;
+}
+
+export async function updateAdminUserProfile(
+  id: string,
+  payload: { firstName: string; lastName: string },
+): Promise<void> {
+  await api.put(`/admin/users/${encodeURIComponent(id)}/profile`, payload);
+}
+
+export async function setAdminUserRole(id: string, isAdmin: boolean): Promise<void> {
+  await api.put(`/admin/users/${encodeURIComponent(id)}/role`, { isAdmin });
 }

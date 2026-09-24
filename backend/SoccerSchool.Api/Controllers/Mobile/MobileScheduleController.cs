@@ -9,10 +9,12 @@ using SoccerSchool.Api.Services;
 namespace SoccerSchool.Api.Controllers.Mobile;
 
 /// <summary>
-/// Parent-facing schedule for the mobile app: every game/practice/event for the teams the caller's
-/// kids are rostered on, plus those kids' attendance status per event. Read-only here — confirming
-/// attendance is <see cref="MobileAttendanceController"/>. Scoped to the caller's family via
-/// <see cref="IParentAccountResolver"/>, so a parent only ever sees their own children's teams.
+/// Schedule for the mobile app: every game/practice/event for teams the caller has a stake in.
+/// A parent sees teams their kids are rostered on. A coach also sees teams whose coach card carries
+/// their email — even if none of their kids are on that team (a coach with no kids on the team gets
+/// events with an empty <c>players</c> array). An admin who is neither a parent nor a coach still
+/// sees only their own affiliations here; the full club-wide list lives under /mobile/admin/events.
+/// Read-only — confirming attendance is <see cref="MobileAttendanceController"/>.
 /// </summary>
 [ApiController]
 [Route("api/mobile/schedule")]
@@ -21,37 +23,61 @@ public class MobileScheduleController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly IParentAccountResolver _accounts;
+    private readonly Microsoft.AspNetCore.Identity.UserManager<ApplicationUser> _users;
 
-    public MobileScheduleController(AppDbContext db, IParentAccountResolver accounts)
+    public MobileScheduleController(
+        AppDbContext db,
+        IParentAccountResolver accounts,
+        Microsoft.AspNetCore.Identity.UserManager<ApplicationUser> users)
     {
         _db = db;
         _accounts = accounts;
+        _users = users;
     }
 
-    /// <summary>Upcoming (and recent) events across all the caller's kids' teams. Defaults to the
-    /// window [yesterday, +60 days]; override with <c>from</c>/<c>to</c> (UTC).</summary>
+    /// <summary>Upcoming (and recent) events across every team the caller has a stake in — kids'
+    /// teams (parent) plus coached teams (email on TeamCoach). Defaults to the window [yesterday,
+    /// +60 days]; override with <c>from</c>/<c>to</c> (UTC).</summary>
     [HttpGet]
     public async Task<ActionResult<IEnumerable<MobileScheduleEventDto>>> List(
         CancellationToken ct, [FromQuery] DateTime? from = null, [FromQuery] DateTime? to = null)
     {
+        // A coach might have no ParentAccount (pure staff account) but still needs their team
+        // schedule, so we resolve the Identity user separately from the parent account.
+        var user = await _users.GetUserAsync(User);
+        if (user is null) return Unauthorized();
         var account = await _accounts.ResolveAsync(User, ct);
-        if (account is null) return Unauthorized();
 
         var fromUtc = (from ?? DateTime.UtcNow.AddDays(-1)).ToUniversalTime();
         var toUtc = (to ?? DateTime.UtcNow.AddDays(60)).ToUniversalTime();
 
-        // The caller's kids and the teams they're on.
-        var myPlayerIds = await _db.Players
-            .Where(p => p.ParentAccountId == account.Id)
-            .Select(p => p.Id)
-            .ToListAsync(ct);
-        if (myPlayerIds.Count == 0) return Ok(Array.Empty<MobileScheduleEventDto>());
+        // The caller's kids (empty for a pure coach with no kids in the program).
+        var myPlayerIds = account is null
+            ? new List<int>()
+            : await _db.Players
+                .Where(p => p.ParentAccountId == account.Id)
+                .Select(p => p.Id)
+                .ToListAsync(ct);
 
-        var teamIds = await _db.TeamPlayers
-            .Where(tp => myPlayerIds.Contains(tp.PlayerId))
-            .Select(tp => tp.TeamId)
-            .Distinct()
-            .ToListAsync(ct);
+        var parentTeamIds = myPlayerIds.Count == 0
+            ? new List<int>()
+            : await _db.TeamPlayers
+                .Where(tp => myPlayerIds.Contains(tp.PlayerId))
+                .Select(tp => tp.TeamId)
+                .Distinct()
+                .ToListAsync(ct);
+
+        // Coach teams: TeamCoach cards whose email matches this login. Same rule the chat-group
+        // admin and staff attendance endpoint use — the coach card owns the association.
+        var coachTeamIds = string.IsNullOrEmpty(user.NormalizedEmail)
+            ? new List<int>()
+            : await _db.TeamCoaches
+                .Where(tc => tc.Email != null && tc.Email.Trim().ToUpper() == user.NormalizedEmail)
+                .Select(tc => tc.TeamId)
+                .Distinct()
+                .ToListAsync(ct);
+
+        var teamIds = parentTeamIds.Concat(coachTeamIds).Distinct().ToList();
         if (teamIds.Count == 0) return Ok(Array.Empty<MobileScheduleEventDto>());
 
         var events = await _db.ScheduledGames

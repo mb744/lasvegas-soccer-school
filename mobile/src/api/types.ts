@@ -318,3 +318,20 @@ export interface SaveChatGroupRequest {
   title: string;
   seedFromTeamId: number | null;
 }
+
+/** Row from /api/admin/users — one Identity user with derived staff flags and profile. */
+export interface AdminUserRow {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  phone: string | null;
+  isAdmin: boolean;
+  /** Derived: this login's email appears on at least one TeamCoach card. */
+  isCoach: boolean;
+  isBanned: boolean;
+  createdAt: string | null;
+  lastLoginAt: string | null;
+  registrationCount: number;
+  parentAccountId: number | null;
+}
