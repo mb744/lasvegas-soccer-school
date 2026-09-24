@@ -15,7 +15,14 @@ import {
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { fetchAdminUsers, setAdminUserRole, updateAdminUserProfile } from '../../../src/api/endpoints';
+import {
+  fetchAdminTeams,
+  fetchAdminUsers,
+  fetchUserCoachTeams,
+  setAdminUserRole,
+  setUserCoachTeams,
+  updateAdminUserProfile,
+} from '../../../src/api/endpoints';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { colors, radius, spacing } from '../../../src/theme';
 
@@ -151,15 +158,13 @@ export default function AdminUserEditScreen() {
           </View>
           {isSelf ? <Text style={styles.hint}>{t('admin.cannotDemoteSelf')}</Text> : null}
 
-          <View style={styles.roleRow}>
+          <View style={[styles.roleRow, { borderBottomWidth: 0 }]}>
             <View style={{ flex: 1 }}>
               <Text style={styles.roleLabel}>{t('admin.coach')}</Text>
-              <Text style={styles.roleBlurb}>{t('admin.coachRoleBlurb')}</Text>
+              <Text style={styles.roleBlurb}>{t('admin.coachTeamsBlurb')}</Text>
             </View>
-            <Text style={user.isCoach ? styles.coachOn : styles.coachOff}>
-              {user.isCoach ? t('admin.coachOn') : t('admin.coachOff')}
-            </Text>
           </View>
+          <CoachTeamsEditor userId={user.id} />
         </View>
 
         <TouchableOpacity style={styles.secondaryBtn} onPress={() => router.back()}>
@@ -167,6 +172,103 @@ export default function AdminUserEditScreen() {
         </TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>
+  );
+}
+
+/** Multi-select of every team; each check adds/removes this user's coach card on that team.
+ *  Full-state PUT means we only round-trip on Save, letting the admin fix mistakes without a
+ *  network hop per toggle. */
+function CoachTeamsEditor({ userId }: { userId: string }) {
+  const { t } = useTranslation();
+  const qc = useQueryClient();
+
+  const teams = useQuery({ queryKey: ['adminTeams'], queryFn: fetchAdminTeams });
+  const coachTeams = useQuery({
+    queryKey: ['userCoachTeams', userId],
+    queryFn: () => fetchUserCoachTeams(userId),
+  });
+
+  const [draft, setDraft] = React.useState<Set<number>>(new Set());
+  const [seeded, setSeeded] = React.useState(false);
+
+  React.useEffect(() => {
+    if (seeded || !coachTeams.data) return;
+    setDraft(new Set(coachTeams.data.map((r) => r.teamId)));
+    setSeeded(true);
+  }, [coachTeams.data, seeded]);
+
+  const original = React.useMemo(
+    () => new Set((coachTeams.data ?? []).map((r) => r.teamId)),
+    [coachTeams.data],
+  );
+  const dirty = React.useMemo(() => {
+    if (draft.size !== original.size) return true;
+    for (const id of draft) if (!original.has(id)) return true;
+    return false;
+  }, [draft, original]);
+
+  const save = useMutation({
+    mutationFn: () => setUserCoachTeams(userId, Array.from(draft)),
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['userCoachTeams', userId] }),
+        // The Coach chip on the users list is derived from the same TeamCoach rows.
+        qc.invalidateQueries({ queryKey: ['adminUsers'] }),
+      ]);
+    },
+    onError: (e: unknown) =>
+      Alert.alert(t('common.retry'), (e as { message?: string })?.message ?? t('admin.saveFailed')),
+  });
+
+  if (teams.isLoading || coachTeams.isLoading) {
+    return (
+      <View style={{ paddingVertical: 12 }}>
+        <ActivityIndicator color={colors.brand} />
+      </View>
+    );
+  }
+
+  const toggle = (teamId: number) => {
+    setDraft((prev) => {
+      const next = new Set(prev);
+      if (next.has(teamId)) next.delete(teamId);
+      else next.add(teamId);
+      return next;
+    });
+  };
+
+  return (
+    <View>
+      {(teams.data ?? []).length === 0 ? (
+        <Text style={styles.roleBlurb}>{t('admin.noTeams')}</Text>
+      ) : (
+        (teams.data ?? []).map((tm) => {
+          const on = draft.has(tm.id);
+          return (
+            <TouchableOpacity
+              key={tm.id}
+              style={styles.teamRow}
+              onPress={() => toggle(tm.id)}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.checkbox, on && styles.checkboxOn]}>
+                {on ? <Text style={styles.checkmark}>✓</Text> : null}
+              </View>
+              <Text style={styles.teamRowText}>{tm.name}</Text>
+            </TouchableOpacity>
+          );
+        })
+      )}
+      <TouchableOpacity
+        style={[styles.primaryBtn, (!dirty || save.isPending) && styles.disabled]}
+        disabled={!dirty || save.isPending}
+        onPress={() => save.mutate()}
+      >
+        <Text style={styles.primaryBtnText}>
+          {save.isPending ? t('admin.saving') : t('admin.saveCoachTeams')}
+        </Text>
+      </TouchableOpacity>
+    </View>
   );
 }
 
@@ -241,4 +343,24 @@ const styles = StyleSheet.create({
   roleBlurb: { fontSize: 12, color: colors.subtext, marginTop: 2, lineHeight: 16 },
   coachOn: { color: colors.brand, fontSize: 13, fontWeight: '800', textTransform: 'uppercase' },
   coachOff: { color: colors.subtext, fontSize: 13, fontWeight: '800', textTransform: 'uppercase' },
+
+  teamRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    gap: spacing.sm,
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxOn: { backgroundColor: colors.brand, borderColor: colors.brand },
+  checkmark: { color: colors.white, fontSize: 14, fontWeight: '800' },
+  teamRowText: { fontSize: 15, color: colors.text, flex: 1 },
 });

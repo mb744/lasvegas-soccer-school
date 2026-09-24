@@ -28,6 +28,7 @@ import type {
   StaffEventAttendance,
   TeamOption,
   TokenResponse,
+  UserCoachTeam,
 } from './types';
 import type { TrainingLogin } from './types';
 
@@ -380,4 +381,16 @@ export async function updateAdminUserProfile(
 
 export async function setAdminUserRole(id: string, isAdmin: boolean): Promise<void> {
   await api.put(`/admin/users/${encodeURIComponent(id)}/role`, { isAdmin });
+}
+
+/** Teams this user currently coaches — one entry per TeamCoach card whose Email matches them. */
+export async function fetchUserCoachTeams(id: string): Promise<UserCoachTeam[]> {
+  const { data } = await api.get<UserCoachTeam[]>(`/admin/users/${encodeURIComponent(id)}/coach-teams`);
+  return data;
+}
+
+/** Full-state replacement of the user's coach-team set. Backend adds cards for new teams and
+ *  deletes cards for teams the caller removed, all keyed on the user's email. */
+export async function setUserCoachTeams(id: string, teamIds: number[]): Promise<void> {
+  await api.put(`/admin/users/${encodeURIComponent(id)}/coach-teams`, { teamIds });
 }

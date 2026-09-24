@@ -77,6 +77,8 @@ export const en = {
     rolesTitle: 'Roles',
     adminRoleBlurb: 'Full admin access across the site and mobile.',
     coachRoleBlurb: 'Coach status is derived: add this email to a team\'s coach card.',
+    coachTeamsBlurb: 'Check every team this person coaches. Adding a team creates a coach card on their behalf; unchecking removes it.',
+    saveCoachTeams: 'Save coach teams',
     coachOn: 'On',
     coachOff: 'Off',
     cannotDemoteSelf: 'You cannot remove your own admin role.',

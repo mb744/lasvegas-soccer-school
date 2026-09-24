@@ -139,6 +139,79 @@ public class AdminUsersController : ControllerBase
         return NoContent();
     }
 
+    /// <summary>Teams this user currently coaches — i.e. TeamCoach cards whose Email matches the
+    /// user's login. Returned even when empty so the UI can render an "Add team" button.</summary>
+    [HttpGet("{id}/coach-teams")]
+    public async Task<ActionResult<IEnumerable<UserCoachTeamDto>>> ListCoachTeams(string id, CancellationToken ct)
+    {
+        var user = await _users.FindByIdAsync(id);
+        if (user is null) return NotFound();
+        if (string.IsNullOrEmpty(user.NormalizedEmail)) return Ok(Array.Empty<UserCoachTeamDto>());
+
+        var rows = await _db.TeamCoaches
+            .Where(tc => tc.Email != null && tc.Email.Trim().ToUpper() == user.NormalizedEmail)
+            .OrderBy(tc => tc.Team!.Name)
+            .Select(tc => new UserCoachTeamDto(tc.Id, tc.TeamId, tc.Team!.Name))
+            .ToListAsync(ct);
+        return Ok(rows);
+    }
+
+    /// <summary>Full-state replacement of this user's coach-team set. Adds a TeamCoach card
+    /// (Name/Phone/Language taken from the parent profile so messaging routing works out of the
+    /// box) for every team in the list they don't already coach; deletes their coach cards on
+    /// teams removed from the list. Only touches cards whose Email matches this user — other
+    /// coaches on the same team are left alone. Idempotent.</summary>
+    [HttpPut("{id}/coach-teams")]
+    public async Task<IActionResult> SetCoachTeams(string id, [FromBody] SetUserCoachTeamsRequest req, CancellationToken ct)
+    {
+        var user = await _users.FindByIdAsync(id);
+        if (user is null) return NotFound();
+        var email = user.Email;
+        if (string.IsNullOrWhiteSpace(email))
+            return BadRequest("User has no email — cannot assign coach role.");
+
+        var desired = (req.TeamIds ?? Array.Empty<int>()).Distinct().ToHashSet();
+
+        if (desired.Count > 0)
+        {
+            var known = await _db.Teams.Where(t => desired.Contains(t.Id)).Select(t => t.Id).ToListAsync(ct);
+            var missing = desired.Except(known).ToList();
+            if (missing.Count > 0) return BadRequest($"Unknown team ids: {string.Join(", ", missing)}");
+        }
+
+        var normalized = email.Trim().ToUpperInvariant();
+        var existing = await _db.TeamCoaches
+            .Where(tc => tc.Email != null && tc.Email.Trim().ToUpper() == normalized)
+            .ToListAsync(ct);
+        var existingByTeam = existing.ToDictionary(tc => tc.TeamId);
+
+        foreach (var tc in existing.Where(x => !desired.Contains(x.TeamId)))
+            _db.TeamCoaches.Remove(tc);
+
+        var account = await _db.ParentAccounts.FirstOrDefaultAsync(p => p.UserId == user.Id, ct);
+        var name = account is null
+            ? user.Email ?? "Coach"
+            : $"{account.FirstName} {account.LastName}".Trim();
+        var phone = account?.CellPhone;
+        var language = account?.Language ?? Domain.Language.English;
+
+        foreach (var teamId in desired.Except(existingByTeam.Keys))
+        {
+            _db.TeamCoaches.Add(new Domain.TeamCoach
+            {
+                TeamId = teamId,
+                Name = string.IsNullOrWhiteSpace(name) ? email : name,
+                Email = email,
+                Phone = phone,
+                Language = language,
+                Role = Domain.TeamCoachRole.HeadCoach,
+            });
+        }
+
+        await _db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
     private async Task<(ApplicationUser? user, IActionResult? denied)> ResolveTargetAsync(string id)
     {
         var user = await _users.FindByIdAsync(id);

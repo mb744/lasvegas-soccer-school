@@ -38,3 +38,17 @@ public record SetUserAdminRequest
 {
     public bool IsAdmin { get; init; }
 }
+
+/// <summary>One team this user coaches — a TeamCoach card where the card's Email matches the
+/// user's login. Includes the card's row id so callers can distinguish "this user's coach card"
+/// from other coach cards on the same team.</summary>
+public record UserCoachTeamDto(int TeamCoachId, int TeamId, string TeamName);
+
+/// <summary>Full-state replacement of this user's coach-team assignments. Server creates a
+/// TeamCoach card for each new team (name + phone + language pulled from the user's profile)
+/// and deletes any existing coach cards on teams removed from the list. Safe to send the same
+/// list twice — it's a no-op.</summary>
+public record SetUserCoachTeamsRequest
+{
+    public IReadOnlyList<int> TeamIds { get; init; } = Array.Empty<int>();
+}

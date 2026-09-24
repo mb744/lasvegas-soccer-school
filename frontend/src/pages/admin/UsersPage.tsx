@@ -4,12 +4,13 @@ import { useTranslation } from 'react-i18next'
 import { Layout } from '../../components/Layout'
 import { Api } from '../../api/client'
 import { useAuth } from '../../auth/AuthContext'
-import type { UserSummary } from '../../api/types'
+import type { TeamSummary, UserCoachTeam, UserSummary } from '../../api/types'
 
 export function AdminUsersPage() {
   const { t } = useTranslation()
   const { me } = useAuth()
   const [users, setUsers] = useState<UserSummary[]>([])
+  const [teams, setTeams] = useState<TeamSummary[]>([])
   const [error, setError] = useState<string | null>(null)
   const [q, setQ] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -17,10 +18,22 @@ export function AdminUsersPage() {
   const [editLast, setEditLast] = useState('')
   const [saving, setSaving] = useState(false)
 
+  // Coach-teams editor: keyed on the user id. `null` → no user open. When open, `draft` is the
+  // in-progress checkbox state (a Set of team ids). Server round-trip fills `original` so we know
+  // whether to submit at all.
+  const [coachEditingId, setCoachEditingId] = useState<string | null>(null)
+  const [coachOriginal, setCoachOriginal] = useState<Set<number>>(new Set())
+  const [coachDraft, setCoachDraft] = useState<Set<number>>(new Set())
+  const [coachLoading, setCoachLoading] = useState(false)
+  const [coachSaving, setCoachSaving] = useState(false)
+
   const load = async () => {
     setError(null)
-    try { setUsers(await Api.listUsers()) }
-    catch (e: any) { setError(e?.message ?? 'Error') }
+    try {
+      const [u, t] = await Promise.all([Api.listUsers(), Api.listTeams()])
+      setUsers(u)
+      setTeams(t)
+    } catch (e: any) { setError(e?.message ?? 'Error') }
   }
 
   useEffect(() => { load() }, [])
@@ -74,16 +87,67 @@ export function AdminUsersPage() {
 
   const toggleAdmin = async (u: UserSummary, next: boolean) => {
     setError(null)
-    // Optimistic UI so the checkbox doesn't feel laggy on slow links. Reload on response so any
-    // derived flags (isBanned etc.) stay in sync.
     setUsers(prev => prev.map(x => x.id === u.id ? { ...x, isAdmin: next } : x))
     try { await Api.setUserAdmin(u.id, next); await load() }
     catch (e: any) {
       setError(e?.response?.data ?? e?.message ?? 'Error')
-      // Revert on failure — server rejected (usually self-demotion guard).
       setUsers(prev => prev.map(x => x.id === u.id ? { ...x, isAdmin: !next } : x))
     }
   }
+
+  // ---- Coach-teams editor ----
+
+  const openCoachEditor = async (u: UserSummary) => {
+    setError(null)
+    setCoachEditingId(u.id)
+    setCoachLoading(true)
+    try {
+      const rows: UserCoachTeam[] = await Api.listUserCoachTeams(u.id)
+      const set = new Set(rows.map(r => r.teamId))
+      setCoachOriginal(set)
+      setCoachDraft(new Set(set))
+    } catch (e: any) {
+      setError(e?.response?.data ?? e?.message ?? 'Error')
+      setCoachEditingId(null)
+    } finally {
+      setCoachLoading(false)
+    }
+  }
+
+  const closeCoachEditor = () => {
+    setCoachEditingId(null)
+    setCoachOriginal(new Set())
+    setCoachDraft(new Set())
+  }
+
+  const toggleCoachTeam = (teamId: number, on: boolean) => {
+    setCoachDraft(prev => {
+      const next = new Set(prev)
+      if (on) next.add(teamId)
+      else next.delete(teamId)
+      return next
+    })
+  }
+
+  const saveCoachTeams = async (u: UserSummary) => {
+    setCoachSaving(true)
+    setError(null)
+    try {
+      await Api.setUserCoachTeams(u.id, Array.from(coachDraft))
+      await load()
+      closeCoachEditor()
+    } catch (e: any) {
+      setError(e?.response?.data ?? e?.message ?? 'Error')
+    } finally {
+      setCoachSaving(false)
+    }
+  }
+
+  const coachDirty = useMemo(() => {
+    if (coachDraft.size !== coachOriginal.size) return true
+    for (const id of coachDraft) if (!coachOriginal.has(id)) return true
+    return false
+  }, [coachDraft, coachOriginal])
 
   return (
     <Layout>
@@ -128,102 +192,157 @@ export function AdminUsersPage() {
               <tbody>
                 {filtered.map(u => {
                   const editing = editingId === u.id
+                  const coachOpen = coachEditingId === u.id
                   const isSelf = me?.userId === u.id
                   const noProfile = u.parentAccountId === null
                   return (
-                    <tr key={u.id} className={`border-b last:border-0 align-top ${u.isBanned ? 'bg-rose-50' : ''}`}>
-                      <td className="py-2 pr-4">{u.email}</td>
-                      <td className="py-2 pr-4">
-                        {editing ? (
-                          <div className="flex flex-col gap-1 min-w-[220px]">
+                    <>
+                      <tr key={u.id} className={`border-b last:border-0 align-top ${u.isBanned ? 'bg-rose-50' : ''}`}>
+                        <td className="py-2 pr-4">{u.email}</td>
+                        <td className="py-2 pr-4">
+                          {editing ? (
+                            <div className="flex flex-col gap-1 min-w-[220px]">
+                              <input
+                                type="text"
+                                value={editFirst}
+                                onChange={e => setEditFirst(e.target.value)}
+                                placeholder="First name"
+                                className="border border-slate-300 rounded px-2 py-1"
+                                disabled={noProfile}
+                              />
+                              <input
+                                type="text"
+                                value={editLast}
+                                onChange={e => setEditLast(e.target.value)}
+                                placeholder="Last name"
+                                className="border border-slate-300 rounded px-2 py-1"
+                                disabled={noProfile}
+                              />
+                              {noProfile && (
+                                <span className="text-xs text-slate-500 italic">
+                                  Seed admin — no parent profile to rename.
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            [u.firstName, u.lastName].filter(Boolean).join(' ') || '—'
+                          )}
+                        </td>
+                        <td className="py-2 pr-4">
+                          <label className="flex items-center gap-2">
                             <input
-                              type="text"
-                              value={editFirst}
-                              onChange={e => setEditFirst(e.target.value)}
-                              placeholder="First name"
-                              className="border border-slate-300 rounded px-2 py-1"
-                              disabled={noProfile}
+                              type="checkbox"
+                              checked={u.isAdmin}
+                              disabled={isSelf}
+                              onChange={e => toggleAdmin(u, e.target.checked)}
                             />
-                            <input
-                              type="text"
-                              value={editLast}
-                              onChange={e => setEditLast(e.target.value)}
-                              placeholder="Last name"
-                              className="border border-slate-300 rounded px-2 py-1"
-                              disabled={noProfile}
-                            />
-                            {noProfile && (
-                              <span className="text-xs text-slate-500 italic">
-                                Seed admin — no parent profile to rename.
-                              </span>
-                            )}
-                          </div>
-                        ) : (
-                          [u.firstName, u.lastName].filter(Boolean).join(' ') || '—'
-                        )}
-                      </td>
-                      <td className="py-2 pr-4">
-                        <label className="flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            checked={u.isAdmin}
-                            disabled={isSelf}
-                            onChange={e => toggleAdmin(u, e.target.checked)}
-                          />
-                          <span className={u.isAdmin
-                            ? 'text-xs bg-emerald-100 text-emerald-800 rounded px-2 py-0.5 font-semibold'
-                            : 'text-xs text-slate-500'}>Admin</span>
-                        </label>
-                        {u.isCoach && (
-                          <span
-                            className="mt-1 inline-block text-xs bg-sky-100 text-sky-800 rounded px-2 py-0.5 font-semibold"
-                            title="Derived — set by adding this email to a team's coach card."
-                          >
-                            Coach
-                          </span>
-                        )}
-                        {isSelf && (
-                          <div className="text-[10px] text-slate-400 mt-1">You cannot demote yourself.</div>
-                        )}
-                      </td>
-                      <td className="py-2 pr-4 text-slate-500 whitespace-nowrap">
-                        {u.createdAt ? new Date(u.createdAt).toLocaleString() : '—'}
-                      </td>
-                      <td className="py-2 pr-4 text-slate-500 whitespace-nowrap">
-                        {u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString() : <span className="text-slate-400">{t('admin.usersNeverLogin')}</span>}
-                      </td>
-                      <td className="py-2 pr-4 text-center">{u.registrationCount}</td>
-                      <td className="py-2 pr-4">
-                        {u.isBanned
-                          ? <span className="text-xs bg-rose-100 text-rose-800 rounded px-2 py-0.5 font-semibold">{t('admin.usersBanned')}</span>
-                          : <span className="text-xs bg-emerald-50 text-emerald-700 rounded px-2 py-0.5">{t('admin.usersActive')}</span>}
-                      </td>
-                      <td className="py-2 pr-4 whitespace-nowrap">
-                        {editing ? (
-                          <div className="flex flex-col gap-1">
+                            <span className={u.isAdmin
+                              ? 'text-xs bg-emerald-100 text-emerald-800 rounded px-2 py-0.5 font-semibold'
+                              : 'text-xs text-slate-500'}>Admin</span>
+                          </label>
+                          <div className="mt-1">
                             <button
-                              onClick={() => saveEdit(u)}
-                              disabled={saving || noProfile}
-                              className="text-emerald-700 hover:underline disabled:text-slate-300 disabled:no-underline"
+                              onClick={() => (coachOpen ? closeCoachEditor() : openCoachEditor(u))}
+                              className="text-xs text-emerald-700 hover:underline"
                             >
-                              {saving ? 'Saving…' : 'Save'}
+                              {u.isCoach
+                                ? <span className="bg-sky-100 text-sky-800 rounded px-2 py-0.5 font-semibold">Coach · edit</span>
+                                : <span>+ Assign coach</span>}
                             </button>
-                            <button onClick={cancelEdit} className="text-slate-500 hover:underline">Cancel</button>
                           </div>
-                        ) : (
-                          <div className="flex flex-col gap-1">
-                            <button onClick={() => startEdit(u)} className="text-emerald-700 hover:underline">Edit</button>
-                            {u.isAdmin ? (
-                              <span className="text-xs text-slate-400">—</span>
-                            ) : u.isBanned ? (
-                              <button onClick={() => unbanUser(u)} className="text-emerald-700 hover:underline">{t('admin.usersUnban')}</button>
+                          {isSelf && (
+                            <div className="text-[10px] text-slate-400 mt-1">You cannot demote yourself.</div>
+                          )}
+                        </td>
+                        <td className="py-2 pr-4 text-slate-500 whitespace-nowrap">
+                          {u.createdAt ? new Date(u.createdAt).toLocaleString() : '—'}
+                        </td>
+                        <td className="py-2 pr-4 text-slate-500 whitespace-nowrap">
+                          {u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString() : <span className="text-slate-400">{t('admin.usersNeverLogin')}</span>}
+                        </td>
+                        <td className="py-2 pr-4 text-center">{u.registrationCount}</td>
+                        <td className="py-2 pr-4">
+                          {u.isBanned
+                            ? <span className="text-xs bg-rose-100 text-rose-800 rounded px-2 py-0.5 font-semibold">{t('admin.usersBanned')}</span>
+                            : <span className="text-xs bg-emerald-50 text-emerald-700 rounded px-2 py-0.5">{t('admin.usersActive')}</span>}
+                        </td>
+                        <td className="py-2 pr-4 whitespace-nowrap">
+                          {editing ? (
+                            <div className="flex flex-col gap-1">
+                              <button
+                                onClick={() => saveEdit(u)}
+                                disabled={saving || noProfile}
+                                className="text-emerald-700 hover:underline disabled:text-slate-300 disabled:no-underline"
+                              >
+                                {saving ? 'Saving…' : 'Save'}
+                              </button>
+                              <button onClick={cancelEdit} className="text-slate-500 hover:underline">Cancel</button>
+                            </div>
+                          ) : (
+                            <div className="flex flex-col gap-1">
+                              <button onClick={() => startEdit(u)} className="text-emerald-700 hover:underline">Edit</button>
+                              {u.isAdmin ? (
+                                <span className="text-xs text-slate-400">—</span>
+                              ) : u.isBanned ? (
+                                <button onClick={() => unbanUser(u)} className="text-emerald-700 hover:underline">{t('admin.usersUnban')}</button>
+                              ) : (
+                                <button onClick={() => banUser(u)} className="text-rose-700 hover:underline">{t('admin.usersBan')}</button>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+
+                      {coachOpen && (
+                        <tr key={`${u.id}-coach`} className="border-b bg-slate-50">
+                          <td colSpan={8} className="py-3 px-4">
+                            <div className="flex items-center justify-between gap-4">
+                              <div>
+                                <div className="text-xs font-bold text-slate-700 uppercase">Coach teams</div>
+                                <div className="text-xs text-slate-500 mt-1">
+                                  Adds a coach card on each selected team using this login's email. Removing a team deletes only this user's coach card — other coaches stay.
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <button
+                                  onClick={() => saveCoachTeams(u)}
+                                  disabled={coachSaving || coachLoading || !coachDirty}
+                                  className="text-sm bg-emerald-600 text-white rounded px-3 py-1 disabled:bg-slate-300"
+                                >
+                                  {coachSaving ? 'Saving…' : 'Save'}
+                                </button>
+                                <button
+                                  onClick={closeCoachEditor}
+                                  className="text-sm text-slate-600 hover:underline"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                            {coachLoading ? (
+                              <div className="text-sm text-slate-500 mt-3">Loading…</div>
                             ) : (
-                              <button onClick={() => banUser(u)} className="text-rose-700 hover:underline">{t('admin.usersBan')}</button>
+                              <div className="mt-3 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-y-1 gap-x-4 max-h-64 overflow-y-auto">
+                                {teams.length === 0 ? (
+                                  <div className="col-span-full text-sm text-slate-500">No teams available.</div>
+                                ) : (
+                                  teams.map(tm => (
+                                    <label key={tm.id} className="flex items-center gap-2 text-sm">
+                                      <input
+                                        type="checkbox"
+                                        checked={coachDraft.has(tm.id)}
+                                        onChange={e => toggleCoachTeam(tm.id, e.target.checked)}
+                                      />
+                                      <span className="text-slate-800">{tm.name}</span>
+                                    </label>
+                                  ))
+                                )}
+                              </div>
                             )}
-                          </div>
-                        )}
-                      </td>
-                    </tr>
+                          </td>
+                        </tr>
+                      )}
+                    </>
                   )
                 })}
                 {filtered.length === 0 && (

@@ -79,6 +79,8 @@ export const es: Translations = {
     rolesTitle: 'Roles',
     adminRoleBlurb: 'Acceso admin completo en el sitio y la app móvil.',
     coachRoleBlurb: 'Entrenador es derivado: agregue este correo a la tarjeta de entrenador del equipo.',
+    coachTeamsBlurb: 'Marque cada equipo que esta persona entrena. Agregar crea una tarjeta de entrenador en su nombre; desmarcar la elimina.',
+    saveCoachTeams: 'Guardar equipos',
     coachOn: 'Sí',
     coachOff: 'No',
     cannotDemoteSelf: 'No puede quitar su propio rol admin.',

@@ -319,6 +319,13 @@ export interface SaveChatGroupRequest {
   seedFromTeamId: number | null;
 }
 
+/** One team the user has a coach card on (email match). Used to hydrate the coach-teams picker. */
+export interface UserCoachTeam {
+  teamCoachId: number;
+  teamId: number;
+  teamName: string;
+}
+
 /** Row from /api/admin/users — one Identity user with derived staff flags and profile. */
 export interface AdminUserRow {
   id: string;

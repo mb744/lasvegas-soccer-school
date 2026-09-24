@@ -291,6 +291,12 @@ export interface OutreachResponse {
 
 // --- Admin: user management ---
 
+export interface UserCoachTeam {
+  teamCoachId: number
+  teamId: number
+  teamName: string
+}
+
 export interface UserSummary {
   id: string
   email: string
