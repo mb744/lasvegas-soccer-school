@@ -18,14 +18,15 @@ public record StaffScope(bool IsAdmin, IReadOnlyList<int> CoachTeamIds)
 /// <summary>
 /// Resolves coach access from the explicit <see cref="TeamCoach.UserId"/> link: a coach card linked
 /// to your login is what makes you that team's coach. Links are made by an admin (Users page) or by
-/// the sign-in reconcile that matches card emails — never by an email match here, so nothing reads
-/// an unlinked card's email as proof of identity.
+/// matching the card's email — and an email match only counts for a login whose email is verified,
+/// so registering a coach's address first can't claim their team.
 /// </summary>
 public interface ICoachScopeService
 {
     Task<StaffScope> GetScopeAsync(ClaimsPrincipal principal, CancellationToken ct);
 
-    /// <summary>Team ids whose coach card is linked to this user. Empty for non-coaches.</summary>
+    /// <summary>Team ids whose coach card is linked to this user (linking any unclaimed cards that
+    /// carry their verified email first). Empty for non-coaches.</summary>
     Task<IReadOnlyList<int>> GetCoachTeamIdsAsync(ApplicationUser user, CancellationToken ct);
 }
 
@@ -48,10 +49,27 @@ public class CoachScopeService : ICoachScopeService
         return new StaffScope(isAdmin, await GetCoachTeamIdsAsync(user, ct));
     }
 
-    public async Task<IReadOnlyList<int>> GetCoachTeamIdsAsync(ApplicationUser user, CancellationToken ct) =>
-        await _db.TeamCoaches
+    public async Task<IReadOnlyList<int>> GetCoachTeamIdsAsync(ApplicationUser user, CancellationToken ct)
+    {
+        // The parent app links cards on sign-in (MobileAuthController.BuildMeAsync); web-only coaches
+        // never hit that path, so do the same reconcile here. Verified emails only.
+        var normalizedEmail = user.EmailConfirmed ? user.NormalizedEmail : null;
+        if (!string.IsNullOrEmpty(normalizedEmail))
+        {
+            var unclaimed = await _db.TeamCoaches
+                .Where(tc => tc.UserId == null && tc.Email != null && tc.Email.Trim().ToUpper() == normalizedEmail)
+                .ToListAsync(ct);
+            if (unclaimed.Count > 0)
+            {
+                foreach (var tc in unclaimed) tc.UserId = user.Id;
+                await _db.SaveChangesAsync(ct);
+            }
+        }
+
+        return await _db.TeamCoaches
             .Where(tc => tc.UserId == user.Id)
             .Select(tc => tc.TeamId)
             .Distinct()
             .ToListAsync(ct);
+    }
 }
