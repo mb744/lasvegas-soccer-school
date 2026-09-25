@@ -42,6 +42,8 @@ public record MeResponse(
     string? Phone,
     Language Language,
     bool IsAdmin,
+    /// <summary>True when a team's coach card is linked to this login (see CoachScopeService).</summary>
+    bool IsCoach,
     /// <summary>False until the login proves it owns its email (see EmailVerificationService).</summary>
     bool EmailConfirmed
 );

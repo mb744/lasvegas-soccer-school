@@ -33,6 +33,10 @@ public class AppOptions
         public string Issuer { get; set; } = "lvss";
         public string Audience { get; set; } = "lvss-mobile";
 
+        /// <summary>Audience for Daily Training (kid) tokens. Must differ from <see cref="Audience"/>
+        /// — that difference is what keeps kid tokens out of parent/admin endpoints.</summary>
+        public string PlayerAudience { get; set; } = "lvss-training";
+
         /// <summary>Access-token lifetime in minutes. Short so a leaked token expires fast; the device
         /// transparently refreshes using its long-lived refresh token.</summary>
         public int AccessTokenMinutes { get; set; } = 60;

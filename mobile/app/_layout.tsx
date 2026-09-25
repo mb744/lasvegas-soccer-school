@@ -47,6 +47,7 @@ export default function RootLayout() {
               <Stack.Screen name="invoices/index" options={{ headerShown: true, title: '' }} />
               <Stack.Screen name="invoices/[id]" options={{ headerShown: true, title: '' }} />
               <Stack.Screen name="events/[id]" options={{ headerShown: true, title: '' }} />
+              <Stack.Screen name="players/[id]" options={{ headerShown: true, title: '' }} />
               <Stack.Screen name="admin/announcements/index" options={{ headerShown: true, title: '' }} />
               <Stack.Screen name="admin/announcements/[id]" options={{ headerShown: true, title: '' }} />
               <Stack.Screen name="admin/teams/index" options={{ headerShown: true, title: '' }} />

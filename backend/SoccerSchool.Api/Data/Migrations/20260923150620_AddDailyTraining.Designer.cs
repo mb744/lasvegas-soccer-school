@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using SoccerSchool.Api.Data;
 
@@ -11,9 +12,11 @@ using SoccerSchool.Api.Data;
 namespace SoccerSchool.Api.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260923150620_AddDailyTraining")]
+    partial class AddDailyTraining
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -2062,15 +2065,9 @@ namespace SoccerSchool.Api.Data.Migrations
                     b.Property<int>("ParentAccountId")
                         .HasColumnType("int");
 
-                    b.Property<string>("UserId")
-                        .HasMaxLength(450)
-                        .HasColumnType("nvarchar(450)");
-
                     b.HasKey("Id");
 
                     b.HasIndex("ParentAccountId");
-
-                    b.HasIndex("UserId");
 
                     b.ToTable("ParentContacts");
                 });
@@ -2651,17 +2648,11 @@ namespace SoccerSchool.Api.Data.Migrations
                     b.Property<int>("TeamId")
                         .HasColumnType("int");
 
-                    b.Property<string>("UserId")
-                        .HasMaxLength(450)
-                        .HasColumnType("nvarchar(450)");
-
                     b.HasKey("Id");
 
                     b.HasIndex("CoachId");
 
                     b.HasIndex("TeamId");
-
-                    b.HasIndex("UserId");
 
                     b.ToTable("TeamCoaches");
                 });
@@ -3540,13 +3531,7 @@ namespace SoccerSchool.Api.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("SoccerSchool.Api.Domain.ApplicationUser", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId");
-
                     b.Navigation("ParentAccount");
-
-                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("SoccerSchool.Api.Domain.Player", b =>
@@ -3704,16 +3689,9 @@ namespace SoccerSchool.Api.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("SoccerSchool.Api.Domain.ApplicationUser", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.Navigation("Coach");
 
                     b.Navigation("Team");
-
-                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("SoccerSchool.Api.Domain.TeamPlayer", b =>

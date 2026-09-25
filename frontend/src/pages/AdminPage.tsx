@@ -18,6 +18,7 @@ export function AdminPage() {
     { to: '/admin/hosted-tournaments',  title: t('admin.hubHostedTournaments'), blurb: t('admin.hubHostedTournamentsBlurb'), icon: '🏆' },
     { to: '/admin/chat-groups',         title: t('admin.hubChatGroups'),       blurb: t('admin.hubChatGroupsBlurb'),       icon: '💭' },
     { to: '/admin/announcements',       title: t('admin.hubAnnouncements'),    blurb: t('admin.hubAnnouncementsBlurb'),    icon: '📣' },
+    { to: '/admin/drills',              title: t('admin.hubDrills'),           blurb: t('admin.hubDrillsBlurb'),           icon: '🏃' },
     { to: '/admin/reports/mobile-usage', title: t('admin.hubMobileUsage'),      blurb: t('admin.hubMobileUsageBlurb'),      icon: '📱' },
     { to: '/admin/settings',            title: t('admin.hubSettings'),         blurb: t('admin.hubSettingsBlurb'),         icon: '⚙️' },
   ] as const

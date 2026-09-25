@@ -103,6 +103,14 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
     public DbSet<DeviceToken> DeviceTokens => Set<DeviceToken>();
     public DbSet<MobileRefreshToken> MobileRefreshTokens => Set<MobileRefreshToken>();
 
+    // Daily Training app (kids): player logins + admin-authored drills and their assignments.
+    public DbSet<PlayerLogin> PlayerLogins => Set<PlayerLogin>();
+    public DbSet<PlayerRefreshToken> PlayerRefreshTokens => Set<PlayerRefreshToken>();
+    public DbSet<PlayerPasswordResetToken> PlayerPasswordResetTokens => Set<PlayerPasswordResetToken>();
+    public DbSet<Drill> Drills => Set<Drill>();
+    public DbSet<DrillAssignment> DrillAssignments => Set<DrillAssignment>();
+    public DbSet<DrillCompletion> DrillCompletions => Set<DrillCompletion>();
+
     /// <summary>Backing store for the ASP.NET Core data-protection key ring (cookie encryption
     /// keys). Persisting these in SQL keeps auth cookies valid across container restarts.</summary>
     public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
@@ -778,6 +786,90 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
                 .OnDelete(DeleteBehavior.Cascade);
             // Refresh-token lookup is by hash on every refresh call.
             b.HasIndex(r => r.TokenHash).IsUnique();
+        });
+
+        // -------- Daily Training app (kids) --------
+
+        modelBuilder.Entity<PlayerLogin>(b =>
+        {
+            // One login per kid; deleting the player deletes their login (and, via the cascades
+            // below, their sessions and reset links).
+            b.HasOne(l => l.Player)
+                .WithMany()
+                .HasForeignKey(l => l.PlayerId)
+                .OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(l => l.PlayerId).IsUnique();
+            b.HasIndex(l => l.Username).IsUnique();
+        });
+
+        modelBuilder.Entity<PlayerRefreshToken>(b =>
+        {
+            b.HasOne(r => r.PlayerLogin)
+                .WithMany(l => l.RefreshTokens)
+                .HasForeignKey(r => r.PlayerLoginId)
+                .OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(r => r.TokenHash).IsUnique();
+        });
+
+        modelBuilder.Entity<PlayerPasswordResetToken>(b =>
+        {
+            b.HasOne(r => r.PlayerLogin)
+                .WithMany()
+                .HasForeignKey(r => r.PlayerLoginId)
+                .OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(r => r.TokenHash).IsUnique();
+        });
+
+        modelBuilder.Entity<Drill>(b =>
+        {
+            b.HasIndex(d => d.IsActive);
+        });
+
+        modelBuilder.Entity<DrillAssignment>(b =>
+        {
+            b.HasOne(a => a.Drill)
+                .WithMany(d => d.Assignments)
+                .HasForeignKey(a => a.DrillId)
+                .OnDelete(DeleteBehavior.Cascade);
+            // Deleting a player/team/age group removes the assignments that targeted it; the
+            // drill itself and other kids' completions are unaffected.
+            b.HasOne(a => a.Player)
+                .WithMany()
+                .HasForeignKey(a => a.PlayerId)
+                .OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(a => a.Team)
+                .WithMany()
+                .HasForeignKey(a => a.TeamId)
+                .OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(a => a.AgeClassification)
+                .WithMany()
+                .HasForeignKey(a => a.AgeClassificationId)
+                .OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(a => a.PlayerId);
+            b.HasIndex(a => a.TeamId);
+            b.HasIndex(a => a.AgeClassificationId);
+            b.HasIndex(a => new { a.StartDate, a.EndDate });
+            // Exactly one target column is populated, and it matches TargetType.
+            b.ToTable(t => t.HasCheckConstraint(
+                "CK_DrillAssignments_Target",
+                "([TargetType] = 0 AND [PlayerId] IS NOT NULL AND [TeamId] IS NULL AND [AgeClassificationId] IS NULL) OR " +
+                "([TargetType] = 1 AND [TeamId] IS NOT NULL AND [PlayerId] IS NULL AND [AgeClassificationId] IS NULL) OR " +
+                "([TargetType] = 2 AND [AgeClassificationId] IS NOT NULL AND [PlayerId] IS NULL AND [TeamId] IS NULL)"));
+        });
+
+        modelBuilder.Entity<DrillCompletion>(b =>
+        {
+            b.HasOne(c => c.Player)
+                .WithMany()
+                .HasForeignKey(c => c.PlayerId)
+                .OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(c => c.Drill)
+                .WithMany()
+                .HasForeignKey(c => c.DrillId)
+                .OnDelete(DeleteBehavior.Cascade);
+            // A drill can be completed once per day; also the streak/progress lookup key.
+            b.HasIndex(c => new { c.PlayerId, c.Date, c.DrillId }).IsUnique();
+            b.HasIndex(c => c.DrillId);
         });
     }
 }

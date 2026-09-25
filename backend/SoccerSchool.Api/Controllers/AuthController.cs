@@ -22,6 +22,7 @@ public class AuthController : ControllerBase
     private readonly AppOptions _app;
     private readonly IReclaimHasher _reclaim;
     private readonly IEmailSender _email;
+    private readonly ICoachScopeService _coaches;
     private readonly IEmailVerificationService _verification;
     private readonly ILogger<AuthController> _logger;
 
@@ -32,6 +33,7 @@ public class AuthController : ControllerBase
         IOptions<AppOptions> app,
         IReclaimHasher reclaim,
         IEmailSender email,
+        ICoachScopeService coaches,
         IEmailVerificationService verification,
         ILogger<AuthController> logger)
     {
@@ -41,6 +43,7 @@ public class AuthController : ControllerBase
         _app = app.Value;
         _reclaim = reclaim;
         _email = email;
+        _coaches = coaches;
         _verification = verification;
         _logger = logger;
     }
@@ -369,6 +372,7 @@ public class AuthController : ControllerBase
     private async Task<MeResponse> BuildMeAsync(ApplicationUser user, ParentAccount? account)
     {
         var roles = await _users.GetRolesAsync(user);
+        var coachTeams = await _coaches.GetCoachTeamIdsAsync(user, HttpContext.RequestAborted);
         return new MeResponse(
             user.Id,
             user.Email ?? "",
@@ -377,6 +381,7 @@ public class AuthController : ControllerBase
             account?.CellPhone,
             account?.Language ?? Language.English,
             roles.Contains(Roles.Admin),
+            coachTeams.Count > 0,
             user.EmailConfirmed
         );
     }

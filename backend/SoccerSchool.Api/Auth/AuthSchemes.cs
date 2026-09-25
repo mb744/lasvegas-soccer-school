@@ -15,4 +15,9 @@ public static class AuthSchemes
     /// <summary>Combined scheme string that accepts either the web cookie or the mobile JWT.
     /// Used on admin endpoints the mobile app needs to call (announcements CRUD, etc.).</summary>
     public const string CookieOrMobileJwt = IdentityCookie + "," + MobileJwt;
+
+    /// <summary>JWT bearer scheme for kids signed in to the Daily Training app. Uses a different
+    /// audience (<c>lvss-training</c>) than <see cref="MobileJwt"/>, so a kid's token is rejected by
+    /// every parent/admin endpoint and a parent's token is rejected by the training endpoints.</summary>
+    public const string PlayerJwt = "PlayerJwt";
 }

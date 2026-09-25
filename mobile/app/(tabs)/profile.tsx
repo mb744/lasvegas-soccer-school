@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import { useRouter } from 'expo-router';
 import { useAuth } from '../../src/auth/AuthContext';
 import { deleteAccount, resendEmailConfirmation } from '../../src/api/endpoints';
 import { colors, radius, spacing } from '../../src/theme';
@@ -8,6 +9,7 @@ import { colors, radius, spacing } from '../../src/theme';
 export default function ProfileScreen() {
   const { t } = useTranslation();
   const { me, signOut } = useAuth();
+  const router = useRouter();
   const [deleting, setDeleting] = useState(false);
   const [verifyState, setVerifyState] = useState<'idle' | 'sending' | 'sent' | 'failed'>('idle');
 
@@ -84,14 +86,20 @@ export default function ProfileScreen() {
         <Text style={styles.muted}>—</Text>
       ) : (
         me.players.map((p) => (
-          <View key={p.id} style={styles.playerCard}>
+          <TouchableOpacity
+            key={p.id}
+            style={styles.playerCard}
+            onPress={() => router.push(`/players/${p.id}`)}
+            accessibilityRole="button"
+          >
             <Text style={styles.playerName}>
               {p.firstName} {p.lastName}
             </Text>
             <Text style={styles.playerTeams}>
               {p.teams.length > 0 ? p.teams.map((tm) => tm.teamName).join(', ') : t('profile.noTeams')}
             </Text>
-          </View>
+            <Text style={styles.playerLink}>{t('profile.manageTraining')}</Text>
+          </TouchableOpacity>
         ))
       )}
 
@@ -153,6 +161,7 @@ const styles = StyleSheet.create({
   },
   playerName: { fontSize: 16, fontWeight: '700', color: colors.text },
   playerTeams: { fontSize: 14, color: colors.subtext, marginTop: 2 },
+  playerLink: { fontSize: 14, color: colors.brandLight, fontWeight: '700', marginTop: spacing.sm },
   signOut: {
     marginTop: spacing.xl,
     borderWidth: 1,
