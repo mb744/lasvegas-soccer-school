@@ -11,6 +11,8 @@ export interface Me {
   isAdmin: boolean
   /** A team's coach card carries this login's email — unlocks Daily Training for their teams. */
   isCoach: boolean
+  /** False until the login proves it owns its email; email-matched coach/family links wait on it. */
+  emailConfirmed: boolean
 }
 
 export interface SignupRequest {

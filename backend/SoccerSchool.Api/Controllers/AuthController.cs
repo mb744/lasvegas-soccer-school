@@ -23,6 +23,7 @@ public class AuthController : ControllerBase
     private readonly IReclaimHasher _reclaim;
     private readonly IEmailSender _email;
     private readonly ICoachScopeService _coaches;
+    private readonly IEmailVerificationService _verification;
     private readonly ILogger<AuthController> _logger;
 
     public AuthController(
@@ -33,6 +34,7 @@ public class AuthController : ControllerBase
         IReclaimHasher reclaim,
         IEmailSender email,
         ICoachScopeService coaches,
+        IEmailVerificationService verification,
         ILogger<AuthController> logger)
     {
         _users = users;
@@ -42,6 +44,7 @@ public class AuthController : ControllerBase
         _reclaim = reclaim;
         _email = email;
         _coaches = coaches;
+        _verification = verification;
         _logger = logger;
     }
 
@@ -121,7 +124,31 @@ public class AuthController : ControllerBase
 
         await _signIn.SignInAsync(user, isPersistent: true);
         await StampLastLoginAsync(user);
+        // Sign-up doesn't wait on this; it only gates email-matched coach/family links.
+        await _verification.SendConfirmationAsync(user, ct);
         return Ok(await BuildMeAsync(user, account));
+    }
+
+    /// <summary>Completes email verification from the emailed <c>/confirm-email</c> link. No sign-in
+    /// required — the single-use token is the proof.</summary>
+    [HttpPost("confirm-email")]
+    [AllowAnonymous]
+    public async Task<IActionResult> ConfirmEmail([FromBody] ConfirmEmailRequest req, CancellationToken ct)
+    {
+        var ok = await _verification.ConfirmAsync(req.UserId, req.Token, ct);
+        return ok ? NoContent() : BadRequest("This confirmation link is invalid or has expired. Request a new one.");
+    }
+
+    /// <summary>Re-sends the confirmation link to the signed-in user's own address (web or mobile).</summary>
+    [HttpPost("resend-confirmation")]
+    [Authorize(AuthenticationSchemes = AuthSchemes.CookieOrMobileJwt)]
+    public async Task<IActionResult> ResendConfirmation(CancellationToken ct)
+    {
+        var user = await _users.GetUserAsync(User);
+        if (user is null) return Unauthorized();
+        if (user.EmailConfirmed) return NoContent();
+        var sent = await _verification.SendConfirmationAsync(user, ct);
+        return sent ? NoContent() : StatusCode(502, "We couldn't send the email right now. Try again in a few minutes.");
     }
 
     /// <summary>See <c>MobileAuthController.NotifyAdminOfSignupAsync</c> — same shape.</summary>
@@ -238,7 +265,8 @@ public class AuthController : ControllerBase
         // Make sure the account isn't locked out from prior bad attempts now that they've proven ownership.
         await _users.SetLockoutEndDateAsync(user, null);
         await _users.ResetAccessFailedCountAsync(user);
-        _ = ct;
+        // The reset link went to this inbox, so the address is proven too.
+        await _verification.MarkVerifiedAsync(user, ct);
         return NoContent();
     }
 
@@ -288,6 +316,11 @@ public class AuthController : ControllerBase
         var user = await _users.FindByEmailAsync(email);
         if (user is not null && await _users.IsLockedOutAsync(user))
             return Redirect("/login?error=banned");
+
+        // Linking a provider-verified email onto an existing login: if that login's password was
+        // never verified, it may belong to whoever registered the address first — drop it.
+        if (user is not null)
+            await _verification.AdoptProviderVerifiedEmailAsync(user, ct);
 
         if (user is null)
         {
@@ -348,7 +381,8 @@ public class AuthController : ControllerBase
             account?.CellPhone,
             account?.Language ?? Language.English,
             roles.Contains(Roles.Admin),
-            coachTeams.Count > 0
+            coachTeams.Count > 0,
+            user.EmailConfirmed
         );
     }
 

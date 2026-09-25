@@ -253,26 +253,29 @@ public class ChatAdminController : ControllerBase
     }
 
     /// <summary>Adds each <see cref="TeamCoach"/> for the team as an Admin member of the group.
-    /// Matches on email → ApplicationUser; coaches without an email or without a signed-up
+    /// Uses the card's explicit <see cref="TeamCoach.UserId"/> link when set; otherwise matches
+    /// the card's email to a login — but only a login whose email is verified, so signing up with
+    /// a coach's address can't buy admin rights in a team chat. Coaches with no linked or verified
     /// account are skipped (their message would have no <c>SenderUserId</c> to attribute to).
     /// Caller saves changes.</summary>
     private async Task AddTeamCoachesAsync(int groupId, int teamId, CancellationToken ct)
     {
         var coaches = await _db.TeamCoaches
-            .Where(tc => tc.TeamId == teamId && tc.Email != null && tc.Email != "")
-            .Select(tc => new { tc.Name, tc.Email })
+            .Where(tc => tc.TeamId == teamId && (tc.UserId != null || (tc.Email != null && tc.Email != "")))
+            .Select(tc => new { tc.Name, tc.Email, tc.UserId })
             .ToListAsync(ct);
         if (coaches.Count == 0) return;
 
         // Normalize email lookups against Identity's NormalizedEmail column (uppercase invariant)
         // so a "Coach@Example.com" TeamCoach still matches "coach@example.com" on ApplicationUser.
         var normalized = coaches
+            .Where(c => c.UserId == null && c.Email != null)
             .Select(c => c.Email!.Trim().ToUpperInvariant())
             .Where(e => !string.IsNullOrEmpty(e))
             .Distinct()
             .ToList();
         var byNormalized = await _db.Users
-            .Where(u => u.NormalizedEmail != null && normalized.Contains(u.NormalizedEmail))
+            .Where(u => u.EmailConfirmed && u.NormalizedEmail != null && normalized.Contains(u.NormalizedEmail))
             .Select(u => new { u.Id, u.NormalizedEmail })
             .ToListAsync(ct);
         var idByEmail = byNormalized.ToDictionary(x => x.NormalizedEmail!, x => x.Id);
@@ -285,8 +288,13 @@ public class ChatAdminController : ControllerBase
 
         foreach (var tc in coaches)
         {
-            var key = tc.Email!.Trim().ToUpperInvariant();
-            if (!idByEmail.TryGetValue(key, out var userId)) continue;
+            var userId = tc.UserId;
+            if (userId is null)
+            {
+                var key = tc.Email!.Trim().ToUpperInvariant();
+                if (!idByEmail.TryGetValue(key, out var matched)) continue;
+                userId = matched;
+            }
             if (!existingUserIds.Add(userId)) continue;
 
             _db.ChatGroupMembers.Add(new ChatGroupMember

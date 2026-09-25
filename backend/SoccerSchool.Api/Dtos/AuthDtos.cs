@@ -42,9 +42,20 @@ public record MeResponse(
     string? Phone,
     Language Language,
     bool IsAdmin,
-    /// <summary>True when a team's coach card carries this login's email (see CoachScopeService).</summary>
-    bool IsCoach
+    /// <summary>True when a team's coach card is linked to this login (see CoachScopeService).</summary>
+    bool IsCoach,
+    /// <summary>False until the login proves it owns its email (see EmailVerificationService).</summary>
+    bool EmailConfirmed
 );
+
+public record ConfirmEmailRequest
+{
+    [Required, MaxLength(450)]
+    public string UserId { get; init; } = string.Empty;
+
+    [Required, MaxLength(2048)]
+    public string Token { get; init; } = string.Empty;
+}
 
 public record ForgotPasswordRequest
 {

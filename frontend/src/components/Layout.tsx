@@ -1,8 +1,43 @@
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { LanguageToggle } from './LanguageToggle'
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useAuth } from '../auth/AuthContext'
+import { Api } from '../api/client'
+
+/** Nudges signed-in users whose email isn't verified yet. Until they confirm, coach cards and
+ *  additional-parent contacts carrying their email aren't linked to them. */
+function VerifyEmailBanner({ email }: { email: string }) {
+  const { t } = useTranslation()
+  const [state, setState] = useState<'idle' | 'sending' | 'sent' | 'failed'>('idle')
+
+  const resend = async () => {
+    setState('sending')
+    try {
+      await Api.resendConfirmation()
+      setState('sent')
+    } catch {
+      setState('failed')
+    }
+  }
+
+  return (
+    <div className="bg-amber-50 border-t border-amber-200 text-amber-900 text-sm">
+      <div className="max-w-5xl mx-auto px-4 py-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span>{t('auth.verifyBanner', { email })}</span>
+        {state === 'sent' ? (
+          <span className="font-semibold">{t('auth.verifySent')}</span>
+        ) : (
+          <button onClick={resend} disabled={state === 'sending'}
+            className="font-semibold underline hover:no-underline disabled:opacity-60">
+            {state === 'sending' ? t('auth.verifySending') : t('auth.verifyResend')}
+          </button>
+        )}
+        {state === 'failed' && <span className="text-rose-700">{t('auth.verifyResendFailed')}</span>}
+      </div>
+    </div>
+  )
+}
 
 export function Layout({ children }: { children: ReactNode }) {
   const { t } = useTranslation()
@@ -58,6 +93,7 @@ export function Layout({ children }: { children: ReactNode }) {
             <NavLink to="/pricing" className={navLink}>{t('common.pricing')}</NavLink>
           </div>
         </nav>
+        {me && !me.emailConfirmed && <VerifyEmailBanner email={me.email} />}
       </header>
       <main className="flex-1">{children}</main>
       {showRegisterCta && (

@@ -49,7 +49,10 @@ public record MobileMeResponse(
     /// IsAdmin || IsCoach.</summary>
     bool IsCoach,
     IReadOnlyList<int> CoachTeamIds,
-    IReadOnlyList<MobilePlayerDto> Players);
+    IReadOnlyList<MobilePlayerDto> Players,
+    /// <summary>False until the login proves it owns its email (confirmation link, a password
+    /// reset by email, or Google/Facebook sign-in). Email-matched coach/family links wait on it.</summary>
+    bool EmailConfirmed);
 
 // ---- Players ----
 
