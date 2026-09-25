@@ -58,10 +58,20 @@ public class MobileChatController : ControllerBase
             {
                 g.Id, g.Title,
                 Last = g.Messages.OrderByDescending(m => m.SentAt)
-                    .Select(m => new { m.Id, m.Body, m.SenderName, m.SentAt })
+                    .Select(m => new
+                    {
+                        m.Id, m.Body, m.SenderName, m.SentAt,
+                        MediaKind = m.MediaAsset != null ? (MediaKind?)m.MediaAsset.Kind : null,
+                    })
                     .FirstOrDefault(),
             })
             .ToListAsync(ct);
+
+        var spanish = account?.Language == Language.Spanish;
+        string? Preview(string? body, MediaKind? kind) =>
+            !string.IsNullOrWhiteSpace(body) || kind is null ? body
+            : kind == MediaKind.Video ? "🎥 Video"
+            : spanish ? "📷 Foto" : "📷 Photo";
 
         // Unread = messages newer (higher id) than this member's last-read marker.
         var unreadCounts = await _db.ChatMessages
@@ -76,7 +86,7 @@ public class MobileChatController : ControllerBase
         var result = groups
             .Select(g => new MobileChatGroupDto(
                 g.Id, g.Title,
-                g.Last?.Body,
+                Preview(g.Last?.Body, g.Last?.MediaKind),
                 g.Last?.SenderName,
                 g.Last?.SentAt,
                 unreadByGroup.TryGetValue(g.Id, out var u) ? u : 0))
@@ -110,11 +120,19 @@ public class MobileChatController : ControllerBase
         var rows = await q
             .OrderByDescending(m => m.Id)
             .Take(limit)
-            .Select(m => new MobileChatMessageDto(
-                m.Id, m.ChatGroupId, m.SenderUserId, m.SenderName, m.IsFromAdmin, m.Body, m.SentAt))
+            .Select(m => new
+            {
+                m.Id, m.ChatGroupId, m.SenderUserId, m.SenderName, m.IsFromAdmin, m.Body, m.SentAt,
+                m.MediaAssetId,
+                MediaKind = m.MediaAsset != null ? (MediaKind?)m.MediaAsset.Kind : null,
+                MediaContentType = m.MediaAsset != null ? m.MediaAsset.ContentType : null,
+                MediaBlobName = m.MediaAsset != null ? m.MediaAsset.BlobName : null,
+            })
             .ToListAsync(ct);
 
-        return Ok(rows);
+        return Ok(rows.Select(m => new MobileChatMessageDto(
+            m.Id, m.ChatGroupId, m.SenderUserId, m.SenderName, m.IsFromAdmin, m.Body, m.SentAt,
+            _chat.ToMediaDto(m.MediaAssetId, m.MediaKind, m.MediaContentType, m.MediaBlobName))));
     }
 
     /// <summary>Flag a chat message for admin review (App Store Guideline 1.2). Any group member
@@ -210,9 +228,19 @@ public class MobileChatController : ControllerBase
     {
         var userId = _users.GetUserId(User);
         if (string.IsNullOrEmpty(userId)) return Unauthorized();
-        if (string.IsNullOrWhiteSpace(req.Body)) return BadRequest("Message body is required.");
+        if (string.IsNullOrWhiteSpace(req.Body) && req.MediaId is null)
+            return BadRequest("Message body or attachment is required.");
 
-        var dto = await _chat.PostMessageAsync(groupId, userId, req.Body, ct);
+        MediaAsset? media = null;
+        if (req.MediaId is int mediaId)
+        {
+            // Only your own, server-verified upload can be attached.
+            media = await _db.MediaAssets.FirstOrDefaultAsync(
+                a => a.Id == mediaId && a.UploadedByUserId == userId && a.Status == MediaStatus.Ready, ct);
+            if (media is null) return BadRequest("Attachment not found or not finished uploading.");
+        }
+
+        var dto = await _chat.PostMessageAsync(groupId, userId, req.Body ?? "", ct, media: media);
         if (dto is null) return Forbid();
         return Ok(dto);
     }

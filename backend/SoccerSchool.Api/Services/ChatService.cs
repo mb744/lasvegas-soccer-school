@@ -26,7 +26,10 @@ public interface IChatService
     /// and <paramref name="asAdmin"/> let an admin post from the web without a ChatGroupMember row.</summary>
     Task<MobileChatMessageDto?> PostMessageAsync(
         int groupId, string userId, string body, CancellationToken ct,
-        string? overrideName = null, bool? asAdmin = null);
+        string? overrideName = null, bool? asAdmin = null, MediaAsset? media = null);
+
+    /// <summary>Builds the media payload for a message; null when there's no attachment.</summary>
+    MobileMediaDto? ToMediaDto(int? mediaId, MediaKind? kind, string? contentType, string? blobName);
 }
 
 public class ChatService : IChatService
@@ -35,14 +38,23 @@ public class ChatService : IChatService
     private readonly IHubContext<ChatHub> _hub;
     private readonly IPushSender _push;
     private readonly IParentAccountResolver _accounts;
+    private readonly IMediaStorage _storage;
 
-    public ChatService(AppDbContext db, IHubContext<ChatHub> hub, IPushSender push, IParentAccountResolver accounts)
+    public ChatService(
+        AppDbContext db, IHubContext<ChatHub> hub, IPushSender push,
+        IParentAccountResolver accounts, IMediaStorage storage)
     {
         _db = db;
         _hub = hub;
         _push = push;
         _accounts = accounts;
+        _storage = storage;
     }
+
+    public MobileMediaDto? ToMediaDto(int? mediaId, MediaKind? kind, string? contentType, string? blobName) =>
+        mediaId is int id && kind is MediaKind k && blobName is not null && _storage.IsAvailable
+            ? new MobileMediaDto(id, k, contentType ?? "", _storage.GetReadUri(blobName).ToString())
+            : null;
 
     public async Task<List<int>> GetGroupIdsForUserAsync(string userId, CancellationToken ct)
     {
@@ -67,7 +79,7 @@ public class ChatService : IChatService
 
     public async Task<MobileChatMessageDto?> PostMessageAsync(
         int groupId, string userId, string body, CancellationToken ct,
-        string? overrideName = null, bool? asAdmin = null)
+        string? overrideName = null, bool? asAdmin = null, MediaAsset? media = null)
     {
         var account = await _accounts.ResolveByUserIdAsync(userId, ct);
         var accountId = account?.Id;
@@ -89,6 +101,7 @@ public class ChatService : IChatService
             SenderName = senderName,
             IsFromAdmin = isFromAdmin,
             Body = body.Trim(),
+            MediaAssetId = media?.Id,
             SentAt = DateTime.UtcNow,
         };
         _db.ChatMessages.Add(message);
@@ -103,7 +116,8 @@ public class ChatService : IChatService
 
         var dto = new MobileChatMessageDto(
             message.Id, groupId, message.SenderUserId, message.SenderName,
-            message.IsFromAdmin, message.Body, message.SentAt);
+            message.IsFromAdmin, message.Body, message.SentAt,
+            ToMediaDto(media?.Id, media?.Kind, media?.ContentType, media?.BlobName));
 
         // Realtime fan-out to everyone currently connected to the group.
         await _hub.Clients.Group(ChatHub.GroupName(groupId)).SendAsync(ChatHub.ReceiveMessage, dto, ct);
@@ -122,7 +136,10 @@ public class ChatService : IChatService
         if (recipientUserIds.Count > 0)
         {
             var title = await _db.ChatGroups.Where(g => g.Id == groupId).Select(g => g.Title).FirstOrDefaultAsync(ct) ?? "New message";
-            var preview = body.Length > 120 ? body[..120] + "…" : body;
+            var text = body.Trim();
+            if (text.Length == 0 && media is not null)
+                text = media.Kind == MediaKind.Video ? "🎥 Video" : "📷 Photo";
+            var preview = text.Length > 120 ? text[..120] + "…" : text;
             await _push.SendToUsersAsync(recipientUserIds, new PushNotification(
                 title, $"{senderName}: {preview}",
                 new Dictionary<string, object> { ["type"] = "chat", ["groupId"] = groupId }), ct);

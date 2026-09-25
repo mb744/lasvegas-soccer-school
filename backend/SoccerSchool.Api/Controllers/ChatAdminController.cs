@@ -190,7 +190,7 @@ public class ChatAdminController : ControllerBase
             .FirstOrDefaultAsync(ct);
         if (string.IsNullOrWhiteSpace(adminName)) adminName = "Coach";
 
-        var dto = await _chat.PostMessageAsync(id, userId, req.Body, ct, overrideName: adminName, asAdmin: true);
+        var dto = await _chat.PostMessageAsync(id, userId, req.Body!, ct, overrideName: adminName, asAdmin: true);
         return dto is null ? StatusCode(500, "Could not post message.") : Ok(dto);
     }
 

@@ -70,6 +70,12 @@ param jwtSigningKey string = ''
 @description('Optional custom domain (e.g. registration.lasvegassoccerschool.org). When set, PublicBaseUrl + OAuth redirect URIs use it instead of the auto-generated Container Apps FQDN. The actual hostname binding (managed cert + ingress.customDomains) is done by a post-Bicep step in deploy.yml because cert provisioning requires the hostname to be already registered on the container app, which Bicep cannot do in a single pass.')
 param customDomain string = ''
 
+@secure()
+@description('Azure Storage connection string for user-uploaded photos/videos. Empty disables media uploads (endpoints return 503).')
+param storageConnectionString string = ''
+
+param storageMediaContainerName string = 'media'
+
 @description('Min replicas (0 enables scale-to-zero).')
 param minReplicas int = 0
 param maxReplicas int = 3
@@ -80,6 +86,7 @@ var hasAdminBootstrap = !empty(adminBootstrapEmail) && !empty(adminBootstrapPass
 var hasAcs = !empty(acsConnectionString)
 var hasTwilio = !empty(twilioAccountSid) && !empty(twilioAuthToken) && !empty(twilioSmsFromNumber)
 var hasJwt = !empty(jwtSigningKey)
+var hasStorage = !empty(storageConnectionString)
 
 var baseSecrets = [
   { name: 'sql-connection-string', value: sqlConnectionString }
@@ -102,7 +109,10 @@ var twilioSecrets = hasTwilio ? [
 var jwtSecrets = hasJwt ? [
   { name: 'jwt-signing-key', value: jwtSigningKey }
 ] : []
-var allSecrets = concat(baseSecrets, googleSecrets, facebookSecrets, adminSecrets, acsSecrets, twilioSecrets, jwtSecrets)
+var storageSecrets = hasStorage ? [
+  { name: 'storage-connection-string', value: storageConnectionString }
+] : []
+var allSecrets = concat(baseSecrets, googleSecrets, facebookSecrets, adminSecrets, acsSecrets, twilioSecrets, jwtSecrets, storageSecrets)
 
 var defaultDomain = reference(environmentId, '2024-03-01').defaultDomain
 var defaultFqdn = '${name}.${defaultDomain}'
@@ -171,7 +181,11 @@ var twilioConversationsEnv = hasTwilio && !empty(twilioConversationsServiceSid) 
 var jwtEnv = hasJwt ? [
   { name: 'App__Jwt__SigningKey', secretRef: 'jwt-signing-key' }
 ] : []
-var allEnv = concat(baseEnv, googleEnv, googleMobileEnv, facebookEnv, adminEnv, acsEnvCore, acsEnvEmail, acsEnvSms, twilioEnv, twilioWhatsAppEnv, twilioWhatsAppTemplateEnv, twilioConversationsEnv, jwtEnv)
+var storageEnv = hasStorage ? [
+  { name: 'Storage__ConnectionString', secretRef: 'storage-connection-string' }
+  { name: 'Storage__MediaContainerName', value: storageMediaContainerName }
+] : []
+var allEnv = concat(baseEnv, googleEnv, googleMobileEnv, facebookEnv, adminEnv, acsEnvCore, acsEnvEmail, acsEnvSms, twilioEnv, twilioWhatsAppEnv, twilioWhatsAppTemplateEnv, twilioConversationsEnv, jwtEnv, storageEnv)
 
 resource app 'Microsoft.App/containerApps@2024-03-01' = {
   name: name

@@ -31,6 +31,7 @@ import type {
   UserCoachTeam,
 } from './types';
 import type { TrainingLogin } from './types';
+import type { EventMediaItem, MediaItem, MediaKind } from './types';
 
 // ---- Auth ----
 
@@ -123,9 +124,55 @@ export async function fetchChatMessages(groupId: number, before?: number): Promi
   return data;
 }
 
-export async function sendChatMessage(groupId: number, body: string): Promise<ChatMessage> {
-  const { data } = await api.post<ChatMessage>(`/mobile/chat/groups/${groupId}/messages`, { body });
+export async function sendChatMessage(groupId: number, body: string, mediaId?: number): Promise<ChatMessage> {
+  const { data } = await api.post<ChatMessage>(`/mobile/chat/groups/${groupId}/messages`, {
+    body,
+    mediaId: mediaId ?? null,
+  });
   return data;
+}
+
+// ---- Media uploads ----
+
+export async function createMediaUpload(
+  kind: MediaKind,
+  contentType: string,
+  sizeBytes: number,
+): Promise<{ mediaId: number; uploadUrl: string }> {
+  const { data } = await api.post<{ mediaId: number; uploadUrl: string }>('/mobile/media', {
+    kind,
+    contentType,
+    sizeBytes,
+  });
+  return data;
+}
+
+export async function completeMediaUpload(mediaId: number): Promise<MediaItem> {
+  const { data } = await api.post<MediaItem>(`/mobile/media/${mediaId}/complete`);
+  return data;
+}
+
+// ---- Event photo/video gallery ----
+
+export async function fetchEventMedia(eventId: number): Promise<EventMediaItem[]> {
+  const { data } = await api.get<EventMediaItem[]>(`/mobile/events/${eventId}/media`);
+  return data;
+}
+
+export async function addEventMedia(eventId: number, mediaId: number, caption?: string): Promise<EventMediaItem> {
+  const { data } = await api.post<EventMediaItem>(`/mobile/events/${eventId}/media`, {
+    mediaId,
+    caption: caption ?? null,
+  });
+  return data;
+}
+
+export async function deleteEventMedia(eventId: number, itemId: number): Promise<void> {
+  await api.delete(`/mobile/events/${eventId}/media/${itemId}`);
+}
+
+export async function reportEventMedia(eventId: number, itemId: number): Promise<void> {
+  await api.post(`/mobile/events/${eventId}/media/${itemId}/report`);
 }
 
 export async function markChatRead(groupId: number, messageId: number): Promise<void> {

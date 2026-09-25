@@ -114,6 +114,31 @@ export interface ChatMessage {
   isFromAdmin: boolean;
   body: string;
   sentAt: string;
+  media?: MediaItem | null;
+}
+
+export enum MediaKind {
+  Image = 0,
+  Video = 1,
+}
+
+/** `url` is a short-lived read link — re-fetch the parent resource rather than caching it. */
+export interface MediaItem {
+  mediaId: number;
+  kind: MediaKind;
+  contentType: string;
+  url: string;
+}
+
+export interface EventMediaItem {
+  id: number;
+  eventId: number;
+  media: MediaItem;
+  uploadedByUserId: string;
+  uploaderName: string;
+  caption: string | null;
+  createdAt: string;
+  canDelete: boolean;
 }
 
 export interface BlockedUser {

@@ -13,7 +13,18 @@ import { WebView } from 'react-native-webview';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { fetchSchedule, fetchStaffEventAttendance, setAttendance } from '../../src/api/endpoints';
+import {
+  addEventMedia,
+  deleteEventMedia,
+  fetchEventMedia,
+  fetchSchedule,
+  fetchStaffEventAttendance,
+  reportEventMedia,
+  setAttendance,
+} from '../../src/api/endpoints';
+import type { EventMediaItem, MediaItem } from '../../src/api/types';
+import { pickMedia, uploadMedia } from '../../src/media/upload';
+import { alertMediaError, askMediaSource, MediaThumb, MediaViewer, UploadProgress } from '../../src/media/MediaViews';
 import {
   AttendanceStatus,
   ScheduledEventKind,
@@ -188,8 +199,111 @@ export default function EventDetailScreen() {
         </View>
       ) : null}
 
+      <EventGallery eventId={eventId} />
+
       {addressForMap ? <LocationMap address={addressForMap} /> : null}
     </ScrollView>
+  );
+}
+
+/** Shared photos/videos for this event. Long-press an item to delete (yours / staff) or report. */
+function EventGallery({ eventId }: { eventId: number }) {
+  const { t } = useTranslation();
+  const qc = useQueryClient();
+  const [uploadFraction, setUploadFraction] = React.useState<number | null>(null);
+  const [viewing, setViewing] = React.useState<MediaItem | null>(null);
+
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['eventMedia', eventId],
+    queryFn: () => fetchEventMedia(eventId),
+    // Read links expire after ~2h; refetch well before that on long-lived screens.
+    staleTime: 10 * 60_000,
+  });
+
+  const onAdd = async () => {
+    if (uploadFraction !== null) return;
+    try {
+      const source = await askMediaSource(t);
+      if (!source) return;
+      const picked = await pickMedia(source);
+      if (!picked) return;
+      setUploadFraction(0);
+      const media = await uploadMedia(picked, setUploadFraction);
+      const item = await addEventMedia(eventId, media.mediaId);
+      qc.setQueryData<EventMediaItem[]>(['eventMedia', eventId], (old) => [item, ...(old ?? [])]);
+    } catch (e) {
+      alertMediaError(t, e);
+    } finally {
+      setUploadFraction(null);
+    }
+  };
+
+  const onItemActions = (item: EventMediaItem) => {
+    const remove = () =>
+      Alert.alert(t('media.deleteConfirmTitle'), t('media.deleteConfirmMessage'), [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('media.delete'),
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteEventMedia(eventId, item.id);
+              qc.setQueryData<EventMediaItem[]>(['eventMedia', eventId], (old) => (old ?? []).filter((x) => x.id !== item.id));
+            } catch {
+              Alert.alert(t('media.errorTitle'), t('media.deleteFailed'));
+            }
+          },
+        },
+      ]);
+    const report = async () => {
+      try {
+        await reportEventMedia(eventId, item.id);
+        Alert.alert(t('chat.reportedTitle'), t('chat.reportedMessage'));
+      } catch {
+        // Silent — user can retry.
+      }
+    };
+    const buttons: { text: string; style?: 'cancel' | 'destructive'; onPress?: () => void }[] = [
+      { text: t('common.cancel'), style: 'cancel' },
+    ];
+    if (item.canDelete) buttons.push({ text: t('media.delete'), style: 'destructive', onPress: remove });
+    buttons.push({ text: t('chat.report'), onPress: () => void report() });
+    Alert.alert(`${item.uploaderName}`, item.caption ?? '', buttons, { cancelable: true });
+  };
+
+  // Storage not configured / no access: hide the section rather than show a broken card.
+  if (isError) return null;
+
+  return (
+    <View style={styles.card}>
+      <View style={styles.galleryHeader}>
+        <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>{t('event.photos')}</Text>
+        <TouchableOpacity onPress={onAdd} disabled={uploadFraction !== null}>
+          <Text style={[styles.galleryAdd, uploadFraction !== null && { opacity: 0.5 }]}>＋ {t('event.addPhoto')}</Text>
+        </TouchableOpacity>
+      </View>
+
+      {uploadFraction !== null ? <UploadProgress fraction={uploadFraction} label={t('media.uploading')} /> : null}
+
+      {isLoading ? (
+        <ActivityIndicator color={colors.brand} style={{ marginTop: spacing.md }} />
+      ) : (data ?? []).length === 0 ? (
+        <Text style={styles.galleryEmpty}>{t('event.noPhotos')}</Text>
+      ) : (
+        <View style={styles.galleryGrid}>
+          {(data ?? []).map((item) => (
+            <MediaThumb
+              key={item.id}
+              media={item.media}
+              style={styles.galleryItem}
+              onPress={() => setViewing(item.media)}
+              onLongPress={() => onItemActions(item)}
+            />
+          ))}
+        </View>
+      )}
+      <MediaViewer media={viewing} onClose={() => setViewing(null)} />
+    </View>
   );
 }
 
@@ -386,6 +500,12 @@ const styles = StyleSheet.create({
   rowValue: { fontSize: 15, color: colors.text, flexShrink: 1, textAlign: 'right', marginLeft: spacing.md },
 
   notesBody: { fontSize: 15, color: colors.text, lineHeight: 22 },
+
+  galleryHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm },
+  galleryAdd: { color: colors.brand, fontSize: 14, fontWeight: '800' },
+  galleryEmpty: { fontSize: 14, color: colors.subtext },
+  galleryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  galleryItem: { width: '31%', aspectRatio: 1 },
 
   mapCard: {
     backgroundColor: colors.card,

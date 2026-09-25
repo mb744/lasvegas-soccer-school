@@ -102,6 +102,21 @@ public class AppOptions
     }
 }
 
+public class StorageOptions
+{
+    public const string SectionName = "Storage";
+
+    /// <summary>Azure Storage connection string (account key). "UseDevelopmentStorage=true" for Azurite.</summary>
+    public string ConnectionString { get; set; } = string.Empty;
+
+    public string MediaContainerName { get; set; } = "media";
+
+    public long MaxImageBytes { get; set; } = 10L * 1024 * 1024;
+    public long MaxVideoBytes { get; set; } = 100L * 1024 * 1024;
+
+    public bool IsConfigured => !string.IsNullOrWhiteSpace(ConnectionString);
+}
+
 public class AcsOptions
 {
     public const string SectionName = "Acs";

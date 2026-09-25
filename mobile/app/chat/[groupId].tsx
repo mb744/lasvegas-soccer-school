@@ -25,9 +25,11 @@ import {
 } from '../../src/api/endpoints';
 import { onMessage, sendViaHub } from '../../src/chat/signalr';
 import { useAuth } from '../../src/auth/AuthContext';
-import type { BlockedUser, ChatGroup, ChatMessage } from '../../src/api/types';
+import type { BlockedUser, ChatGroup, ChatMessage, MediaItem } from '../../src/api/types';
 import { messageTime } from '../../src/format';
 import { colors, radius, spacing } from '../../src/theme';
+import { pickMedia, uploadMedia } from '../../src/media/upload';
+import { alertMediaError, askMediaSource, MediaThumb, MediaViewer, UploadProgress } from '../../src/media/MediaViews';
 
 export default function ChatThreadScreen() {
   const { groupId: groupIdParam } = useLocalSearchParams<{ groupId: string }>();
@@ -37,6 +39,8 @@ export default function ChatThreadScreen() {
   const qc = useQueryClient();
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
+  const [uploadFraction, setUploadFraction] = useState<number | null>(null);
+  const [viewing, setViewing] = useState<MediaItem | null>(null);
 
   // Title from the cached group list (avoids an extra fetch).
   const title = useMemo(() => {
@@ -112,6 +116,30 @@ export default function ChatThreadScreen() {
       setSending(false);
     }
   }, [text, sending, groupId, qc]);
+
+  // Photo/video: whatever's typed in the box goes along as the caption.
+  const onAttach = useCallback(async () => {
+    if (sending || uploadFraction !== null) return;
+    try {
+      const source = await askMediaSource(t);
+      if (!source) return;
+      const picked = await pickMedia(source);
+      if (!picked) return;
+
+      setUploadFraction(0);
+      const media = await uploadMedia(picked, setUploadFraction);
+      const caption = text.trim();
+      const saved = await sendChatMessage(groupId, caption, media.mediaId);
+      setText('');
+      qc.setQueryData<ChatMessage[]>(['chatMessages', groupId], (old: ChatMessage[] | undefined) =>
+        old?.some((m) => m.id === saved.id) ? old : [saved, ...(old ?? [])],
+      );
+    } catch (e) {
+      alertMediaError(t, e);
+    } finally {
+      setUploadFraction(null);
+    }
+  }, [sending, uploadFraction, t, text, groupId, qc]);
 
   const onReport = useCallback(
     (message: ChatMessage) => {
@@ -226,12 +254,23 @@ export default function ChatThreadScreen() {
               message={item}
               mine={item.senderUserId === me?.userId}
               onLongPress={() => onLongPressMessage(item)}
+              onOpenMedia={setViewing}
             />
           )}
         />
       )}
 
+      {uploadFraction !== null ? <UploadProgress fraction={uploadFraction} label={t('media.uploading')} /> : null}
+
       <View style={styles.composer}>
+        <TouchableOpacity
+          style={[styles.attachBtn, uploadFraction !== null && styles.sendBtnDisabled]}
+          onPress={onAttach}
+          disabled={uploadFraction !== null}
+          accessibilityLabel={t('media.attach')}
+        >
+          <Text style={styles.attachText}>＋</Text>
+        </TouchableOpacity>
         <TextInput
           style={styles.input}
           placeholder={t('chat.placeholder')}
@@ -248,6 +287,7 @@ export default function ChatThreadScreen() {
           <Text style={styles.sendText}>{t('common.send')}</Text>
         </TouchableOpacity>
       </View>
+      <MediaViewer media={viewing} onClose={() => setViewing(null)} />
     </KeyboardAvoidingView>
   );
 }
@@ -256,10 +296,12 @@ function Bubble({
   message,
   mine,
   onLongPress,
+  onOpenMedia,
 }: {
   message: ChatMessage;
   mine: boolean;
   onLongPress: () => void;
+  onOpenMedia: (media: MediaItem) => void;
 }) {
   return (
     <TouchableOpacity
@@ -272,7 +314,15 @@ function Bubble({
         {!mine ? (
           <Text style={[styles.sender, message.isFromAdmin && styles.senderAdmin]}>{message.senderName}</Text>
         ) : null}
-        <Text style={[styles.body, mine && styles.bodyMine]}>{message.body}</Text>
+        {message.media ? (
+          <MediaThumb
+            media={message.media}
+            style={styles.bubbleMedia}
+            onPress={() => onOpenMedia(message.media!)}
+            onLongPress={onLongPress}
+          />
+        ) : null}
+        {message.body ? <Text style={[styles.body, mine && styles.bodyMine]}>{message.body}</Text> : null}
         <Text style={[styles.time, mine && styles.timeMine]}>{messageTime(message.sentAt)}</Text>
       </View>
     </TouchableOpacity>
@@ -321,5 +371,16 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
   },
   sendBtnDisabled: { opacity: 0.5 },
+  attachBtn: {
+    marginRight: spacing.sm,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: colors.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  attachText: { fontSize: 22, color: colors.brand, fontWeight: '800' },
+  bubbleMedia: { width: 220, height: 220, marginBottom: 4 },
   sendText: { color: colors.white, fontWeight: '800' },
 });

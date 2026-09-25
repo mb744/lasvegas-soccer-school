@@ -25,8 +25,12 @@ public class ChatMessage
     /// <summary>True when sent by an admin/coach from the web — clients render these distinctly.</summary>
     public bool IsFromAdmin { get; set; }
 
-    [Required, MaxLength(4000)]
+    /// <summary>May be empty when the message is only a photo/video attachment.</summary>
+    [MaxLength(4000)]
     public string Body { get; set; } = string.Empty;
+
+    public int? MediaAssetId { get; set; }
+    public MediaAsset? MediaAsset { get; set; }
 
     public DateTime SentAt { get; set; } = DateTime.UtcNow;
 }
