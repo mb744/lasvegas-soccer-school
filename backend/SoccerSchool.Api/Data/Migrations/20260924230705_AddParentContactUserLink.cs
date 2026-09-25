@@ -27,8 +27,7 @@ namespace SoccerSchool.Api.Data.Migrations
                 table: "ParentContacts",
                 column: "UserId",
                 principalTable: "AspNetUsers",
-                principalColumn: "Id",
-                onDelete: ReferentialAction.SetNull);
+                principalColumn: "Id");
         }
 
         /// <inheritdoc />

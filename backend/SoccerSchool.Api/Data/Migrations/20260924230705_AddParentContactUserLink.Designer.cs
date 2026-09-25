@@ -3223,8 +3223,7 @@ namespace SoccerSchool.Api.Data.Migrations
 
                     b.HasOne("SoccerSchool.Api.Domain.ApplicationUser", "User")
                         .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.SetNull);
+                        .HasForeignKey("UserId");
 
                     b.Navigation("ParentAccount");
 
