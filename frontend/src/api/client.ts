@@ -151,6 +151,7 @@ import type {
   SaveVenueFieldRequest,
   TranslateRequest,
   TranslateResponse,
+  MobileUsageRow,
   UserCoachTeam,
   UserSummary,
   WhatsAppTemplate,
@@ -415,6 +416,10 @@ export const Api = {
   },
   async setUserCoachTeams(id: string, teamIds: number[]) {
     await api.put(`/admin/users/${encodeURIComponent(id)}/coach-teams`, { teamIds })
+  },
+  async mobileUsageReport() {
+    const r = await api.get<MobileUsageRow[]>('/admin/reports/mobile-usage')
+    return r.data
   },
 
   // --- Messaging (admin chat/broadcast) ---

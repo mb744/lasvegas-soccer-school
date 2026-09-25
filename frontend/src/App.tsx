@@ -18,6 +18,7 @@ import { AdminHostedTournamentsPage } from './pages/admin/HostedTournamentsPage'
 import { AdminChatGroupsPage } from './pages/admin/ChatGroupsPage'
 import { AdminAnnouncementsPage } from './pages/admin/AnnouncementsPage'
 import { AdminDrillsPage } from './pages/admin/DrillsPage'
+import { AdminMobileUsagePage } from './pages/admin/MobileUsagePage'
 import { TournamentPublicPage } from './pages/TournamentPublicPage'
 import { ResetPlayerPasswordPage } from './pages/ResetPlayerPasswordPage'
 import { LoginPage } from './pages/LoginPage'
@@ -123,6 +124,10 @@ export default function App() {
           <Route
             path="/coach/drills"
             element={<RequireAuth staffOnly><AdminDrillsPage /></RequireAuth>}
+          />
+          <Route
+            path="/admin/reports/mobile-usage"
+            element={<RequireAuth adminOnly><AdminMobileUsagePage /></RequireAuth>}
           />
           <Route path="/tournament/:slug" element={<TournamentPublicPage />} />
           <Route path="/reset-player-password" element={<ResetPlayerPasswordPage />} />

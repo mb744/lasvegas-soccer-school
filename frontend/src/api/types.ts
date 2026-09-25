@@ -297,6 +297,22 @@ export interface UserCoachTeam {
   teamName: string
 }
 
+export interface MobileUsageRow {
+  userId: string
+  email: string
+  name: string
+  playerCount: number
+  hasMobileApp: boolean
+  firstInstalledAt: string | null
+  lastSeenAt: string | null
+  lastMobileLoginAt: string | null
+  hasIos: boolean
+  hasAndroid: boolean
+  deviceCount: number
+  lastLoginAt: string | null
+  accountCreatedAt: string | null
+}
+
 export interface UserSummary {
   id: string
   email: string

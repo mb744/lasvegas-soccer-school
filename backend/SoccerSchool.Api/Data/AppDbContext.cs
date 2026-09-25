@@ -162,11 +162,15 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
                 .HasForeignKey(c => c.ParentAccountId)
                 .OnDelete(DeleteBehavior.Cascade);
             // Optional Identity link, populated when the additional-parent signs in with a
-            // matching email. Same SetNull-on-user-delete rule as the TeamCoach FK.
+            // matching email. ClientSetNull, not SetNull: SQL Server rejects a second cascade
+            // path into ParentContacts (AspNetUsers → ParentAccounts → ParentContacts already
+            // cascades), which made the AddParentContactUserLink migration fail on startup.
+            // Users are never hard-deleted (account deletion anonymizes), and EF still nulls
+            // tracked links if one ever is.
             b.HasOne(c => c.User)
                 .WithMany()
                 .HasForeignKey(c => c.UserId)
-                .OnDelete(DeleteBehavior.SetNull);
+                .OnDelete(DeleteBehavior.ClientSetNull);
             b.HasIndex(c => c.ParentAccountId);
             b.HasIndex(c => c.UserId);
         });
