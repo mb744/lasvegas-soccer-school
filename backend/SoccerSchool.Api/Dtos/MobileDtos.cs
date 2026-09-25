@@ -117,12 +117,54 @@ public record MobileChatMessageDto(
     string SenderName,
     bool IsFromAdmin,
     string Body,
-    DateTime SentAt);
+    DateTime SentAt,
+    MobileMediaDto? Media = null);
 
 public record MobileSendMessageRequest
 {
-    [Required, MaxLength(4000)]
-    public string Body { get; init; } = string.Empty;
+    /// <summary>Optional when <see cref="MediaId"/> is set (a photo/video with no caption).</summary>
+    [MaxLength(4000)]
+    public string? Body { get; init; }
+
+    /// <summary>A Ready <c>MediaAsset</c> the caller uploaded, attached to this message.</summary>
+    public int? MediaId { get; init; }
+}
+
+// ---- Media (photo/video uploads) ----
+
+/// <summary>Url is a short-lived read SAS; clients should re-fetch rather than persist it.</summary>
+public record MobileMediaDto(int MediaId, MediaKind Kind, string ContentType, string Url);
+
+public record MobileCreateUploadRequest
+{
+    public MediaKind Kind { get; init; }
+
+    [Required, MaxLength(100)]
+    public string ContentType { get; init; } = string.Empty;
+
+    public long SizeBytes { get; init; }
+}
+
+/// <summary>The device PUTs the file to <see cref="UploadUrl"/> with headers
+/// <c>x-ms-blob-type: BlockBlob</c> and <c>Content-Type</c>, then calls /complete.</summary>
+public record MobileCreateUploadResponse(int MediaId, string UploadUrl);
+
+public record MobileEventMediaDto(
+    int Id,
+    int EventId,
+    MobileMediaDto Media,
+    string UploadedByUserId,
+    string UploaderName,
+    string? Caption,
+    DateTime CreatedAt,
+    bool CanDelete);
+
+public record MobileAddEventMediaRequest
+{
+    public int MediaId { get; init; }
+
+    [MaxLength(500)]
+    public string? Caption { get; init; }
 }
 
 public record MobileReportMessageRequest

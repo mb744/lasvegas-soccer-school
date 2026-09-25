@@ -2,7 +2,7 @@
   "expo": {
     "name": "LV Soccer School",
     "slug": "lvss-mobile",
-    "version": "1.3.0",
+    "version": "1.4.0",
     "orientation": "portrait",
     "scheme": "lvss",
     "userInterfaceStyle": "automatic",
@@ -63,7 +63,16 @@
           "backgroundColor": "#0b3d2e"
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      "expo-video",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "LV Soccer School needs access to your photos so you can share pictures and videos in team chats and event galleries.",
+          "cameraPermission": "LV Soccer School needs camera access so you can take photos and videos to share with your team.",
+          "microphonePermission": "LV Soccer School needs microphone access to record sound with the videos you share."
+        }
+      ]
     ],
     "extra": {
       "apiBaseUrl": "https://registration.lasvegassoccerschool.org",

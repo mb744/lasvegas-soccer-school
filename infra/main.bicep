@@ -93,6 +93,8 @@ var containerAppEnvName = '${appName}-cae-${nameSuffix}'
 var containerAppName = '${appName}-app'
 var sqlServerName = '${appName}-sql-${nameSuffix}'
 var sqlDatabaseName = 'LasVegasSoccerSchool'
+// Storage account names: 3-24 lowercase alphanumerics, globally unique.
+var storageAccountName = toLower('${appName}st${nameSuffix}')
 
 var commonTags = {
   app: appName
@@ -151,6 +153,15 @@ module containerEnv 'modules/container-apps-env.bicep' = {
   }
 }
 
+module storage 'modules/storage.bicep' = {
+  name: 'storage-${deploySuffix}'
+  params: {
+    name: storageAccountName
+    location: location
+    tags: commonTags
+  }
+}
+
 module acs 'modules/acs.bicep' = if (enableAcs) {
   name: 'acs-${deploySuffix}'
   params: {
@@ -191,6 +202,8 @@ module containerApp 'modules/container-app.bicep' = {
     twilioWhatsAppTemplateSid: twilioWhatsAppTemplateSid
     twilioConversationsServiceSid: twilioConversationsServiceSid
     jwtSigningKey: jwtSigningKey
+    storageConnectionString: storage.outputs.connectionString
+    storageMediaContainerName: storage.outputs.mediaContainerName
   }
 }
 

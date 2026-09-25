@@ -98,6 +98,8 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
     public DbSet<ChatGroup> ChatGroups => Set<ChatGroup>();
     public DbSet<ChatGroupMember> ChatGroupMembers => Set<ChatGroupMember>();
     public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
+    public DbSet<MediaAsset> MediaAssets => Set<MediaAsset>();
+    public DbSet<EventMedia> EventMedia => Set<EventMedia>();
     public DbSet<ChatMessageReport> ChatMessageReports => Set<ChatMessageReport>();
     public DbSet<ChatUserBlock> ChatUserBlocks => Set<ChatUserBlock>();
     public DbSet<DeviceToken> DeviceTokens => Set<DeviceToken>();
@@ -736,6 +738,31 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
             // Composite index supports the "history since X, newest first" queries the mobile
             // client and the unread-count computation both run.
             b.HasIndex(m => new { m.ChatGroupId, m.Id });
+            // Restrict (NoAction) — SQL Server rejects multiple cascade paths, and a media asset
+            // referenced by a message should never be deleted out from under it anyway.
+            b.HasOne(m => m.MediaAsset)
+                .WithMany()
+                .HasForeignKey(m => m.MediaAssetId)
+                .OnDelete(DeleteBehavior.NoAction);
+        });
+
+        modelBuilder.Entity<MediaAsset>(b =>
+        {
+            b.HasIndex(a => a.BlobName).IsUnique();
+            b.HasIndex(a => new { a.Status, a.CreatedAt });
+        });
+
+        modelBuilder.Entity<EventMedia>(b =>
+        {
+            b.HasOne(e => e.ScheduledGame)
+                .WithMany()
+                .HasForeignKey(e => e.ScheduledGameId)
+                .OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(e => e.MediaAsset)
+                .WithMany()
+                .HasForeignKey(e => e.MediaAssetId)
+                .OnDelete(DeleteBehavior.NoAction);
+            b.HasIndex(e => new { e.ScheduledGameId, e.CreatedAt });
         });
 
         modelBuilder.Entity<Announcement>(b =>

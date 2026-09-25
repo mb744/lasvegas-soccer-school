@@ -21,6 +21,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.Configure<AppOptions>(builder.Configuration.GetSection(AppOptions.SectionName));
 builder.Services.Configure<AcsOptions>(builder.Configuration.GetSection(AcsOptions.SectionName));
+builder.Services.Configure<StorageOptions>(builder.Configuration.GetSection(StorageOptions.SectionName));
 builder.Services.Configure<TwilioOptions>(builder.Configuration.GetSection(TwilioOptions.SectionName));
 
 // Container Apps ingress terminates TLS and forwards HTTP to port 8080. Without this,
@@ -216,6 +217,7 @@ builder.Services.AddScoped<IMobileTokenService, MobileTokenService>();
 builder.Services.AddScoped<IEmailVerificationService, EmailVerificationService>();
 builder.Services.AddScoped<IParentAccountResolver, ParentAccountResolver>();
 builder.Services.AddScoped<IChatService, ChatService>();
+builder.Services.AddSingleton<IMediaStorage, MediaStorage>();
 builder.Services.AddScoped<IAccountDeletionService, AccountDeletionService>();
 builder.Services.AddSingleton<IReclaimHasher, ReclaimHasher>();
 builder.Services.AddHttpClient<IExternalIdentityService, ExternalIdentityService>();
