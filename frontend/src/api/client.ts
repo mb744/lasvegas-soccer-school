@@ -181,6 +181,12 @@ export const Api = {
   async forgotPassword(email: string) {
     await api.post('/auth/forgot-password', { email })
   },
+  async confirmEmail(userId: string, token: string) {
+    await api.post('/auth/confirm-email', { userId, token })
+  },
+  async resendConfirmation() {
+    await api.post('/auth/resend-confirmation')
+  },
   async resetPassword(email: string, token: string, newPassword: string) {
     await api.post('/auth/reset-password', { email, token, newPassword })
   },
