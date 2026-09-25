@@ -27,6 +27,7 @@ public class MobileAuthController : ControllerBase
     private readonly IExternalIdentityService _external;
     private readonly IReclaimHasher _reclaim;
     private readonly IEmailSender _emailSender;
+    private readonly IEmailVerificationService _verification;
     private readonly AppOptions _app;
     private readonly AppDbContext _db;
     private readonly ILogger<MobileAuthController> _logger;
@@ -39,6 +40,7 @@ public class MobileAuthController : ControllerBase
         IExternalIdentityService external,
         IReclaimHasher reclaim,
         IEmailSender emailSender,
+        IEmailVerificationService verification,
         IOptions<AppOptions> app,
         AppDbContext db,
         ILogger<MobileAuthController> logger)
@@ -50,6 +52,7 @@ public class MobileAuthController : ControllerBase
         _external = external;
         _reclaim = reclaim;
         _emailSender = emailSender;
+        _verification = verification;
         _app = app.Value;
         _db = db;
         _logger = logger;
@@ -197,6 +200,11 @@ public class MobileAuthController : ControllerBase
         if (await _users.IsLockedOutAsync(user))
             return Unauthorized("Account locked.");
 
+        // The provider just proved this person owns the address. If the matched account was
+        // created with a password nobody ever verified, that password may belong to someone who
+        // registered the address first — drop it so they can't keep a way in.
+        await _verification.AdoptProviderVerifiedEmailAsync(user, ct);
+
         // Ensure the external login is linked (idempotent — silently swallows the AlreadyLinked error).
         var linkResult = await _users.AddLoginAsync(user, new Microsoft.AspNetCore.Identity.UserLoginInfo(provider, identity.ProviderKey, provider));
         if (!linkResult.Succeeded && !linkResult.Errors.Any(e => e.Code == "LoginAlreadyAssociated"))
@@ -300,7 +308,10 @@ public class MobileAuthController : ControllerBase
         // use the FK directly — the email-match branch stays as a fallback for cards created
         // before the coach ever logged in. Handles the common flow: admin creates the coach card,
         // the coach then installs the app and signs in with Google using the same address.
-        var normalizedEmail = user.NormalizedEmail;
+        // Email matching (coach cards below, additional-parent contacts further down) is only
+        // trusted once the login has proven it owns the address. Null disables both email-match
+        // branches for unverified logins; links that already exist (UserId set) still apply.
+        var normalizedEmail = user.EmailConfirmed ? user.NormalizedEmail : null;
         var coachCards = await _db.TeamCoaches
             .Where(tc => tc.UserId == user.Id
                 || (tc.UserId == null && normalizedEmail != null && tc.Email != null
@@ -398,7 +409,8 @@ public class MobileAuthController : ControllerBase
             roles.Contains(Roles.Admin),
             coachTeamIds.Count > 0,
             coachTeamIds,
-            players);
+            players,
+            user.EmailConfirmed);
     }
 
     /// <summary>Pulls the <c>sub</c> claim out of a freshly-minted access token without re-validating

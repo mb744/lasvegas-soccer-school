@@ -276,6 +276,11 @@ export const es: Translations = {
     deleteErrorTitle: 'No se pudo eliminar la cuenta',
     deleteErrorMessage: 'Por favor intente de nuevo o contacte a soporte.',
     manageTraining: 'Acceso a Entrenamiento Diario ›',
+    verifyTitle: 'Confirme su correo',
+    verifyBody: 'Abra el enlace que enviamos a {{email}}. Hasta entonces, los equipos que entrena y las familias que lo incluyen como padre o madre no se conectarán a su cuenta.',
+    verifyResend: 'Reenviar correo',
+    verifySent: '¡Enviado! Revise su bandeja de entrada (y la carpeta de spam).',
+    verifyFailed: 'No se pudo enviar ahora. Intente de nuevo en unos minutos.',
   },
   training: {
     heading: 'App Entrenamiento Diario',

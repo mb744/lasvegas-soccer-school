@@ -82,7 +82,9 @@ public class AdminUsersController : ControllerBase
     /// NormalizedEmail matches the card's Email. Runs on every admin-list load — bounded by
     /// the number of *orphaned* cards (typically zero after the first pass), and matches by a
     /// single indexed hashset lookup. Same rule the mobile sign-in uses; running it in both spots
-    /// means whichever happens first (admin views the list, coach signs in) resolves the link.</summary>
+    /// means whichever happens first (admin views the list, coach signs in) resolves the link.
+    /// Only logins with a verified email qualify — otherwise signing up with a coach's address
+    /// would claim their card. Admins can still link an unverified user explicitly (SetCoachTeams).</summary>
     private async Task BackfillCoachUserLinksAsync(CancellationToken ct)
     {
         var orphaned = await _db.TeamCoaches
@@ -95,7 +97,7 @@ public class AdminUsersController : ControllerBase
             .Distinct()
             .ToList();
         var userByNormalizedEmail = (await _db.Users
-                .Where(u => u.NormalizedEmail != null && normalizedEmailsForUsers.Contains(u.NormalizedEmail))
+                .Where(u => u.EmailConfirmed && u.NormalizedEmail != null && normalizedEmailsForUsers.Contains(u.NormalizedEmail))
                 .Select(u => new { u.Id, u.NormalizedEmail })
                 .ToListAsync(ct))
             .ToDictionary(x => x.NormalizedEmail!, x => x.Id, StringComparer.Ordinal);

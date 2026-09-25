@@ -2,15 +2,26 @@ import React, { useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../src/auth/AuthContext';
-import { deleteAccount } from '../../src/api/endpoints';
+import { deleteAccount, resendEmailConfirmation } from '../../src/api/endpoints';
 import { colors, radius, spacing } from '../../src/theme';
 
 export default function ProfileScreen() {
   const { t } = useTranslation();
   const { me, signOut } = useAuth();
   const [deleting, setDeleting] = useState(false);
+  const [verifyState, setVerifyState] = useState<'idle' | 'sending' | 'sent' | 'failed'>('idle');
 
   if (!me) return null;
+
+  const onResend = async () => {
+    setVerifyState('sending');
+    try {
+      await resendEmailConfirmation();
+      setVerifyState('sent');
+    } catch {
+      setVerifyState('failed');
+    }
+  };
 
   const onDelete = () => {
     Alert.alert(
@@ -52,6 +63,21 @@ export default function ProfileScreen() {
         </Text>
         <Text style={styles.email}>{me.email}</Text>
       </View>
+
+      {!me.emailConfirmed && (
+        <View style={styles.verifyCard}>
+          <Text style={styles.verifyTitle}>{t('profile.verifyTitle')}</Text>
+          <Text style={styles.verifyBody}>{t('profile.verifyBody', { email: me.email })}</Text>
+          {verifyState === 'sent' ? (
+            <Text style={styles.verifyStatus}>{t('profile.verifySent')}</Text>
+          ) : (
+            <TouchableOpacity onPress={onResend} disabled={verifyState === 'sending'} accessibilityRole="button">
+              <Text style={styles.verifyLink}>{t('profile.verifyResend')}</Text>
+            </TouchableOpacity>
+          )}
+          {verifyState === 'failed' && <Text style={styles.verifyError}>{t('profile.verifyFailed')}</Text>}
+        </View>
+      )}
 
       <Text style={styles.sectionTitle}>{t('profile.players')}</Text>
       {me.players.length === 0 ? (
@@ -95,6 +121,20 @@ const styles = StyleSheet.create({
   avatarText: { color: colors.white, fontSize: 28, fontWeight: '800' },
   name: { fontSize: 22, fontWeight: '800', color: colors.text },
   email: { fontSize: 14, color: colors.subtext, marginTop: 2 },
+  verifyCard: {
+    backgroundColor: '#fff8e6',
+    borderColor: colors.warning,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: spacing.lg,
+    marginBottom: spacing.xl,
+    gap: spacing.xs,
+  },
+  verifyTitle: { fontSize: 15, fontWeight: '800', color: colors.text },
+  verifyBody: { fontSize: 14, color: colors.text, lineHeight: 20 },
+  verifyLink: { fontSize: 15, fontWeight: '800', color: colors.brandLight, marginTop: spacing.xs },
+  verifyStatus: { fontSize: 14, fontWeight: '700', color: colors.success, marginTop: spacing.xs },
+  verifyError: { fontSize: 13, color: colors.danger },
   sectionTitle: {
     fontSize: 13,
     fontWeight: '800',

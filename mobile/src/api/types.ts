@@ -57,6 +57,8 @@ export interface Me {
   /** Team IDs the login is coach of. Empty when isCoach is false. */
   coachTeamIds: number[];
   players: Player[];
+  /** False until the login proves it owns its email; email-matched coach/family links wait on it. */
+  emailConfirmed: boolean;
 }
 
 export interface TokenResponse {

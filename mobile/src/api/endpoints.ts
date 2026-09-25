@@ -52,6 +52,11 @@ export async function deleteAccount(): Promise<void> {
   await api.delete('/mobile/auth/me');
 }
 
+/** Emails the signed-in user a fresh "confirm your email" link (opens on the website). */
+export async function resendEmailConfirmation(): Promise<void> {
+  await api.post('/auth/resend-confirmation');
+}
+
 // ---- Players ----
 
 export async function fetchPlayers(): Promise<Player[]> {

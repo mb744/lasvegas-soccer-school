@@ -193,6 +193,7 @@ builder.Services.AddHostedService<TwilioMessageReconcilerBackground>();
 
 // Mobile companion app services + background jobs.
 builder.Services.AddScoped<IMobileTokenService, MobileTokenService>();
+builder.Services.AddScoped<IEmailVerificationService, EmailVerificationService>();
 builder.Services.AddScoped<IParentAccountResolver, ParentAccountResolver>();
 builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddScoped<IAccountDeletionService, AccountDeletionService>();

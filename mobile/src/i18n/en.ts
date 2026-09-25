@@ -274,6 +274,11 @@ export const en = {
     deleteErrorTitle: 'Could not delete account',
     deleteErrorMessage: 'Please try again in a moment or contact support.',
     manageTraining: 'Daily Training login ›',
+    verifyTitle: 'Confirm your email',
+    verifyBody: 'Open the link we sent to {{email}}. Until then, teams you coach and families that list you as a parent won’t connect to your account.',
+    verifyResend: 'Resend email',
+    verifySent: 'Sent! Check your inbox (and spam folder).',
+    verifyFailed: 'Could not send right now. Try again in a few minutes.',
   },
   training: {
     heading: 'Daily Training app',

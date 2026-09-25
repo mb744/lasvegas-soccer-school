@@ -41,8 +41,19 @@ public record MeResponse(
     string LastName,
     string? Phone,
     Language Language,
-    bool IsAdmin
+    bool IsAdmin,
+    /// <summary>False until the login proves it owns its email (see EmailVerificationService).</summary>
+    bool EmailConfirmed
 );
+
+public record ConfirmEmailRequest
+{
+    [Required, MaxLength(450)]
+    public string UserId { get; init; } = string.Empty;
+
+    [Required, MaxLength(2048)]
+    public string Token { get; init; } = string.Empty;
+}
 
 public record ForgotPasswordRequest
 {
