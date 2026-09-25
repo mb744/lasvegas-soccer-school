@@ -313,6 +313,10 @@ function ComposeTab({
   const [mode, setMode] = useState<SendMode>('broadcast')
   const [bodyMode, setBodyMode] = useState<ComposeBodyMode>('free-form')
   const [templateId, setTemplateId] = useState<number | ''>('')
+  // Sticky bit: true once the admin picks a template themselves. The event dropdown's kind-based
+  // auto-pick then leaves the choice alone, so picking a cancellation template and then picking a
+  // game no longer reverts to the generic game_* template.
+  const [templateManuallyPicked, setTemplateManuallyPicked] = useState(false)
   const [emailTemplateId, setEmailTemplateId] = useState<number | ''>('')
   const [templateValues, setTemplateValues] = useState<Record<string, string>>({})
   const [recipientMode, setRecipientMode] = useState<RecipientMode>('individual')
@@ -776,6 +780,9 @@ function ComposeTab({
                 const id = e.target.value === '' ? '' : Number(e.target.value)
                 setTemplateId(id)
                 setTemplateValues({})
+                // Non-empty pick locks the choice against the kind-based auto-pick below;
+                // clearing back to "— pick —" re-enables auto-pick for the next event choice.
+                setTemplateManuallyPicked(id !== '')
               }}
               className="border border-slate-300 rounded-md px-3 py-2 text-sm w-full sm:w-96">
               <option value="">— {t('admin.msgPickTemplate')} —</option>
@@ -799,12 +806,12 @@ function ComposeTab({
                   if (!gameId) return
                   const g = upcomingGames.find(x => x.id === gameId)
                   if (!g) return
-                  // Auto-select a template by Kind (Practice → practice_*, Game → game_*) if the
-                  // admin hasn't already picked one, so a single dropdown pick fills variables AND
-                  // wires the right template. Use the freshly-picked template for the autofill so
-                  // we don't race the React state update.
+                  // Auto-select a template by Kind (Practice → practice_*, Game → game_*) only
+                  // when the admin hasn't chosen one themselves. If they picked a cancellation /
+                  // reminder / any-other template on purpose, keep it — just autofill its
+                  // variables from the event they just picked.
                   let activeTemplate = selectedTemplate
-                  if (!activeTemplate || ((activeTemplate.name.toLowerCase().includes('game')) !== (g.kind === 0))) {
+                  if (!templateManuallyPicked && !activeTemplate) {
                     const autoId = pickTemplateForEvent(g, templates)
                     if (autoId !== '') {
                       setTemplateId(autoId)
