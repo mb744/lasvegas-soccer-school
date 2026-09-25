@@ -17,6 +17,7 @@ import { AdminInvoicesPage } from './pages/admin/InvoicesPage'
 import { AdminHostedTournamentsPage } from './pages/admin/HostedTournamentsPage'
 import { AdminChatGroupsPage } from './pages/admin/ChatGroupsPage'
 import { AdminAnnouncementsPage } from './pages/admin/AnnouncementsPage'
+import { AdminMobileUsagePage } from './pages/admin/MobileUsagePage'
 import { TournamentPublicPage } from './pages/TournamentPublicPage'
 import { LoginPage } from './pages/LoginPage'
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage'
@@ -114,6 +115,10 @@ export default function App() {
           <Route
             path="/admin/announcements"
             element={<RequireAuth adminOnly><AdminAnnouncementsPage /></RequireAuth>}
+          />
+          <Route
+            path="/admin/reports/mobile-usage"
+            element={<RequireAuth adminOnly><AdminMobileUsagePage /></RequireAuth>}
           />
           <Route path="/tournament/:slug" element={<TournamentPublicPage />} />
           <Route path="*" element={<LandingPage />} />
