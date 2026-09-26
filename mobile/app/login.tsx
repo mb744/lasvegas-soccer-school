@@ -30,8 +30,6 @@ export default function LoginScreen() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  if (me) return <Redirect href="/(tabs)" />;
-
   const onSubmit = async () => {
     setError(null);
     setBusy(true);
@@ -90,6 +88,10 @@ export default function LoginScreen() {
   const showGoogle = googleConfigured();
   const showFacebook = facebookConfigured();
   const showAnySocial = showGoogle || showFacebook;
+
+  // Must stay below every hook: returning early changes the hook count between renders, which
+  // React treats as fatal — in a release build that closes the app right after sign-in.
+  if (me) return <Redirect href="/(tabs)" />;
 
   return (
     <KeyboardAvoidingView
