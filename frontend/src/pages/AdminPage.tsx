@@ -20,6 +20,7 @@ export function AdminPage() {
     { to: '/admin/announcements',       title: t('admin.hubAnnouncements'),    blurb: t('admin.hubAnnouncementsBlurb'),    icon: '📣' },
     { to: '/admin/drills',              title: t('admin.hubDrills'),           blurb: t('admin.hubDrillsBlurb'),           icon: '🏃' },
     { to: '/admin/reports/mobile-usage', title: t('admin.hubMobileUsage'),      blurb: t('admin.hubMobileUsageBlurb'),      icon: '📱' },
+    { to: '/admin/access',              title: t('admin.hubAccess'),           blurb: t('admin.hubAccessBlurb'),           icon: '🔐' },
     { to: '/admin/settings',            title: t('admin.hubSettings'),         blurb: t('admin.hubSettingsBlurb'),         icon: '⚙️' },
   ] as const
 

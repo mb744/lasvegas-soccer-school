@@ -281,6 +281,9 @@ export function AdminUsersPage() {
                           ) : (
                             <div className="flex flex-col gap-1">
                               <button onClick={() => startEdit(u)} className="text-emerald-700 hover:underline">Edit</button>
+                              <Link to={`/admin/access?user=${encodeURIComponent(u.id)}`} className="text-emerald-700 hover:underline">
+                                {t('admin.userPermissions')}
+                              </Link>
                               {u.isAdmin ? (
                                 <span className="text-xs text-slate-400">—</span>
                               ) : u.isBanned ? (

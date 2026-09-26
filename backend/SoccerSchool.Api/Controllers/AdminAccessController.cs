@@ -72,6 +72,38 @@ public class AdminAccessController : ControllerBase
             Ordered(effective.Keys)));
     }
 
+    /// <summary>Everyone with at least one individual grant (e.g. every Drill creator).</summary>
+    [HttpGet("grants")]
+    [RequirePermission(Permissions.UsersManage)]
+    public async Task<ActionResult<IEnumerable<UserGrantsDto>>> ListGrants(CancellationToken ct)
+    {
+        var rows = await _db.UserPermissionGrants.AsNoTracking()
+            .Select(g => new
+            {
+                g.UserId,
+                g.Permission,
+                Email = _db.Users.Where(u => u.Id == g.UserId).Select(u => u.Email).FirstOrDefault(),
+                Name = _db.ParentAccounts.Where(p => p.UserId == g.UserId)
+                    .Select(p => (p.FirstName + " " + p.LastName).Trim())
+                    .FirstOrDefault(),
+            })
+            .ToListAsync(ct);
+        var order = Permissions.All.Select((p, i) => (p.Key, i)).ToDictionary(x => x.Key, x => x.i);
+        return Ok(rows
+            .GroupBy(r => r.UserId)
+            .Select(g => new UserGrantsDto(
+                g.Key,
+                g.First().Email ?? "",
+                string.IsNullOrWhiteSpace(g.First().Name) ? g.First().Email ?? "" : g.First().Name!,
+                g.Select(r => r.Permission)
+                    .Where(order.ContainsKey)
+                    .OrderBy(k => order[k])
+                    .ToList()))
+            .Where(u => u.Grants.Count > 0)
+            .OrderBy(u => u.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList());
+    }
+
     /// <summary>Grants/revokes a grantable permission (e.g. drills.create) for one person.</summary>
     [HttpPut("users/{userId}/grants/{permission}")]
     [RequirePermission(Permissions.UsersManage)]

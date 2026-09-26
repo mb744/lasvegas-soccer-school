@@ -16,14 +16,18 @@ import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  fetchAccessCatalog,
   fetchAdminTeams,
   fetchAdminUsers,
+  fetchUserAccess,
   fetchUserCoachTeams,
   setAdminUserRole,
   setUserCoachTeams,
+  setUserGrant,
   updateAdminUserProfile,
 } from '../../../src/api/endpoints';
 import { useAuth } from '../../../src/auth/AuthContext';
+import { can, Perm } from '../../../src/auth/can';
 import { colors, radius, spacing } from '../../../src/theme';
 
 export default function AdminUserEditScreen() {
@@ -167,11 +171,74 @@ export default function AdminUserEditScreen() {
           <CoachTeamsEditor userId={user.id} />
         </View>
 
+        {can(me, Perm.UsersManage) ? <ExtraPermissionsCard userId={user.id} /> : null}
+
         <TouchableOpacity style={styles.secondaryBtn} onPress={() => router.back()}>
           <Text style={styles.secondaryBtnText}>{t('common.done')}</Text>
         </TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>
+  );
+}
+
+/** Per-person grants (e.g. Drill creator, Event creator) on top of the user's role. Admins already
+ *  have everything, so the switches only show for non-admins. */
+function ExtraPermissionsCard({ userId }: { userId: string }) {
+  const { t, i18n } = useTranslation();
+  const qc = useQueryClient();
+  const es = i18n.language.startsWith('es');
+  const catalog = useQuery({ queryKey: ['accessCatalog'], queryFn: fetchAccessCatalog });
+  const access = useQuery({ queryKey: ['userAccess', userId], queryFn: () => fetchUserAccess(userId) });
+
+  const toggle = useMutation({
+    mutationFn: (v: { key: string; enabled: boolean }) => setUserGrant(userId, v.key, v.enabled),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['userAccess', userId] }),
+    onError: (e: unknown) => {
+      const data = (e as { response?: { data?: unknown } })?.response?.data;
+      Alert.alert(t('common.retry'), typeof data === 'string' ? data : t('admin.saveFailed'));
+    },
+  });
+
+  if (!catalog.data || !access.data) {
+    return (
+      <View style={styles.card}>
+        <ActivityIndicator color={colors.brand} />
+      </View>
+    );
+  }
+
+  const a = access.data;
+  const grantable = catalog.data.permissions.filter((p) => p.grantable);
+
+  return (
+    <View style={styles.card}>
+      <Text style={styles.sectionTitle}>{t('admin.extraPermissionsTitle')}</Text>
+      {a.isAdmin ? (
+        <Text style={styles.roleBlurb}>{t('admin.extraPermissionsAdmin')}</Text>
+      ) : (
+        <>
+          <Text style={styles.roleBlurb}>{t('admin.extraPermissionsBlurb')}</Text>
+          {grantable.map((p, i) => {
+            const granted = a.grants.includes(p.key);
+            const fromRole = !granted && a.effective.includes(p.key);
+            return (
+              <View key={p.key} style={[styles.roleRow, i === grantable.length - 1 && { borderBottomWidth: 0 }]}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.roleLabel}>{es ? p.nameEs : p.nameEn}</Text>
+                  {fromRole ? <Text style={styles.roleBlurb}>{t('admin.extraPermissionsFromRole')}</Text> : null}
+                </View>
+                <Switch
+                  value={granted}
+                  disabled={toggle.isPending}
+                  onValueChange={(enabled) => toggle.mutate({ key: p.key, enabled })}
+                />
+              </View>
+            );
+          })}
+          {!a.isCoach ? <Text style={styles.hint}>{t('admin.extraPermissionsNotCoach')}</Text> : null}
+        </>
+      )}
+    </View>
   );
 }
 

@@ -324,6 +324,58 @@ export interface MobileUsageRow {
   appVersion: string | null
 }
 
+// ---- Access control (api/admin/access) ----
+
+export interface PermissionInfo {
+  key: string
+  area: string
+  nameEn: string
+  nameEs: string
+  /** Can be given to one person on top of their role (e.g. Drill creator). */
+  grantable: boolean
+}
+
+export interface AccessCatalog {
+  permissions: PermissionInfo[]
+  /** Keys the Coach / Parent role has. Admin always has every key. */
+  coach: string[]
+  parent: string[]
+}
+
+export type EditableRole = 'coach' | 'parent'
+
+export interface UserAccess {
+  userId: string
+  email: string
+  isAdmin: boolean
+  isCoach: boolean
+  coachTeamIds: number[]
+  roles: string[]
+  grants: string[]
+  effective: string[]
+}
+
+export interface UserGrants {
+  userId: string
+  email: string
+  name: string
+  grants: string[]
+}
+
+export type PermissionAuditAction =
+  | 'RoleGranted' | 'RoleRevoked' | 'UserGranted' | 'UserRevoked' | 'AdminRoleGranted' | 'AdminRoleRevoked'
+
+export interface PermissionAuditEntry {
+  id: number
+  action: PermissionAuditAction
+  role: string | null
+  targetUserId: string | null
+  targetUserEmail: string | null
+  permission: string | null
+  actorEmail: string | null
+  at: string
+}
+
 export interface UserSummary {
   id: string
   email: string

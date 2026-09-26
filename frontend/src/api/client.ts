@@ -1,5 +1,10 @@
 import axios from 'axios'
 import type {
+  AccessCatalog,
+  EditableRole,
+  PermissionAuditEntry,
+  UserAccess,
+  UserGrants,
   AdminDrill,
   AdminDrillAssignment,
   CreateDrillAssignmentRequest,
@@ -400,6 +405,29 @@ export const Api = {
   },
 
   // --- Admin: user management ---
+  // ---- Access control ----
+  async accessCatalog() {
+    const r = await api.get<AccessCatalog>('/admin/access/catalog')
+    return r.data
+  },
+  async setRolePermission(role: EditableRole, permission: string, enabled: boolean) {
+    await api.put(`/admin/access/roles/${role}/permissions/${encodeURIComponent(permission)}`, { enabled })
+  },
+  async listAccessGrants() {
+    const r = await api.get<UserGrants[]>('/admin/access/grants')
+    return r.data
+  },
+  async userAccess(userId: string) {
+    const r = await api.get<UserAccess>(`/admin/access/users/${encodeURIComponent(userId)}`)
+    return r.data
+  },
+  async setUserGrant(userId: string, permission: string, enabled: boolean) {
+    await api.put(`/admin/access/users/${encodeURIComponent(userId)}/grants/${encodeURIComponent(permission)}`, { enabled })
+  },
+  async accessAudit(take = 200) {
+    const r = await api.get<PermissionAuditEntry[]>(`/admin/access/audit?take=${take}`)
+    return r.data
+  },
   async listUsers() {
     const r = await api.get<UserSummary[]>('/admin/users')
     return r.data
