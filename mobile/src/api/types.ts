@@ -246,6 +246,15 @@ export interface AdminEvent {
   location: string | null;
   venueName: string | null;
   isCancelled: boolean;
+  // Optional: older servers don't send these. The editor needs them so a save doesn't wipe them.
+  endsAt?: string | null;
+  summary?: string | null;
+  notes?: string | null;
+  venueId?: number | null;
+  uniformId?: number | null;
+  isHome?: boolean | null;
+  shoeType?: number;
+  tournamentId?: number | null;
 }
 
 export interface AdminChatGroup {

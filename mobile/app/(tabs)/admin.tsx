@@ -3,23 +3,26 @@ import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-nati
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../src/auth/AuthContext';
+import { can, Perm } from '../../src/auth/can';
 import { colors, radius, spacing } from '../../src/theme';
 
-/** Admin landing tab — hub of tiles that open into each section screen. */
+/** Admin landing tab — hub of tiles that open into each section screen. Admins see every tile;
+ *  coaches with Event creator see just Events (their own teams). */
 export default function AdminHubScreen() {
   const { t } = useTranslation();
   const { me } = useAuth();
   const router = useRouter();
 
-  if (!me?.isAdmin) return null;
+  if (!can(me, Perm.AdminAccess, Perm.EventsCreate)) return null;
 
-  const tiles: { key: string; icon: string; label: string; blurb: string; path: string }[] = [
+  const allTiles: { key: string; icon: string; label: string; blurb: string; path: string; permission: string }[] = [
     {
       key: 'announcements',
       icon: '📣',
       label: t('admin.hubAnnouncements'),
       blurb: t('admin.hubAnnouncementsBlurb'),
       path: '/admin/announcements',
+      permission: Perm.AdminAccess,
     },
     {
       key: 'teams',
@@ -27,6 +30,7 @@ export default function AdminHubScreen() {
       label: t('admin.hubTeams'),
       blurb: t('admin.hubTeamsBlurb'),
       path: '/admin/teams',
+      permission: Perm.AdminAccess,
     },
     {
       key: 'events',
@@ -34,6 +38,7 @@ export default function AdminHubScreen() {
       label: t('admin.hubEvents'),
       blurb: t('admin.hubEventsBlurb'),
       path: '/admin/events',
+      permission: Perm.EventsCreate,
     },
     {
       key: 'chatGroups',
@@ -41,6 +46,7 @@ export default function AdminHubScreen() {
       label: t('admin.hubChatGroups'),
       blurb: t('admin.hubChatGroupsBlurb'),
       path: '/admin/chat-groups',
+      permission: Perm.AdminAccess,
     },
     {
       key: 'users',
@@ -48,8 +54,10 @@ export default function AdminHubScreen() {
       label: t('admin.hubUsers'),
       blurb: t('admin.hubUsersBlurb'),
       path: '/admin/users',
+      permission: Perm.AdminAccess,
     },
   ];
+  const tiles = allTiles.filter((tile) => can(me, tile.permission));
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ padding: spacing.lg }}>

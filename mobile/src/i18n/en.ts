@@ -156,6 +156,7 @@ export const en = {
     pickVenue: 'Pick venue',
     pickUniform: 'Pick uniform',
     startLabel: 'Start (local)',
+    endLabel: 'End (local, optional)',
     arriveLabel: 'Be there (local)',
     opponentLabel: 'Opponent',
     homeAwayLabel: 'Home / Away',
