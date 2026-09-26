@@ -38,7 +38,7 @@ public class MobileChatController : ControllerBase
     {
         var userId = _users.GetUserId(User);
         if (string.IsNullOrEmpty(userId)) return Unauthorized();
-        var account = await _accounts.ResolveByUserIdAsync(userId, ct);
+        var account = await _accounts.ResolveGuardianByUserIdAsync(userId, ct);
         var accountId = account?.Id;
 
         var members = await _db.ChatGroupMembers
@@ -147,7 +147,7 @@ public class MobileChatController : ControllerBase
         if (message is null) return NotFound();
         if (!await _chat.IsMemberAsync(message.ChatGroupId, userId, ct)) return Forbid();
 
-        var account = await _accounts.ResolveByUserIdAsync(userId, ct);
+        var account = await _accounts.ResolveGuardianByUserIdAsync(userId, ct);
         var reporterName = account is null
             ? (await _users.FindByIdAsync(userId))?.Email ?? "Unknown"
             : $"{account.FirstName} {account.LastName}".Trim();
@@ -251,7 +251,7 @@ public class MobileChatController : ControllerBase
     {
         var userId = _users.GetUserId(User);
         if (string.IsNullOrEmpty(userId)) return Unauthorized();
-        var account = await _accounts.ResolveByUserIdAsync(userId, ct);
+        var account = await _accounts.ResolveGuardianByUserIdAsync(userId, ct);
         var accountId = account?.Id;
 
         var member = await _db.ChatGroupMembers.FirstOrDefaultAsync(

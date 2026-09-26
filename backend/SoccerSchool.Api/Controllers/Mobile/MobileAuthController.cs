@@ -31,6 +31,8 @@ public class MobileAuthController : ControllerBase
     private readonly AppOptions _app;
     private readonly AppDbContext _db;
     private readonly ILogger<MobileAuthController> _logger;
+    private readonly IFamilyService _family;
+    private readonly IParentAccountResolver _accounts;
 
     public MobileAuthController(
         UserManager<ApplicationUser> users,
@@ -43,8 +45,12 @@ public class MobileAuthController : ControllerBase
         IEmailVerificationService verification,
         IOptions<AppOptions> app,
         AppDbContext db,
-        ILogger<MobileAuthController> logger)
+        ILogger<MobileAuthController> logger,
+        IFamilyService family,
+        IParentAccountResolver accounts)
     {
+        _family = family;
+        _accounts = accounts;
         _users = users;
         _signIn = signIn;
         _tokens = tokens;
@@ -149,6 +155,7 @@ public class MobileAuthController : ControllerBase
         // Track whether we spawn a genuinely new account this call so the admin notification only
         // fires on real first-time signups, not every OAuth re-login.
         var isFreshSignup = false;
+        var joinedByInvite = false;
         var reunionAccountId = (int?)null;
 
         // 3. Nothing yet — mint a fresh user + parent record (with reunion of any deleted family).
@@ -168,12 +175,21 @@ public class MobileAuthController : ControllerBase
                 return Unauthorized("Could not create account.");
             }
 
-            var reclaimHash = _reclaim.Hash(identity.Email);
+            // Invited by a family (and the provider just proved the email): they join that family
+            // on the profile load below instead of getting an empty family of their own.
+            joinedByInvite = !string.IsNullOrWhiteSpace(identity.Email)
+                && await _family.HasPendingInviteAsync(identity.Email, ct);
+
+            var reclaimHash = joinedByInvite ? null : _reclaim.Hash(identity.Email);
             var account = reclaimHash is null
                 ? null
                 : await _db.ParentAccounts.FirstOrDefaultAsync(p => p.ReclaimEmailHash == reclaimHash, ct);
 
-            if (account is not null)
+            if (joinedByInvite)
+            {
+                _logger.LogInformation("External signup {Email} joined an inviting family; no family of their own.", identity.Email);
+            }
+            else if (account is not null)
             {
                 account.UserId = user.Id;
                 account.FirstName = string.IsNullOrWhiteSpace(identity.FirstName) ? account.FirstName : identity.FirstName;
@@ -223,6 +239,7 @@ public class MobileAuthController : ControllerBase
                 identity.Email,
                 $"{identity.FirstName} {identity.LastName}".Trim(),
                 reunionAccountId,
+                joinedByInvite,
                 CancellationToken.None);
         }
 
@@ -234,7 +251,7 @@ public class MobileAuthController : ControllerBase
     /// account is minted. Called only after the sign-up path — normal re-logins are quiet.
     /// Failures are logged and swallowed so a flaky email service never blocks a working sign-in.</summary>
     private async Task NotifyAdminOfSignupAsync(
-        string channel, string email, string displayName, int? reunionAccountId, CancellationToken ct)
+        string channel, string email, string displayName, int? reunionAccountId, bool joinedByInvite, CancellationToken ct)
     {
         var adminEmail = _app.Admin.Email;
         if (string.IsNullOrWhiteSpace(adminEmail) || !_emailSender.IsAvailable) return;
@@ -247,9 +264,11 @@ public class MobileAuthController : ControllerBase
                 $"Name: {(string.IsNullOrWhiteSpace(displayName) ? "(not provided)" : displayName)}\n" +
                 $"Email: {email}\n" +
                 $"Channel: {channel}\n" +
-                (reunionAccountId is int rid
-                    ? $"Reunion: reconnected to previously-deleted family #{rid} via ReclaimEmailHash.\n"
-                    : "New family record created.\n") +
+                (joinedByInvite
+                    ? "Joined a family that invited them from the app (no new family record).\n"
+                    : reunionAccountId is int rid
+                        ? $"Reunion: reconnected to previously-deleted family #{rid} via ReclaimEmailHash.\n"
+                        : "New family record created.\n") +
                 "\nSee /admin/users on the admin site for the full profile.";
             var send = await _emailSender.SendAsync(adminEmail, subject, body, ct);
             if (!send.Success)
@@ -329,62 +348,31 @@ public class MobileAuthController : ControllerBase
         if (linkedNow) await _db.SaveChangesAsync(ct);
         var coachTeamIds = coachCards.Select(tc => tc.TeamId).Distinct().ToList();
 
-        // Additional-parent auto-link: any ParentContact whose email matches this login gets
-        // stamped with UserId now, and — critically — we drop a ParentAccountCollaborator row so
-        // the rest of the app (schedule, chat, roster) already treats this user as part of the
-        // family without every downstream endpoint needing to know about ParentContact. Same
-        // reconcile-on-first-sign-in idea as TeamCoach.UserId.
-        var contactMatches = await _db.ParentContacts
-            .Where(c => c.UserId == user.Id
-                || (c.UserId == null && normalizedEmail != null && c.Email != null
-                    && c.Email.Trim().ToUpper() == normalizedEmail))
-            .ToListAsync(ct);
-        var contactLinkChanged = false;
-        foreach (var c in contactMatches)
-        {
-            if (c.UserId is null)
-            {
-                c.UserId = user.Id;
-                contactLinkChanged = true;
-            }
-        }
+        // Additional parents: link every invite / registration contact for this verified email, at
+        // its access level, so the rest of the app treats this login as part of those families.
+        await _family.LinkByVerifiedEmailAsync(user, ct);
 
-        // Collaborated families this contact grants access to. Skip the user's own owned account
-        // (a stray self-referencing contact shouldn't add a collab row against themselves).
-        var contactAccountIds = contactMatches
-            .Select(c => c.ParentAccountId)
-            .Where(id => account is null || id != account.Id)
-            .Distinct()
-            .ToList();
-        if (contactAccountIds.Count > 0)
-        {
-            var alreadyCollabing = await _db.ParentAccountCollaborators
-                .Where(x => x.UserId == user.Id && contactAccountIds.Contains(x.ParentAccountId))
-                .Select(x => x.ParentAccountId)
-                .ToListAsync(ct);
-            var missing = contactAccountIds.Except(alreadyCollabing).ToList();
-            foreach (var aid in missing)
-            {
-                _db.ParentAccountCollaborators.Add(new ParentAccountCollaborator
-                {
-                    ParentAccountId = aid,
-                    UserId = user.Id,
-                });
-                contactLinkChanged = true;
-            }
-        }
-        if (contactLinkChanged) await _db.SaveChangesAsync(ct);
+        // Every family this login can see (owned + linked, view-only included), and the ones they
+        // can act for. One Players query fans out across all of them.
+        var accessibleAccountIds = await _accounts.FamilyIdsAsync(user.Id, guardianOnly: false, ct);
+        var guardianAccountIds = await _accounts.FamilyIdsAsync(user.Id, guardianOnly: true, ct);
+        var primary = await _accounts.ResolveByUserIdAsync(user.Id, ct);
+        var familyRole = primary is null ? null : await _accounts.RoleInAsync(user.Id, primary.Id, ct);
 
-        // Every family this login can see: their owned one plus every collaborated one (which
-        // now includes any families they were listed as an additional parent on). One Players
-        // query fans out across all of them.
-        var accessibleAccountIds = new List<int>();
-        if (account is not null) accessibleAccountIds.Add(account.Id);
-        var collabIds = await _db.ParentAccountCollaborators
-            .Where(x => x.UserId == user.Id)
-            .Select(x => x.ParentAccountId)
-            .ToListAsync(ct);
-        accessibleAccountIds.AddRange(collabIds.Where(id => !accessibleAccountIds.Contains(id)));
+        // Someone invited into a family without a family of their own has no ParentAccount; greet
+        // them by the name they were invited under.
+        var displayFirst = account?.FirstName;
+        var displayLast = account?.LastName;
+        if (string.IsNullOrWhiteSpace(displayFirst))
+        {
+            var contact = await _db.ParentContacts
+                .Where(c => c.UserId == user.Id)
+                .OrderBy(c => c.CreatedAt)
+                .Select(c => new { c.FirstName, c.LastName })
+                .FirstOrDefaultAsync(ct);
+            displayFirst = contact?.FirstName;
+            displayLast = contact?.LastName;
+        }
 
         var players = accessibleAccountIds.Count == 0
             ? new List<MobilePlayerDto>()
@@ -396,14 +384,15 @@ public class MobileAuthController : ControllerBase
                     _db.TeamPlayers
                         .Where(tp => tp.PlayerId == p.Id)
                         .Select(tp => new MobilePlayerTeamDto(tp.TeamId, tp.Team!.Name))
-                        .ToList()))
+                        .ToList(),
+                    guardianAccountIds.Contains(p.ParentAccountId)))
                 .ToListAsync(ct);
 
         return new MobileMeResponse(
             user.Id,
             user.Email ?? "",
-            account?.FirstName ?? "",
-            account?.LastName ?? "",
+            displayFirst ?? "",
+            displayLast ?? "",
             account?.CellPhone,
             account?.Language ?? Language.English,
             roles.Contains(Roles.Admin),
@@ -411,7 +400,8 @@ public class MobileAuthController : ControllerBase
             coachTeamIds,
             players,
             user.EmailConfirmed,
-            await PermissionKeysAsync(user, ct));
+            await PermissionKeysAsync(user, ct),
+            familyRole?.ToString().ToLowerInvariant());
     }
 
     /// <summary>Effective permission keys (catalogue order) so the app can hide what the user can't

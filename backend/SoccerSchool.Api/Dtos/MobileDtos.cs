@@ -55,7 +55,10 @@ public record MobileMeResponse(
     bool EmailConfirmed,
     /// <summary>Effective permission keys (see Auth/Permissions.cs) for showing/hiding UI. The
     /// server enforces them independently.</summary>
-    IReadOnlyList<string> Permissions);
+    IReadOnlyList<string> Permissions,
+    /// <summary>Role on the family the app shows: "owner", "guardian", "viewer", or null when the
+    /// login belongs to no family. Viewers get a read-only app (no chat, invoices or attendance).</summary>
+    string? FamilyRole);
 
 // ---- Players ----
 
@@ -64,7 +67,10 @@ public record MobilePlayerDto(
     string FirstName,
     string LastName,
     DateOnly DateOfBirth,
-    IReadOnlyList<MobilePlayerTeamDto> Teams);
+    IReadOnlyList<MobilePlayerTeamDto> Teams,
+    /// <summary>False when the caller is only a view-only family member for this child: the app
+    /// hides attendance buttons for them.</summary>
+    bool CanManage = true);
 
 public record MobilePlayerTeamDto(int TeamId, string TeamName);
 

@@ -77,7 +77,7 @@ public class MobileEventMediaController : ControllerBase
     public async Task<ActionResult<MobileEventMediaDto>> Add(
         int eventId, [FromBody] MobileAddEventMediaRequest req, CancellationToken ct)
     {
-        var access = await ResolveAccessAsync(eventId, ct);
+        var access = await ResolveAccessAsync(eventId, ct, requireGuardian: true);
         if (access.Result is not null) return access.Result;
 
         var asset = await _db.MediaAssets.FirstOrDefaultAsync(
@@ -156,7 +156,9 @@ public class MobileEventMediaController : ControllerBase
 
     private record Access(string UserId, bool IsStaff, ActionResult? Result);
 
-    private async Task<Access> ResolveAccessAsync(int eventId, CancellationToken ct)
+    /// <param name="requireGuardian">Posting needs a family the caller can act for; view-only family
+    /// members (grandparents, friends) can look and report but not post.</param>
+    private async Task<Access> ResolveAccessAsync(int eventId, CancellationToken ct, bool requireGuardian = false)
     {
         var userId = _users.GetUserId(User);
         if (string.IsNullOrEmpty(userId)) return new Access("", false, Unauthorized());
@@ -170,10 +172,8 @@ public class MobileEventMediaController : ControllerBase
         if (scope.IsAdmin || scope.CoachTeamIds.Contains(teamId.Value))
             return new Access(userId, true, null);
 
-        // Families: owned account plus any family they collaborate on (second parents).
-        var accountIds = await _db.ParentAccounts.Where(a => a.UserId == userId).Select(a => a.Id)
-            .Concat(_db.ParentAccountCollaborators.Where(c => c.UserId == userId).Select(c => c.ParentAccountId))
-            .ToListAsync(ct);
+        // Families: owned account plus any family they're linked to.
+        var accountIds = await _accounts.FamilyIdsAsync(userId, requireGuardian, ct);
         var onRoster = accountIds.Count > 0 && await _db.TeamPlayers.AnyAsync(
             tp => tp.TeamId == teamId && accountIds.Contains(tp.Player!.ParentAccountId), ct);
         return onRoster ? new Access(userId, false, null) : new Access(userId, false, Forbid());

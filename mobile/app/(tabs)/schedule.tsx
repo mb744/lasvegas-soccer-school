@@ -17,6 +17,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchSchedule, fetchStaffEventAttendance, setAttendance } from '../../src/api/endpoints';
 import { AttendanceStatus, ScheduledEventKind, type EventPlayer, type ScheduleEvent, type StaffEventAttendance } from '../../src/api/types';
 import { useAuth } from '../../src/auth/AuthContext';
+import { ReadOnlyAttendance, useCanManagePlayer } from '../../src/family/access';
 import { dayKey, timeLabel } from '../../src/format';
 import { colors, radius, spacing } from '../../src/theme';
 
@@ -269,6 +270,7 @@ function EventCard({
   onSet: (playerId: number, status: AttendanceStatus) => void;
 }) {
   const { t } = useTranslation();
+  const canManage = useCanManagePlayer();
   const kindLabel =
     event.kind === ScheduledEventKind.Practice
       ? t('schedule.practice')
@@ -350,14 +352,18 @@ function EventCard({
         ) : null}
         {!event.isCancelled && event.players.length > 0 ? (
           <View style={styles.attendanceBlock}>
-            {event.players.map((p) => (
-              <PlayerAttendance
-                key={p.playerId}
-                player={p}
-                showName={event.players.length > 1}
-                onSet={(s) => onSet(p.playerId, s)}
-              />
-            ))}
+            {event.players.map((p) =>
+              canManage(p.playerId) ? (
+                <PlayerAttendance
+                  key={p.playerId}
+                  player={p}
+                  showName={event.players.length > 1}
+                  onSet={(s) => onSet(p.playerId, s)}
+                />
+              ) : (
+                <ReadOnlyAttendance key={p.playerId} player={p} showName={event.players.length > 1} />
+              ),
+            )}
           </View>
         ) : null}
         {isCoachOnly && !event.isCancelled ? (

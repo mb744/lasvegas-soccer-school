@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '../../src/auth/AuthContext';
 import { deleteAccount, resendEmailConfirmation } from '../../src/api/endpoints';
 import { colors, radius, spacing } from '../../src/theme';
+import { FamilySection } from '../../src/family/FamilySection';
 
 export default function ProfileScreen() {
   const { t } = useTranslation();
@@ -90,6 +91,7 @@ export default function ProfileScreen() {
             key={p.id}
             style={styles.playerCard}
             onPress={() => router.push(`/players/${p.id}`)}
+            disabled={p.canManage === false}
             accessibilityRole="button"
           >
             <Text style={styles.playerName}>
@@ -98,10 +100,12 @@ export default function ProfileScreen() {
             <Text style={styles.playerTeams}>
               {p.teams.length > 0 ? p.teams.map((tm) => tm.teamName).join(', ') : t('profile.noTeams')}
             </Text>
-            <Text style={styles.playerLink}>{t('profile.manageTraining')}</Text>
+            {p.canManage !== false ? <Text style={styles.playerLink}>{t('profile.manageTraining')}</Text> : null}
           </TouchableOpacity>
         ))
       )}
+
+      <FamilySection />
 
       <TouchableOpacity style={styles.signOut} onPress={signOut} disabled={deleting}>
         <Text style={styles.signOutText}>{t('profile.signOut')}</Text>

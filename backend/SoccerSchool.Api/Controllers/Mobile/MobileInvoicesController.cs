@@ -42,7 +42,7 @@ public class MobileInvoicesController : ControllerBase
     {
         var userId = _users.GetUserId(User);
         if (string.IsNullOrEmpty(userId)) return Unauthorized();
-        var account = await _accounts.ResolveByUserIdAsync(userId, ct);
+        var account = await _accounts.ResolveGuardianByUserIdAsync(userId, ct);
         if (account is null) return Ok(Array.Empty<MobileInvoiceSummaryDto>());
 
         // Fetch, then sort in memory so we can key on (outstanding-first, due-date-ascending).
@@ -91,7 +91,7 @@ public class MobileInvoicesController : ControllerBase
     {
         var userId = _users.GetUserId(User);
         if (string.IsNullOrEmpty(userId)) return Unauthorized();
-        var account = await _accounts.ResolveByUserIdAsync(userId, ct);
+        var account = await _accounts.ResolveGuardianByUserIdAsync(userId, ct);
         if (account is null) return NotFound();
 
         var invoice = await _db.Invoices
