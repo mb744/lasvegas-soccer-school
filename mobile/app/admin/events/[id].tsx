@@ -1,6 +1,5 @@
 import React from 'react';
 import {
-  ActionSheetIOS,
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
@@ -33,6 +32,7 @@ import {
 } from '../../../src/api/endpoints';
 import { ScheduledEventKind } from '../../../src/api/types';
 import { colors, radius, spacing } from '../../../src/theme';
+import { useOptionPicker } from '../../../src/ui/useOptionPicker';
 
 type KindStr = 'game' | 'practice' | 'misc';
 
@@ -68,6 +68,8 @@ export default function AdminEventComposer() {
   const [uniformId, setUniformId] = React.useState<number | null>(null);
   const [summary, setSummary] = React.useState('');
   const [notes, setNotes] = React.useState('');
+  // Not editable here yet, but carried through so saving from the phone keeps what the web set.
+  const [shoeType, setShoeType] = React.useState(0);
   const [seeded, setSeeded] = React.useState(false);
 
   React.useEffect(() => {
@@ -78,9 +80,16 @@ export default function AdminEventComposer() {
     );
     setTeamId(existing.teamId);
     setStartsAt(toLocalInput(existing.startsAt));
+    setEndsAt(existing.endsAt ? toLocalInput(existing.endsAt) : '');
     setArriveAt(existing.arriveAt ? toLocalInput(existing.arriveAt) : '');
     setOpponentName(existing.opponentName ?? '');
+    setIsHome(existing.isHome ?? null);
     setLocation(existing.location ?? '');
+    setVenueId(existing.venueId ?? null);
+    setUniformId(existing.uniformId ?? null);
+    setSummary(existing.summary ?? '');
+    setNotes(existing.notes ?? '');
+    setShoeType(existing.shoeType ?? 0);
     setSeeded(true);
   }, [existing, isNew, seeded]);
 
@@ -107,6 +116,7 @@ export default function AdminEventComposer() {
           notes: trimmedNotes,
           uniformId,
           venueId,
+          shoeType,
         };
         if (isNew) await createGame(teamId, payload);
         else await updateGame(numericId!, payload);
@@ -118,6 +128,7 @@ export default function AdminEventComposer() {
           summary: trimmedSummary,
           notes: trimmedNotes,
           venueId,
+          shoeType,
         };
         if (isNew) await createMiscEvent(teamId, payload);
         else await updateMiscEvent(numericId!, payload);
@@ -129,6 +140,7 @@ export default function AdminEventComposer() {
           summary: trimmedSummary,
           notes: trimmedNotes,
           venueId,
+          shoeType,
         };
         if (isNew) await createPractice(teamId, payload);
         else await updatePractice(numericId!, payload);
@@ -156,50 +168,22 @@ export default function AdminEventComposer() {
     onError: () => Alert.alert(t('common.retry'), t('admin.deleteFailed')),
   });
 
-  const openTeamPicker = () => {
-    const opts = [...(teams.data ?? []).map((tm) => tm.name), t('common.cancel')];
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        { options: opts, cancelButtonIndex: opts.length - 1, title: t('admin.pickTeam') },
-        (idx) => {
-          if (idx < opts.length - 1) setTeamId(teams.data?.[idx]?.id ?? null);
-        },
-      );
-    } else {
-      Alert.alert(t('admin.pickTeam'), '', opts.map((o, i) => ({
-        text: o,
-        onPress: () => { if (i < opts.length - 1) setTeamId(teams.data?.[i]?.id ?? null); },
-      })));
-    }
-  };
+  const picker = useOptionPicker();
 
-  const openVenuePicker = () => {
-    const items = [t('admin.noneOption'), ...(venues.data ?? []).map((v) => v.name), t('common.cancel')];
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        { options: items, cancelButtonIndex: items.length - 1, title: t('admin.pickVenue') },
-        (idx) => {
-          if (idx === items.length - 1) return;
-          if (idx === 0) setVenueId(null);
-          else setVenueId(venues.data?.[idx - 1]?.id ?? null);
-        },
-      );
-    }
-  };
+  const openTeamPicker = () => picker.open(
+    t('admin.pickTeam'),
+    (teams.data ?? []).map((tm) => ({ label: tm.name, onPick: () => setTeamId(tm.id) })),
+  );
 
-  const openUniformPicker = () => {
-    const items = [t('admin.uniformAuto'), ...(uniforms.data ?? []).map((u) => u.name), t('common.cancel')];
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        { options: items, cancelButtonIndex: items.length - 1, title: t('admin.pickUniform') },
-        (idx) => {
-          if (idx === items.length - 1) return;
-          if (idx === 0) setUniformId(null);
-          else setUniformId(uniforms.data?.[idx - 1]?.id ?? null);
-        },
-      );
-    }
-  };
+  const openVenuePicker = () => picker.open(t('admin.pickVenue'), [
+    { label: t('admin.noneOption'), onPick: () => setVenueId(null) },
+    ...(venues.data ?? []).map((v) => ({ label: v.name, onPick: () => setVenueId(v.id) })),
+  ]);
+
+  const openUniformPicker = () => picker.open(t('admin.pickUniform'), [
+    { label: t('admin.uniformAuto'), onPick: () => setUniformId(null) },
+    ...(uniforms.data ?? []).map((u) => ({ label: u.name, onPick: () => setUniformId(u.id) })),
+  ]);
 
   if (!isNew && list.isLoading) {
     return (
@@ -221,6 +205,7 @@ export default function AdminEventComposer() {
       keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 0}
     >
       <Stack.Screen options={{ title: isNew ? t('admin.newEvent') : t('admin.editEvent') }} />
+      {picker.sheet}
       <ScrollView contentContainerStyle={{ padding: spacing.lg }}>
         {isNew ? (
           <>
@@ -247,6 +232,9 @@ export default function AdminEventComposer() {
 
         <Text style={styles.label}>{t('admin.startLabel')}</Text>
         <TextInput style={styles.input} value={startsAt} onChangeText={setStartsAt} placeholder="YYYY-MM-DDTHH:MM" placeholderTextColor={colors.subtext} />
+
+        <Text style={styles.label}>{t('admin.endLabel')}</Text>
+        <TextInput style={styles.input} value={endsAt} onChangeText={setEndsAt} placeholder="YYYY-MM-DDTHH:MM" placeholderTextColor={colors.subtext} />
 
         {kind === 'game' ? (
           <>

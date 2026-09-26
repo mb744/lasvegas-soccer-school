@@ -158,6 +158,7 @@ export const es: Translations = {
     pickVenue: 'Elegir lugar',
     pickUniform: 'Elegir uniforme',
     startLabel: 'Inicio (local)',
+    endLabel: 'Fin (local, opcional)',
     arriveLabel: 'Estar presente (local)',
     opponentLabel: 'Oponente',
     homeAwayLabel: 'Local / Visitante',

@@ -3,6 +3,7 @@ import { Text, type ColorValue } from 'react-native';
 import { Redirect, Tabs } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../src/auth/AuthContext';
+import { can, Perm } from '../../src/auth/can';
 import { startChat, stopChat } from '../../src/chat/signalr';
 import { colors } from '../../src/theme';
 
@@ -64,7 +65,7 @@ export default function TabsLayout() {
         options={{
           // href=null keeps the tab off the tab bar entirely for non-admins; expo-router still
           // resolves the route file so navigation from any admin-triggered link keeps working.
-          href: me?.isAdmin ? undefined : null,
+          href: can(me, Perm.AdminAccess, Perm.EventsCreate) ? undefined : null,
           title: t('tabs.admin'),
           tabBarIcon: ({ color }) => <TabIcon icon="🛠️" color={color} />,
         }}

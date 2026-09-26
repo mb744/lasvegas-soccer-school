@@ -10,8 +10,8 @@ namespace SoccerSchool.Api.Controllers.Mobile;
 
 /// <summary>
 /// Schedule for the mobile app: every game/practice/event for teams the caller has a stake in.
-/// A parent sees teams their kids are rostered on. A coach also sees teams whose coach card carries
-/// their email — even if none of their kids are on that team (a coach with no kids on the team gets
+/// A parent sees teams their kids are rostered on. A coach also sees teams whose coach card is linked
+/// to their login (see <see cref="ICoachScopeService"/>) — even if none of their kids are on that team (a coach with no kids on the team gets
 /// events with an empty <c>players</c> array). An admin who is neither a parent nor a coach still
 /// sees only their own affiliations here; the full club-wide list lives under /mobile/admin/events.
 /// Read-only — confirming attendance is <see cref="MobileAttendanceController"/>.
@@ -23,20 +23,23 @@ public class MobileScheduleController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly IParentAccountResolver _accounts;
+    private readonly ICoachScopeService _coaches;
     private readonly Microsoft.AspNetCore.Identity.UserManager<ApplicationUser> _users;
 
     public MobileScheduleController(
         AppDbContext db,
         IParentAccountResolver accounts,
+        ICoachScopeService coaches,
         Microsoft.AspNetCore.Identity.UserManager<ApplicationUser> users)
     {
         _db = db;
         _accounts = accounts;
+        _coaches = coaches;
         _users = users;
     }
 
     /// <summary>Upcoming (and recent) events across every team the caller has a stake in — kids'
-    /// teams (parent) plus coached teams (email on TeamCoach). Defaults to the window [yesterday,
+    /// teams (parent) plus coached teams. Defaults to the window [yesterday,
     /// +60 days]; override with <c>from</c>/<c>to</c> (UTC).</summary>
     [HttpGet]
     public async Task<ActionResult<IEnumerable<MobileScheduleEventDto>>> List(
@@ -76,15 +79,9 @@ public class MobileScheduleController : ControllerBase
                 .Distinct()
                 .ToListAsync(ct);
 
-        // Coach teams: TeamCoach cards whose email matches this login. Same rule the chat-group
-        // admin and staff attendance endpoint use — the coach card owns the association.
-        var coachTeamIds = string.IsNullOrEmpty(user.NormalizedEmail)
-            ? new List<int>()
-            : await _db.TeamCoaches
-                .Where(tc => tc.Email != null && tc.Email.Trim().ToUpper() == user.NormalizedEmail)
-                .Select(tc => tc.TeamId)
-                .Distinct()
-                .ToListAsync(ct);
+        // Coach teams: coach cards linked to this login. Never a bare email match — sign-up
+        // doesn't verify email, so that would let anyone claim a coach's schedule.
+        var coachTeamIds = await _coaches.GetCoachTeamIdsAsync(user, ct);
 
         var teamIds = parentTeamIds.Concat(coachTeamIds).Distinct().ToList();
         if (teamIds.Count == 0) return Ok(Array.Empty<MobileScheduleEventDto>());
