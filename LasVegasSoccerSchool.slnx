@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/backend/">
+    <Project Path="backend/SoccerSchool.Api.Tests/SoccerSchool.Api.Tests.csproj" />
     <Project Path="backend/SoccerSchool.Api/SoccerSchool.Api.csproj" />
   </Folder>
 </Solution>

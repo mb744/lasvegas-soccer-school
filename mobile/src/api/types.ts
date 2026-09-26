@@ -59,6 +59,10 @@ export interface Me {
   players: Player[];
   /** False until the login proves it owns its email; email-matched coach/family links wait on it. */
   emailConfirmed: boolean;
+  /** Effective permission keys (backend Auth/Permissions.cs), e.g. 'drills.create'. For showing and
+   *  hiding UI only — the server enforces every permission itself. Optional so an older server
+   *  response doesn't break the app. */
+  permissions?: string[];
 }
 
 export interface TokenResponse {

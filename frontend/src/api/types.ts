@@ -13,6 +13,9 @@ export interface Me {
   isCoach: boolean
   /** False until the login proves it owns its email; email-matched coach/family links wait on it. */
   emailConfirmed: boolean
+  /** Effective permission keys (backend Auth/Permissions.cs), e.g. 'drills.create'. For showing and
+   *  hiding UI only — the server enforces every permission itself. */
+  permissions: string[]
 }
 
 export interface SignupRequest {

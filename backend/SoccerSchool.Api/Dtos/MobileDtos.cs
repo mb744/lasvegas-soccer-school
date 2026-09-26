@@ -52,7 +52,10 @@ public record MobileMeResponse(
     IReadOnlyList<MobilePlayerDto> Players,
     /// <summary>False until the login proves it owns its email (confirmation link, a password
     /// reset by email, or Google/Facebook sign-in). Email-matched coach/family links wait on it.</summary>
-    bool EmailConfirmed);
+    bool EmailConfirmed,
+    /// <summary>Effective permission keys (see Auth/Permissions.cs) for showing/hiding UI. The
+    /// server enforces them independently.</summary>
+    IReadOnlyList<string> Permissions);
 
 // ---- Players ----
 

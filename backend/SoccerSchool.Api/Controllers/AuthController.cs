@@ -373,6 +373,8 @@ public class AuthController : ControllerBase
     {
         var roles = await _users.GetRolesAsync(user);
         var coachTeams = await _coaches.GetCoachTeamIdsAsync(user, HttpContext.RequestAborted);
+        var permissions = await HttpContext.RequestServices.GetRequiredService<IPermissionService>()
+            .GetForUserAsync(user, HttpContext.RequestAborted);
         return new MeResponse(
             user.Id,
             user.Email ?? "",
@@ -382,7 +384,8 @@ public class AuthController : ControllerBase
             account?.Language ?? Language.English,
             roles.Contains(Roles.Admin),
             coachTeams.Count > 0,
-            user.EmailConfirmed
+            user.EmailConfirmed,
+            Permissions.All.Select(p => p.Key).Where(permissions.Has).ToList()
         );
     }
 

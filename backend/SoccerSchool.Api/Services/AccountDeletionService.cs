@@ -65,6 +65,10 @@ public class AccountDeletionService : IAccountDeletionService
         var devices = await _db.DeviceTokens.Where(d => d.UserId == userId).ToListAsync(ct);
         _db.DeviceTokens.RemoveRange(devices);
 
+        // Individual permission grants (e.g. Drill creator) end with the account.
+        var grants = await _db.UserPermissionGrants.Where(g => g.UserId == userId).ToListAsync(ct);
+        _db.UserPermissionGrants.RemoveRange(grants);
+
         // 3. Drop chat memberships; anonymize any messages this user authored.
         var account = await _db.ParentAccounts.FirstOrDefaultAsync(p => p.UserId == userId, ct);
         var memberships = await _db.ChatGroupMembers

@@ -21,6 +21,7 @@ unfinished files. These rules prevent that.
   sessions.
 - Before opening a PR, run what CI runs:
   - `dotnet build backend/SoccerSchool.Api/SoccerSchool.Api.csproj -c Release`
+  - `dotnet test backend/SoccerSchool.Api.Tests/SoccerSchool.Api.Tests.csproj -c Release`
   - `cd frontend && npx tsc -b && npm run build`
   - for mobile changes, `cd mobile && npx tsc --noEmit`
 
@@ -42,6 +43,13 @@ unfinished files. These rules prevent that.
   `az containerapp revision list`) after anything that touches startup or migrations.
 
 ## Security conventions
+
+- **Authorization is permission-based.** Protect endpoints with
+  `[RequirePermission(Permissions.X)]` (see `Auth/Permissions.cs`), not role names. Roles are
+  bundles of permissions an admin can edit; Admin always has all of them. Permissions don't carry
+  scope: endpoints must still limit coaches to their own teams (`IPermissionService` /
+  `ICoachScopeService`) and parents to their own family. Never rename a permission key; add a
+  new one and give it defaults in the catalogue.
 
 - Never grant access because an email *matches* (coach cards, additional-parent contacts, chat
   seeding) unless the login's `EmailConfirmed` is true. Sign-up does not verify email.
