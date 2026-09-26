@@ -58,7 +58,7 @@ public class ChatService : IChatService
 
     public async Task<List<int>> GetGroupIdsForUserAsync(string userId, CancellationToken ct)
     {
-        var account = await _accounts.ResolveByUserIdAsync(userId, ct);
+        var account = await _accounts.ResolveGuardianByUserIdAsync(userId, ct);
         var accountId = account?.Id;
 
         return await _db.ChatGroupMembers
@@ -70,7 +70,7 @@ public class ChatService : IChatService
 
     public async Task<bool> IsMemberAsync(int groupId, string userId, CancellationToken ct)
     {
-        var account = await _accounts.ResolveByUserIdAsync(userId, ct);
+        var account = await _accounts.ResolveGuardianByUserIdAsync(userId, ct);
         var accountId = account?.Id;
         return await _db.ChatGroupMembers.AnyAsync(
             m => m.ChatGroupId == groupId &&
@@ -81,7 +81,7 @@ public class ChatService : IChatService
         int groupId, string userId, string body, CancellationToken ct,
         string? overrideName = null, bool? asAdmin = null, MediaAsset? media = null)
     {
-        var account = await _accounts.ResolveByUserIdAsync(userId, ct);
+        var account = await _accounts.ResolveGuardianByUserIdAsync(userId, ct);
         var accountId = account?.Id;
 
         var member = await _db.ChatGroupMembers.FirstOrDefaultAsync(
@@ -169,7 +169,7 @@ public class ChatService : IChatService
             foreach (var u in owners) if (!string.IsNullOrEmpty(u)) userIds.Add(u);
 
             var collaborators = await _db.ParentAccountCollaborators
-                .Where(c => parentAccountIds.Contains(c.ParentAccountId))
+                .Where(c => parentAccountIds.Contains(c.ParentAccountId) && c.AccessLevel == FamilyAccessLevel.Guardian)
                 .Select(c => c.UserId)
                 .ToListAsync(ct);
             foreach (var u in collaborators) if (!string.IsNullOrEmpty(u)) userIds.Add(u);

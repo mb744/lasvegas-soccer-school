@@ -22,6 +22,7 @@ import {
   type ScheduleEvent,
 } from '../../src/api/types';
 import { useAuth } from '../../src/auth/AuthContext';
+import { ReadOnlyAttendance, useCanManagePlayer } from '../../src/family/access';
 import { dueDateLabel, longDate, money, timeLabel } from '../../src/format';
 import { colors, radius, spacing } from '../../src/theme';
 
@@ -235,6 +236,7 @@ function UpcomingEventRow({
   onSetAttendance: (playerId: number, status: AttendanceStatus) => void;
 }) {
   const { t } = useTranslation();
+  const canManage = useCanManagePlayer();
   const kindLabel =
     event.kind === ScheduledEventKind.Practice
       ? t('schedule.practice')
@@ -293,14 +295,18 @@ function UpcomingEventRow({
         ) : null}
         {!event.isCancelled && event.players.length > 0 ? (
           <View style={styles.upcomingAttendance}>
-            {event.players.map((p) => (
-              <UpcomingAttendance
-                key={p.playerId}
-                player={p}
-                showName={event.players.length > 1}
-                onSet={(status) => onSetAttendance(p.playerId, status)}
-              />
-            ))}
+            {event.players.map((p) =>
+              canManage(p.playerId) ? (
+                <UpcomingAttendance
+                  key={p.playerId}
+                  player={p}
+                  showName={event.players.length > 1}
+                  onSet={(status) => onSetAttendance(p.playerId, status)}
+                />
+              ) : (
+                <ReadOnlyAttendance key={p.playerId} player={p} showName={event.players.length > 1} />
+              ),
+            )}
           </View>
         ) : null}
       </View>

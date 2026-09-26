@@ -100,7 +100,7 @@ public class AttendanceReminderJob : BackgroundService
 
             var parentAccountIds = playerInfo.Select(p => p.ParentAccountId).Distinct().ToList();
             var collaborators = (await db.ParentAccountCollaborators
-                .Where(c => parentAccountIds.Contains(c.ParentAccountId))
+                .Where(c => parentAccountIds.Contains(c.ParentAccountId) && c.AccessLevel == FamilyAccessLevel.Guardian)
                 .Select(c => new { c.ParentAccountId, c.UserId })
                 .ToListAsync(ct))
                 .GroupBy(c => c.ParentAccountId)

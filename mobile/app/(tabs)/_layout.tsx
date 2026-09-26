@@ -56,6 +56,8 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="chat"
         options={{
+          // View-only family members (grandparents, friends) aren't in team chats.
+          href: me?.familyRole === 'viewer' ? null : undefined,
           title: t('tabs.chat'),
           tabBarIcon: ({ color }) => <TabIcon icon="💬" color={color} />,
         }}

@@ -35,6 +35,9 @@ export interface Player {
   lastName: string;
   dateOfBirth: string;
   teams: PlayerTeam[];
+  /** False when this login is only a view-only family member for the child (no attendance
+   *  changes, no training login). Missing from older servers: treat as true. */
+  canManage?: boolean;
 }
 
 /** A child's login for the separate Daily Training app, managed by the parent. */
@@ -63,6 +66,9 @@ export interface Me {
    *  hiding UI only — the server enforces every permission itself. Optional so an older server
    *  response doesn't break the app. */
   permissions?: string[];
+  /** Role on the family the app shows. 'viewer' = read-only family member (grandparent, friend):
+   *  no chat, invoices or attendance changes. Null/missing when not part of a family. */
+  familyRole?: FamilyRole | null;
 }
 
 export interface TokenResponse {
@@ -426,4 +432,42 @@ export interface PermissionAuditEntry {
   permission: string | null;
   actorEmail: string | null;
   at: string;
+}
+
+// ---- Family members & invites (api/mobile/family) ----
+
+export type FamilyRole = 'owner' | 'guardian' | 'viewer';
+
+/** Matches the backend FamilyAccessLevel enum. */
+export enum FamilyAccessLevel {
+  Guardian = 0,
+  Viewer = 1,
+}
+
+export interface FamilyMember {
+  role: FamilyRole;
+  name: string;
+  email: string | null;
+  status: 'joined' | 'invited';
+  /** Set for invited/listed people (resend, change access, remove). */
+  contactId: number | null;
+  /** Set for people an admin linked without an invite (remove only). */
+  collaboratorId: number | null;
+  inviteSentAt: string | null;
+  isYou: boolean;
+}
+
+export interface Family {
+  familyId: number;
+  yourRole: FamilyRole;
+  canManage: boolean;
+  members: FamilyMember[];
+}
+
+export interface FamilyInviteRequest {
+  firstName: string;
+  lastName: string;
+  email: string;
+  accessLevel: FamilyAccessLevel;
+  language?: Language;
 }

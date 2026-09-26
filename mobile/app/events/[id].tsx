@@ -33,6 +33,7 @@ import {
   type StaffEventAttendance,
 } from '../../src/api/types';
 import { useAuth } from '../../src/auth/AuthContext';
+import { ReadOnlyAttendance, useCanManagePlayer, useIsFamilyViewer } from '../../src/family/access';
 import { longDate, timeLabel } from '../../src/format';
 import { colors, radius, spacing } from '../../src/theme';
 
@@ -43,6 +44,7 @@ export default function EventDetailScreen() {
   const qc = useQueryClient();
 
   const { me } = useAuth();
+  const canManage = useCanManagePlayer();
 
   const { data, isLoading } = useQuery({
     queryKey: ['schedule'],
@@ -162,15 +164,19 @@ export default function EventDetailScreen() {
 
         {!event.isCancelled && event.players.length > 0 ? (
           <View style={styles.heroAttendance}>
-            {event.players.map((p) => (
-              <PlayerAttendance
-                key={p.playerId}
-                player={p}
-                showName={event.players.length > 1}
-                counts={isStaff ? staffAttendance : undefined}
-                onSet={(status) => mutation.mutate({ playerId: p.playerId, status })}
-              />
-            ))}
+            {event.players.map((p) =>
+              canManage(p.playerId) ? (
+                <PlayerAttendance
+                  key={p.playerId}
+                  player={p}
+                  showName={event.players.length > 1}
+                  counts={isStaff ? staffAttendance : undefined}
+                  onSet={(status) => mutation.mutate({ playerId: p.playerId, status })}
+                />
+              ) : (
+                <ReadOnlyAttendance key={p.playerId} player={p} showName={event.players.length > 1} />
+              ),
+            )}
           </View>
         ) : null}
 
@@ -209,6 +215,7 @@ export default function EventDetailScreen() {
 /** Shared photos/videos for this event. Long-press an item to delete (yours / staff) or report. */
 function EventGallery({ eventId }: { eventId: number }) {
   const { t } = useTranslation();
+  const isViewer = useIsFamilyViewer();
   const qc = useQueryClient();
   const [uploadFraction, setUploadFraction] = React.useState<number | null>(null);
   const [viewing, setViewing] = React.useState<MediaItem | null>(null);
@@ -278,9 +285,12 @@ function EventGallery({ eventId }: { eventId: number }) {
     <View style={styles.card}>
       <View style={styles.galleryHeader}>
         <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>{t('event.photos')}</Text>
-        <TouchableOpacity onPress={onAdd} disabled={uploadFraction !== null}>
-          <Text style={[styles.galleryAdd, uploadFraction !== null && { opacity: 0.5 }]}>＋ {t('event.addPhoto')}</Text>
-        </TouchableOpacity>
+        {/* View-only family members can look at photos but not post them. */}
+        {!isViewer ? (
+          <TouchableOpacity onPress={onAdd} disabled={uploadFraction !== null}>
+            <Text style={[styles.galleryAdd, uploadFraction !== null && { opacity: 0.5 }]}>＋ {t('event.addPhoto')}</Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
 
       {uploadFraction !== null ? <UploadProgress fraction={uploadFraction} label={t('media.uploading')} /> : null}

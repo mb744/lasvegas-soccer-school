@@ -217,7 +217,9 @@ public class RegistrationsController : ControllerBase
         var accessibleIds = await _db.ParentAccounts
             .Where(p => p.UserId == userId)
             .Select(p => p.Id)
-            .Union(_db.ParentAccountCollaborators.Where(c => c.UserId == userId).Select(c => c.ParentAccountId))
+            .Union(_db.ParentAccountCollaborators
+                .Where(c => c.UserId == userId && c.AccessLevel == FamilyAccessLevel.Guardian)
+                .Select(c => c.ParentAccountId))
             .ToListAsync(ct);
         if (accessibleIds.Count == 0) return Ok(Array.Empty<RegistrationSummary>());
 
@@ -778,11 +780,11 @@ public class RegistrationsController : ControllerBase
         ParentAccount account, List<ParentContactInput> input, Language defaultLanguage, CancellationToken ct)
     {
         await _db.Entry(account).Collection(a => a.Contacts).LoadAsync(ct);
-        if (account.Contacts.Count > 0)
-        {
-            _db.ParentContacts.RemoveRange(account.Contacts);
-            account.Contacts.Clear();
-        }
+
+        // The form manages the family's parents/guardians only. View-only family members invited
+        // from the app aren't on the form and are left alone. Existing guardians are updated in
+        // place (matched by email, else phone, else name) so their link to a login survives.
+        var unmatched = account.Contacts.Where(c => c.AccessLevel == FamilyAccessLevel.Guardian).ToList();
 
         foreach (var c in input ?? new List<ParentContactInput>())
         {
@@ -795,16 +797,35 @@ public class RegistrationsController : ControllerBase
             if (string.IsNullOrWhiteSpace(first)) continue;
             if (email is null && string.IsNullOrWhiteSpace(phone)) continue;
 
-            account.Contacts.Add(new ParentContact
+            var existing =
+                (email is null ? null : unmatched.FirstOrDefault(x => string.Equals(x.Email?.Trim(), email, StringComparison.OrdinalIgnoreCase)))
+                ?? (string.IsNullOrWhiteSpace(phone) ? null : unmatched.FirstOrDefault(x => x.CellPhone == phone))
+                ?? unmatched.FirstOrDefault(x =>
+                    string.Equals(x.FirstName, first, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(x.LastName, last, StringComparison.OrdinalIgnoreCase));
+            if (existing is null)
             {
-                ParentAccountId = account.Id,
-                FirstName = first,
-                LastName = last,
-                Email = email,
-                CellPhone = phone,
-                HasWhatsApp = c.HasWhatsApp,
-                Language = c.Language ?? defaultLanguage,
-            });
+                existing = new ParentContact { ParentAccountId = account.Id };
+                account.Contacts.Add(existing);
+            }
+            else
+            {
+                unmatched.Remove(existing);
+            }
+
+            existing.FirstName = first;
+            existing.LastName = last;
+            existing.Email = email;
+            existing.CellPhone = phone;
+            existing.HasWhatsApp = c.HasWhatsApp;
+            existing.Language = c.Language ?? defaultLanguage;
+        }
+
+        // Guardians taken off the form are removed (their login link, if any, is kept, as before).
+        if (unmatched.Count > 0)
+        {
+            _db.ParentContacts.RemoveRange(unmatched);
+            foreach (var x in unmatched) account.Contacts.Remove(x);
         }
     }
 

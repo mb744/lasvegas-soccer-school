@@ -57,6 +57,10 @@ export default function RootLayout() {
               <Stack.Screen name="admin/events/[id]" options={{ headerShown: true, title: '' }} />
               <Stack.Screen name="admin/chat-groups/index" options={{ headerShown: true, title: '' }} />
               <Stack.Screen name="admin/chat-groups/[id]" options={{ headerShown: true, title: '' }} />
+              <Stack.Screen name="admin/users/index" options={{ headerShown: true, title: '' }} />
+              <Stack.Screen name="admin/users/[id]" options={{ headerShown: true, title: '' }} />
+              <Stack.Screen name="admin/access/index" options={{ headerShown: true, title: '' }} />
+              <Stack.Screen name="family/invite" options={{ headerShown: true, title: '' }} />
             </Stack>
           </AuthProvider>
         </QueryClientProvider>

@@ -31,6 +31,8 @@ import type {
   UserCoachTeam,
 } from './types';
 import type { TrainingLogin } from './types';
+import type { Family, FamilyInviteRequest, FamilyMember } from './types';
+import { FamilyAccessLevel } from './types';
 import type { AccessCatalog, EditableRole, PermissionAuditEntry, UserAccess } from './types';
 import type { EventMediaItem, MediaItem, MediaKind } from './types';
 
@@ -488,4 +490,29 @@ export async function setUserGrant(userId: string, permission: string, enabled: 
 export async function fetchAccessAudit(take = 100): Promise<PermissionAuditEntry[]> {
   const { data } = await api.get<PermissionAuditEntry[]>(`/admin/access/audit?take=${take}`);
   return data;
+}
+
+// ---- Family members & invites ----
+
+export async function fetchFamily(): Promise<Family> {
+  const { data } = await api.get<Family>('/mobile/family');
+  return data;
+}
+
+export async function inviteFamilyMember(req: FamilyInviteRequest): Promise<Family> {
+  const { data } = await api.post<Family>('/mobile/family/invites', req);
+  return data;
+}
+
+export async function resendFamilyInvite(contactId: number): Promise<void> {
+  await api.post(`/mobile/family/members/${contactId}/resend`);
+}
+
+export async function setFamilyMemberAccess(contactId: number, accessLevel: FamilyAccessLevel): Promise<void> {
+  await api.put(`/mobile/family/members/${contactId}/access`, { accessLevel });
+}
+
+export async function removeFamilyMember(member: FamilyMember): Promise<void> {
+  if (member.contactId !== null) await api.delete(`/mobile/family/members/${member.contactId}`);
+  else if (member.collaboratorId !== null) await api.delete(`/mobile/family/links/${member.collaboratorId}`);
 }

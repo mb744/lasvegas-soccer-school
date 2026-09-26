@@ -16,6 +16,8 @@ interface AuthState {
   /** Adopts a token pair the caller already obtained (e.g. from a Google/Facebook exchange). */
   signInWithTokens: (res: TokenResponse) => Promise<void>;
   signOut: () => Promise<void>;
+  /** Re-fetches the profile, e.g. after joining or leaving a family. */
+  refreshMe: () => Promise<void>;
   /** Latest refresh token, exposed so logout can revoke it server-side. */
   getRefreshToken: () => string | null;
 }
@@ -111,9 +113,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [refreshToken]);
 
+  const refreshMe = useCallback(async () => {
+    try {
+      setMe(await fetchMe());
+    } catch {
+      // Keep the current profile; the next launch refreshes it.
+    }
+  }, []);
+
   const value = useMemo<AuthState>(
-    () => ({ me, loading, signIn, signInWithTokens, signOut, getRefreshToken: () => refreshToken }),
-    [me, loading, signIn, signInWithTokens, signOut, refreshToken],
+    () => ({ me, loading, signIn, signInWithTokens, signOut, refreshMe, getRefreshToken: () => refreshToken }),
+    [me, loading, signIn, signInWithTokens, signOut, refreshMe, refreshToken],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

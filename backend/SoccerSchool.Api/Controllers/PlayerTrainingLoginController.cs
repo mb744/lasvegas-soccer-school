@@ -21,6 +21,7 @@ public class PlayerTrainingLoginController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly IParentAccountResolver _accounts;
+    private readonly UserManager<ApplicationUser> _users;
     private readonly IPasswordHasher<PlayerLogin> _hasher;
     private readonly IPlayerTokenService _tokens;
 
@@ -28,10 +29,12 @@ public class PlayerTrainingLoginController : ControllerBase
         AppDbContext db,
         IParentAccountResolver accounts,
         IPasswordHasher<PlayerLogin> hasher,
-        IPlayerTokenService tokens)
+        IPlayerTokenService tokens,
+        UserManager<ApplicationUser> users)
     {
         _db = db;
         _accounts = accounts;
+        _users = users;
         _hasher = hasher;
         _tokens = tokens;
     }
@@ -115,9 +118,11 @@ public class PlayerTrainingLoginController : ControllerBase
 
     private async Task<bool> OwnsPlayerAsync(int playerId, CancellationToken ct)
     {
-        var account = await _accounts.ResolveAsync(User, ct);
-        return account is not null
-            && await _db.Players.AnyAsync(p => p.Id == playerId && p.ParentAccountId == account.Id, ct);
+        var userId = _users.GetUserId(User);
+        if (string.IsNullOrEmpty(userId)) return false;
+        var families = await _accounts.FamilyIdsAsync(userId, guardianOnly: true, ct);
+        return families.Count > 0
+            && await _db.Players.AnyAsync(p => p.Id == playerId && families.Contains(p.ParentAccountId), ct);
     }
 
     private static PlayerTrainingLoginDto ToDto(PlayerLogin? login) =>

@@ -40,20 +40,12 @@ public class MobileAttendanceController : ControllerBase
     {
         var user = await _users.GetUserAsync(User);
         if (user is null) return Unauthorized();
-        var account = await _accounts.ResolveAsync(User, ct);
-
         var ev = await _db.ScheduledGames.FirstOrDefaultAsync(g => g.Id == eventId, ct);
         if (ev is null) return NotFound("Event not found.");
 
-        // Player must be in one of the families this login can see (owned or collaborated —
-        // covers additional-parent auto-links).
-        var accessibleAccountIds = new List<int>();
-        if (account is not null) accessibleAccountIds.Add(account.Id);
-        var collabIds = await _db.ParentAccountCollaborators
-            .Where(x => x.UserId == user.Id)
-            .Select(x => x.ParentAccountId)
-            .ToListAsync(ct);
-        accessibleAccountIds.AddRange(collabIds.Where(id => !accessibleAccountIds.Contains(id)));
+        // Player must be in a family this login can act for: owned, or linked as a parent/guardian.
+        // View-only family members (grandparents, friends) can see attendance but not change it.
+        var accessibleAccountIds = await _accounts.FamilyIdsAsync(user.Id, guardianOnly: true, ct);
 
         var player = await _db.Players
             .FirstOrDefaultAsync(p => p.Id == req.PlayerId && accessibleAccountIds.Contains(p.ParentAccountId), ct);

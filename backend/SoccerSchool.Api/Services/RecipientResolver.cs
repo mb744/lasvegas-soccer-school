@@ -469,8 +469,9 @@ public class RecipientResolver : IRecipientResolver
 
         // Contacts inherit the family's no-communications opt-out — if the primary parent's
         // ParentAccount is flagged, every additional guardian on that family is filtered out too.
+        // View-only family members get the app, not the team's texts and emails.
         var q = _db.ParentContacts
-            .Where(c => !c.ParentAccount!.NoCommunications
+            .Where(c => c.AccessLevel == FamilyAccessLevel.Guardian && !c.ParentAccount!.NoCommunications
                 && ((c.CellPhone != null && c.CellPhone != "") || (c.Email != null && c.Email != "")));
         if (parentAccountIds is not null)
             q = q.Where(c => parentAccountIds.Contains(c.ParentAccountId));

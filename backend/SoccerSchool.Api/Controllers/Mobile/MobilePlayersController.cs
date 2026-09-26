@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SoccerSchool.Api.Data;
+using SoccerSchool.Api.Domain;
 using SoccerSchool.Api.Dtos;
 using SoccerSchool.Api.Services;
 
@@ -16,11 +18,13 @@ public class MobilePlayersController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly IParentAccountResolver _accounts;
+    private readonly UserManager<ApplicationUser> _users;
 
-    public MobilePlayersController(AppDbContext db, IParentAccountResolver accounts)
+    public MobilePlayersController(AppDbContext db, IParentAccountResolver accounts, UserManager<ApplicationUser> users)
     {
         _db = db;
         _accounts = accounts;
+        _users = users;
     }
 
     [HttpGet]
@@ -28,6 +32,8 @@ public class MobilePlayersController : ControllerBase
     {
         var account = await _accounts.ResolveAsync(User, ct);
         if (account is null) return Unauthorized();
+        var userId = _users.GetUserId(User) ?? "";
+        var canManage = await _accounts.RoleInAsync(userId, account.Id, ct) is FamilyRole.Owner or FamilyRole.Guardian;
 
         var players = await _db.Players
             .Where(p => p.ParentAccountId == account.Id)
@@ -37,7 +43,8 @@ public class MobilePlayersController : ControllerBase
                 _db.TeamPlayers
                     .Where(tp => tp.PlayerId == p.Id)
                     .Select(tp => new MobilePlayerTeamDto(tp.TeamId, tp.Team!.Name))
-                    .ToList()))
+                    .ToList(),
+                canManage))
             .ToListAsync(ct);
 
         return Ok(players);

@@ -42,5 +42,17 @@ public class ParentContact
     public string? UserId { get; set; }
     public ApplicationUser? User { get; set; }
 
+    /// <summary>Parent/guardian (default, e.g. a second parent from registration) or view-only
+    /// family member. Copied onto the <see cref="ParentAccountCollaborator"/> row when linked.</summary>
+    public FamilyAccessLevel AccessLevel { get; set; } = FamilyAccessLevel.Guardian;
+
+    /// <summary>Login that invited this person from the app, when they were invited rather than
+    /// entered on a registration form. No FK: the inviter may later delete their account.</summary>
+    [MaxLength(450)]
+    public string? InvitedByUserId { get; set; }
+
+    /// <summary>When the last invite email went out. Null for contacts that were never emailed.</summary>
+    public DateTime? InviteSentAt { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

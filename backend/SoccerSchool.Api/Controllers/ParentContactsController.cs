@@ -37,7 +37,7 @@ public class ParentContactsController : ControllerBase
         if (account is null) return Ok(Array.Empty<ParentContactDto>());
 
         var contacts = await _db.ParentContacts
-            .Where(c => c.ParentAccountId == account.Id)
+            .Where(c => c.ParentAccountId == account.Id && c.AccessLevel == FamilyAccessLevel.Guardian)
             .OrderBy(c => c.LastName).ThenBy(c => c.FirstName)
             .Select(c => new ParentContactDto(c.Id, c.FirstName, c.LastName, c.Email, c.CellPhone, c.HasWhatsApp, c.Language))
             .ToListAsync(ct);

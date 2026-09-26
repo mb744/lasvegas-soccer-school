@@ -19,5 +19,8 @@ public class ParentAccountCollaborator
     public string UserId { get; set; } = string.Empty;
     public ApplicationUser? User { get; set; }
 
+    /// <summary>Guardian (full access) or view-only family member. See <see cref="FamilyAccessLevel"/>.</summary>
+    public FamilyAccessLevel AccessLevel { get; set; } = FamilyAccessLevel.Guardian;
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

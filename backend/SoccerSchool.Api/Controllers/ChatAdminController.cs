@@ -342,8 +342,9 @@ public class ChatAdminController : ControllerBase
 
         // Collaborator rows. Look up each collaborator's own ParentAccount so their display name
         // is their own, not the owning family's. Fall back to email when they have no account yet.
+        // View-only family members (grandparents, friends) aren't seeded into team chats.
         var collaborators = await _db.ParentAccountCollaborators
-            .Where(c => familyIds.Contains(c.ParentAccountId))
+            .Where(c => familyIds.Contains(c.ParentAccountId) && c.AccessLevel == FamilyAccessLevel.Guardian)
             .Select(c => new
             {
                 c.UserId,
