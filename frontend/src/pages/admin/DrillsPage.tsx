@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Layout } from '../../components/Layout'
 import { useAuth } from '../../auth/AuthContext'
+import { can } from '../../auth/can'
 import { Api } from '../../api/client'
 import { DRILL_CATEGORIES } from '../../api/types'
 import type {
@@ -38,12 +39,17 @@ const EMPTY_DRILL: SaveDrillRequest = {
 const inputCls = 'w-full border border-slate-300 rounded-md px-3 py-2 text-sm'
 const labelCls = 'text-xs font-medium text-slate-600 block mb-1'
 
-/** Admins get the full authoring UI; team coaches (me.isCoach) get a read-only drill view and can
- *  assign drills to their own teams/players. The server enforces the same split. */
+/** Shared drill library for admins and team coaches. Anyone on staff can write a drill; the editor
+ *  opens for drills the caller may change (admins: all; coaches: their own — `drill.canEdit`),
+ *  everything else is read-only. Coaches assign only to their own teams/players. The server
+ *  enforces the same rules. */
 export function AdminDrillsPage() {
   const { t } = useTranslation()
   const { me } = useAuth()
-  const isAdmin = !!me?.isAdmin
+  const isAdmin = can(me, 'admin.access')
+  const canCreate = can(me, 'drills.create')
+  const canEditAny = can(me, 'drills.edit')
+  const canAssign = can(me, 'drills.assign')
   const [drills, setDrills] = useState<AdminDrill[]>([])
   const [showArchived, setShowArchived] = useState(false)
   // null = nothing selected; 'new' = creating; number = editing that drill.
@@ -131,17 +137,17 @@ export function AdminDrillsPage() {
           <section className="lg:col-span-1 bg-white border border-slate-200 rounded-lg p-5 space-y-4 h-fit">
             <div className="flex items-center justify-between gap-2">
               <h2 className="font-bold text-emerald-800">{t('drills.listHeading')}</h2>
-              {isAdmin && (
+              {canCreate && (
                 <button onClick={() => select('new')}
                   className="bg-emerald-700 text-white text-sm font-semibold px-3 py-2 rounded-md hover:bg-emerald-800">
                   {t('drills.newDrill')}
                 </button>
               )}
             </div>
-            {isAdmin && (
+            {(canCreate || canEditAny) && (
               <label className="flex items-center gap-2 text-xs text-slate-600">
                 <input type="checkbox" checked={showArchived} onChange={e => setShowArchived(e.target.checked)} />
-                {t('drills.showArchived')}
+                {canEditAny ? t('drills.showArchived') : t('drills.showMyArchived')}
               </label>
             )}
             <ul className="divide-y divide-slate-100">
@@ -154,6 +160,12 @@ export function AdminDrillsPage() {
                     <span className="block text-xs text-slate-400 font-normal">
                       {t(`drills.categories.${d.category}`)} · {d.durationMinutes} min · {t('drills.assignedCount', { count: d.assignmentCount })}
                     </span>
+                    {d.createdByName && (
+                      <span className="block text-xs text-slate-400 font-normal">
+                        {t('drills.byAuthor', { name: d.createdByName })}
+                        {!canEditAny && d.canEdit && <span className="ml-1 text-emerald-700">· {t('drills.yours')}</span>}
+                      </span>
+                    )}
                   </button>
                 </li>
               ))}
@@ -169,7 +181,7 @@ export function AdminDrillsPage() {
               </div>
             ) : (
               <>
-                {!isAdmin ? (
+                {selected !== 'new' && !drills.find(d => d.id === selected)?.canEdit ? (
                   <DrillView drill={drills.find(d => d.id === selected)} />
                 ) : (
                 <form onSubmit={save} noValidate className="bg-white border border-slate-200 rounded-lg p-5 space-y-4">
@@ -250,7 +262,7 @@ export function AdminDrillsPage() {
                 </form>
                 )}
 
-                {typeof selected === 'number' ? (
+                {!canAssign ? null : typeof selected === 'number' ? (
                   <AssignmentsPanel drillId={selected} onChanged={refresh} onError={setError} onNotice={setNotice} />
                 ) : (
                   <div className="bg-white border border-dashed border-slate-300 rounded-lg p-5 text-sm text-slate-400">
@@ -288,6 +300,10 @@ function DrillView({ drill }: { drill: AdminDrill | undefined }) {
       {drill.videoUrl && (
         <a href={drill.videoUrl} target="_blank" rel="noreferrer" className="text-sm text-emerald-700 hover:underline">▶ Video</a>
       )}
+      <p className="text-xs text-slate-400">
+        {drill.createdByName ? t('drills.byAuthor', { name: drill.createdByName }) : ''}
+        {' '}{t('drills.readOnlyNote')}
+      </p>
     </section>
   )
 }

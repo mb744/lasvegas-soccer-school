@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { LanguageToggle } from './LanguageToggle'
 import { useState, type ReactNode } from 'react'
 import { useAuth } from '../auth/AuthContext'
+import { can } from '../auth/can'
 import { Api } from '../api/client'
 
 /** Nudges signed-in users whose email isn't verified yet. Until they confirm, coach cards and
@@ -118,10 +119,10 @@ export function Layout({ children }: { children: ReactNode }) {
           <div className="flex items-center gap-4">
             <Link to="/privacy" className="text-slate-400 hover:text-slate-600">{t('common.privacy')}</Link>
             <Link to="/data-deletion" className="text-slate-400 hover:text-slate-600">{t('common.dataDeletion')}</Link>
-            {me?.isCoach && !me.isAdmin && (
+            {can(me, 'drills.view') && !can(me, 'admin.access') && (
               <Link to="/coach/drills" className="text-slate-400 hover:text-slate-600">{t('drills.coachLink')}</Link>
             )}
-            {me?.isAdmin && (
+            {can(me, 'admin.access') && (
               <Link to="/admin" className="text-slate-400 hover:text-slate-600">Admin</Link>
             )}
           </div>

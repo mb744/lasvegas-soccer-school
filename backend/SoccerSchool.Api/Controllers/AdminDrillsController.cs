@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SoccerSchool.Api.Data;
@@ -10,10 +9,12 @@ using SoccerSchool.Api.Services;
 namespace SoccerSchool.Api.Controllers;
 
 /// <summary>
-/// Daily Training drills (bilingual) and their assignments. Admins author drills and can assign
-/// them to any player, team, or age group. Coaches (a team's coach card carries their login email —
-/// see <see cref="ICoachScopeService"/>) can view active drills and assign them only to their own
-/// teams and the players rostered on those teams. Accepts the web cookie and the mobile JWT.
+/// Daily Training drills (bilingual) and their assignments — a library shared by all staff.
+/// Permissions (Auth/Permissions.cs): <c>drills.view</c> to browse, <c>drills.create</c> ("Drill
+/// creator", granted per person) to author and to edit one's own drills, <c>drills.edit</c> to edit
+/// any drill, <c>drills.assign</c> to assign. Scope: admins assign to any player, team or age group;
+/// everyone else only to the teams their coach card links them to and those teams' players.
+/// Accepts the web cookie and the mobile JWT.
 /// </summary>
 [ApiController]
 [Route("api/admin/drills")]
@@ -21,67 +22,69 @@ namespace SoccerSchool.Api.Controllers;
 public class AdminDrillsController : ControllerBase
 {
     private readonly AppDbContext _db;
-    private readonly UserManager<ApplicationUser> _users;
-    private readonly ICoachScopeService _scopes;
+    private readonly IPermissionService _permissions;
 
-    public AdminDrillsController(AppDbContext db, UserManager<ApplicationUser> users, ICoachScopeService scopes)
+    public AdminDrillsController(AppDbContext db, IPermissionService permissions)
     {
         _db = db;
-        _users = users;
-        _scopes = scopes;
+        _permissions = permissions;
     }
 
     // ---- Drills ----
 
-    /// <summary>Admins see every drill (archived on request); coaches see active drills only, with
-    /// assignment counts limited to what they can see.</summary>
+    /// <summary>The shared library: every active drill. With <paramref name="includeArchived"/>,
+    /// callers who can edit any drill also get every archived one; others get the archived drills
+    /// they wrote. Assignment counts are limited to what the caller can see.</summary>
     [HttpGet]
+    [RequirePermission(Permissions.DrillsView)]
     public async Task<ActionResult<IEnumerable<AdminDrillDto>>> List([FromQuery] bool includeArchived, CancellationToken ct)
     {
-        var scope = await _scopes.GetScopeAsync(User, ct);
-        if (!scope.IsStaff) return Forbidden();
-
-        var showArchived = includeArchived && scope.IsAdmin;
-        var visible = VisibleAssignments(scope);
-        var drills = await _db.Drills
+        var me = await CurrentAsync(ct);
+        var visible = VisibleAssignments(me);
+        var drills = await VisibleDrills(me, includeArchived)
             .AsNoTracking()
-            .Where(d => showArchived || d.IsActive)
             .OrderBy(d => d.Category).ThenBy(d => d.TitleEn)
             .Select(d => new { Drill = d, AssignmentCount = visible.Count(a => a.DrillId == d.Id) })
             .ToListAsync(ct);
-        return Ok(drills.Select(x => ToDto(x.Drill, x.AssignmentCount)));
+        var authors = await AuthorNamesAsync(drills.Select(x => x.Drill.CreatedByUserId), ct);
+        return Ok(drills.Select(x => ToDto(x.Drill, x.AssignmentCount, authors, me)));
     }
 
     [HttpGet("{id:int}")]
+    [RequirePermission(Permissions.DrillsView)]
     public async Task<ActionResult<AdminDrillDto>> Get(int id, CancellationToken ct)
     {
-        var scope = await _scopes.GetScopeAsync(User, ct);
-        if (!scope.IsStaff) return Forbidden();
-
-        var drill = await _db.Drills.AsNoTracking().FirstOrDefaultAsync(d => d.Id == id && (scope.IsAdmin || d.IsActive), ct);
+        var me = await CurrentAsync(ct);
+        var drill = await VisibleDrills(me, includeArchived: true).AsNoTracking().FirstOrDefaultAsync(d => d.Id == id, ct);
         if (drill is null) return NotFound();
-        var count = await VisibleAssignments(scope).CountAsync(a => a.DrillId == id, ct);
-        return Ok(ToDto(drill, count));
+        var count = await VisibleAssignments(me).CountAsync(a => a.DrillId == id, ct);
+        var authors = await AuthorNamesAsync(new[] { drill.CreatedByUserId }, ct);
+        return Ok(ToDto(drill, count, authors, me));
     }
 
+    /// <summary>Authors a drill; the author is recorded so they can edit it later.</summary>
     [HttpPost]
-    [Authorize(Roles = Roles.Admin)]
+    [RequirePermission(Permissions.DrillsCreate)]
     public async Task<ActionResult<AdminDrillDto>> Create([FromBody] SaveDrillRequest req, CancellationToken ct)
     {
-        var drill = new Drill();
+        var me = await CurrentAsync(ct);
+        var drill = new Drill { CreatedByUserId = me.UserId };
         var error = Apply(drill, req);
         if (error is not null) return BadRequest(error);
         _db.Drills.Add(drill);
         await _db.SaveChangesAsync(ct);
-        return Ok(ToDto(drill, 0));
+        return await Get(drill.Id, ct);
     }
 
     [HttpPut("{id:int}")]
-    [Authorize(Roles = Roles.Admin)]
+    [RequirePermission(Permissions.DrillsEdit, Permissions.DrillsCreate)]
     public async Task<ActionResult<AdminDrillDto>> Update(int id, [FromBody] SaveDrillRequest req, CancellationToken ct)
     {
-        var drill = await _db.Drills.FirstOrDefaultAsync(d => d.Id == id, ct);
+        var me = await CurrentAsync(ct);
+        var drill = await VisibleDrills(me, includeArchived: true).FirstOrDefaultAsync(d => d.Id == id, ct);
         if (drill is null) return NotFound();
+        if (!CanEdit(drill, me)) return OnlyAuthorCanEdit();
+
         var error = Apply(drill, req);
         if (error is not null) return BadRequest(error);
         drill.UpdatedAt = DateTime.UtcNow;
@@ -90,13 +93,15 @@ public class AdminDrillsController : ControllerBase
     }
 
     /// <summary>Hard delete, only for drills no kid has completed yet. Once there's history, the
-    /// admin archives instead (IsActive=false via PUT) so streaks and totals stay intact.</summary>
+    /// author archives instead (IsActive=false via PUT) so streaks and totals stay intact.</summary>
     [HttpDelete("{id:int}")]
-    [Authorize(Roles = Roles.Admin)]
+    [RequirePermission(Permissions.DrillsEdit, Permissions.DrillsCreate)]
     public async Task<IActionResult> Delete(int id, CancellationToken ct)
     {
-        var drill = await _db.Drills.FirstOrDefaultAsync(d => d.Id == id, ct);
+        var me = await CurrentAsync(ct);
+        var drill = await VisibleDrills(me, includeArchived: true).FirstOrDefaultAsync(d => d.Id == id, ct);
         if (drill is null) return NotFound();
+        if (!CanEdit(drill, me)) return OnlyAuthorCanEdit();
         if (await _db.DrillCompletions.AnyAsync(c => c.DrillId == id, ct))
             return Conflict("Players have already completed this drill. Archive it instead so their progress is kept.");
         _db.Drills.Remove(drill);
@@ -108,24 +113,25 @@ public class AdminDrillsController : ControllerBase
 
     /// <summary>Assignments the caller can see, optionally filtered to one drill. Newest first.</summary>
     [HttpGet("assignments")]
+    [RequirePermission(Permissions.DrillsAssign)]
     public async Task<ActionResult<IEnumerable<AdminDrillAssignmentDto>>> ListAssignments([FromQuery] int? drillId, CancellationToken ct)
     {
-        var scope = await _scopes.GetScopeAsync(User, ct);
-        if (!scope.IsStaff) return Forbidden();
-        return Ok(await LoadAssignmentsAsync(scope, drillId, assignmentId: null, ct));
+        var me = await CurrentAsync(ct);
+        return Ok(await LoadAssignmentsAsync(me, drillId, assignmentId: null, ct));
     }
 
     [HttpPost("assignments")]
+    [RequirePermission(Permissions.DrillsAssign)]
     public async Task<ActionResult<AdminDrillAssignmentDto>> CreateAssignment([FromBody] CreateDrillAssignmentRequest req, CancellationToken ct)
     {
-        var scope = await _scopes.GetScopeAsync(User, ct);
-        if (!scope.IsStaff) return Forbidden();
+        var me = await CurrentAsync(ct);
 
         if (!TrainingWire.TryParseTargetType(req.TargetType, out var type))
             return BadRequest("Target type must be player, team or age-group.");
         if (req.EndDate is not null && req.EndDate < req.StartDate)
             return BadRequest("End date can't be before the start date.");
-        if (!await _db.Drills.AnyAsync(d => d.Id == req.DrillId && (scope.IsAdmin || d.IsActive), ct))
+        var canSeeArchived = me.Has(Permissions.DrillsEdit);
+        if (!await _db.Drills.AnyAsync(d => d.Id == req.DrillId && (canSeeArchived || d.IsActive), ct))
             return BadRequest("Drill not found.");
 
         var targetExists = type switch
@@ -135,7 +141,7 @@ public class AdminDrillsController : ControllerBase
             _ => await _db.AgeClassifications.AnyAsync(c => c.Id == req.TargetId, ct),
         };
         if (!targetExists) return BadRequest("The selected player, team or age group no longer exists.");
-        if (!await CanTargetAsync(scope, type, req.TargetId, ct)) return Forbidden();
+        if (!await CanTargetAsync(me, type, req.TargetId, ct)) return OutOfScope();
 
         var assignment = new DrillAssignment
         {
@@ -146,23 +152,22 @@ public class AdminDrillsController : ControllerBase
             AgeClassificationId = type == DrillTargetType.AgeClassification ? req.TargetId : null,
             StartDate = req.StartDate,
             EndDate = req.EndDate,
-            CreatedByUserId = _users.GetUserId(User),
+            CreatedByUserId = me.UserId,
         };
         _db.DrillAssignments.Add(assignment);
         await _db.SaveChangesAsync(ct);
 
-        return Ok((await LoadAssignmentsAsync(scope, drillId: null, assignment.Id, ct)).Single());
+        return Ok((await LoadAssignmentsAsync(me, drillId: null, assignment.Id, ct)).Single());
     }
 
     [HttpDelete("assignments/{id:int}")]
+    [RequirePermission(Permissions.DrillsAssign)]
     public async Task<IActionResult> DeleteAssignment(int id, CancellationToken ct)
     {
-        var scope = await _scopes.GetScopeAsync(User, ct);
-        if (!scope.IsStaff) return Forbidden();
-
-        // Coaches only ever see (and so can only remove) assignments inside their scope; anything
+        var me = await CurrentAsync(ct);
+        // Callers only ever see (and so can only remove) assignments inside their scope; anything
         // else is a 404 to them, same as a missing row.
-        var assignment = await VisibleAssignments(scope).FirstOrDefaultAsync(a => a.Id == id, ct);
+        var assignment = await VisibleAssignments(me).FirstOrDefaultAsync(a => a.Id == id, ct);
         if (assignment is null) return NotFound();
         _db.DrillAssignments.Remove(assignment);
         await _db.SaveChangesAsync(ct);
@@ -173,18 +178,17 @@ public class AdminDrillsController : ControllerBase
     /// search players through the admin players endpoint; coaches get their own teams plus every
     /// player rostered on them (a short list, so it's returned in full).</summary>
     [HttpGet("targets")]
+    [RequirePermission(Permissions.DrillsAssign)]
     public async Task<ActionResult<DrillTargetOptionsDto>> Targets(CancellationToken ct)
     {
-        var scope = await _scopes.GetScopeAsync(User, ct);
-        if (!scope.IsStaff) return Forbidden();
-
-        var teamIds = scope.CoachTeamIds.ToList();
+        var me = await CurrentAsync(ct);
+        var teamIds = me.CoachTeamIds.ToList();
         var teams = await _db.Teams.AsNoTracking()
-            .Where(t => scope.IsAdmin || teamIds.Contains(t.Id))
+            .Where(t => me.IsAdmin || teamIds.Contains(t.Id))
             .OrderBy(t => t.Name)
             .Select(t => new DrillTargetOptionDto(t.Id, t.Name)).ToListAsync(ct);
 
-        if (scope.IsAdmin)
+        if (me.IsAdmin)
         {
             var ages = await _db.AgeClassifications.AsNoTracking().OrderBy(c => c.Name)
                 .Select(c => new DrillTargetOptionDto(c.Id, c.Name)).ToListAsync(ct);
@@ -201,25 +205,67 @@ public class AdminDrillsController : ControllerBase
 
     // ---------------------------------------------------------------------------------------
 
-    private ObjectResult Forbidden() =>
-        StatusCode(StatusCodes.Status403Forbidden, "Only admins and team coaches can manage Daily Training drills.");
+    /// <summary>The caller's effective permissions. Always present here: [RequirePermission] has
+    /// already rejected anyone without them.</summary>
+    private async Task<EffectivePermissions> CurrentAsync(CancellationToken ct) =>
+        (await _permissions.GetAsync(User, ct))!;
 
-    /// <summary>Assignments within the caller's scope: everything for admins; for coaches, those
-    /// targeting one of their teams or a player rostered on one of their teams.</summary>
-    private IQueryable<DrillAssignment> VisibleAssignments(StaffScope scope)
+    private ObjectResult OnlyAuthorCanEdit() =>
+        StatusCode(StatusCodes.Status403Forbidden, "Only the person who created this drill (or an admin) can change it.");
+
+    private ObjectResult OutOfScope() =>
+        StatusCode(StatusCodes.Status403Forbidden, "You can only assign drills to your own teams and their players.");
+
+    /// <summary>Drills the caller can see: every active drill; archived ones for those who can edit
+    /// any drill, or for their author.</summary>
+    private IQueryable<Drill> VisibleDrills(EffectivePermissions me, bool includeArchived)
     {
-        if (scope.IsAdmin) return _db.DrillAssignments;
-        var teamIds = scope.CoachTeamIds.ToList();
+        var seeAllArchived = me.Has(Permissions.DrillsEdit);
+        return _db.Drills.Where(d => d.IsActive
+            || (includeArchived && (seeAllArchived || d.CreatedByUserId == me.UserId)));
+    }
+
+    /// <summary><c>drills.edit</c> edits any drill; a Drill creator edits only drills they wrote.</summary>
+    private static bool CanEdit(Drill drill, EffectivePermissions me) =>
+        me.Has(Permissions.DrillsEdit)
+        || (me.Has(Permissions.DrillsCreate) && drill.CreatedByUserId == me.UserId);
+
+    /// <summary>Display names for drill authors: parent-profile name if they have one, else email.</summary>
+    private async Task<Dictionary<string, string>> AuthorNamesAsync(IEnumerable<string?> userIds, CancellationToken ct)
+    {
+        var ids = userIds.Where(id => !string.IsNullOrEmpty(id)).Select(id => id!).Distinct().ToList();
+        if (ids.Count == 0) return new Dictionary<string, string>();
+        var rows = await _db.Users
+            .Where(u => ids.Contains(u.Id))
+            .Select(u => new
+            {
+                u.Id,
+                u.Email,
+                First = _db.ParentAccounts.Where(a => a.UserId == u.Id).Select(a => a.FirstName).FirstOrDefault(),
+                Last = _db.ParentAccounts.Where(a => a.UserId == u.Id).Select(a => a.LastName).FirstOrDefault(),
+            })
+            .ToListAsync(ct);
+        return rows.ToDictionary(
+            r => r.Id,
+            r => ($"{r.First} {r.Last}").Trim() is { Length: > 0 } name ? name : (r.Email ?? "Unknown"));
+    }
+
+    /// <summary>Assignments within the caller's scope: everything for admins; otherwise those
+    /// targeting one of their coached teams or a player rostered on one.</summary>
+    private IQueryable<DrillAssignment> VisibleAssignments(EffectivePermissions me)
+    {
+        if (me.IsAdmin) return _db.DrillAssignments;
+        var teamIds = me.CoachTeamIds.ToList();
         return _db.DrillAssignments.Where(a =>
             (a.TargetType == DrillTargetType.Team && a.TeamId != null && teamIds.Contains(a.TeamId.Value))
             || (a.TargetType == DrillTargetType.Player
                 && _db.TeamPlayers.Any(tp => tp.PlayerId == a.PlayerId && teamIds.Contains(tp.TeamId))));
     }
 
-    private async Task<bool> CanTargetAsync(StaffScope scope, DrillTargetType type, int targetId, CancellationToken ct)
+    private async Task<bool> CanTargetAsync(EffectivePermissions me, DrillTargetType type, int targetId, CancellationToken ct)
     {
-        if (scope.IsAdmin) return true;
-        var teamIds = scope.CoachTeamIds.ToList();
+        if (me.IsAdmin) return true;
+        var teamIds = me.CoachTeamIds.ToList();
         return type switch
         {
             DrillTargetType.Team => teamIds.Contains(targetId),
@@ -229,9 +275,9 @@ public class AdminDrillsController : ControllerBase
         };
     }
 
-    private async Task<List<AdminDrillAssignmentDto>> LoadAssignmentsAsync(StaffScope scope, int? drillId, int? assignmentId, CancellationToken ct)
+    private async Task<List<AdminDrillAssignmentDto>> LoadAssignmentsAsync(EffectivePermissions me, int? drillId, int? assignmentId, CancellationToken ct)
     {
-        var rows = await VisibleAssignments(scope)
+        var rows = await VisibleAssignments(me)
             .AsNoTracking()
             .Where(a => (drillId == null || a.DrillId == drillId) && (assignmentId == null || a.Id == assignmentId))
             .OrderByDescending(a => a.StartDate).ThenByDescending(a => a.Id)
@@ -299,7 +345,9 @@ public class AdminDrillsController : ControllerBase
         string.Join('\n', (steps ?? "").Replace("\r", "")
             .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
 
-    private static AdminDrillDto ToDto(Drill d, int assignmentCount) => new(
+    private static AdminDrillDto ToDto(Drill d, int assignmentCount, IReadOnlyDictionary<string, string> authors, EffectivePermissions me) => new(
         d.Id, d.Category.ToWire(), d.TitleEn, d.TitleEs, d.DescriptionEn, d.DescriptionEs,
-        d.StepsEn, d.StepsEs, d.DurationMinutes, d.Reps, d.VideoUrl, d.IsActive, assignmentCount, d.UpdatedAt);
+        d.StepsEn, d.StepsEs, d.DurationMinutes, d.Reps, d.VideoUrl, d.IsActive, assignmentCount, d.UpdatedAt,
+        d.CreatedByUserId is not null && authors.TryGetValue(d.CreatedByUserId, out var name) ? name : null,
+        CanEdit(d, me));
 }

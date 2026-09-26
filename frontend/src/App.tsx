@@ -121,11 +121,11 @@ export default function App() {
           {/* Admins author + assign; team coaches assign to their own teams (page adapts). */}
           <Route
             path="/admin/drills"
-            element={<RequireAuth staffOnly><AdminDrillsPage /></RequireAuth>}
+            element={<RequireAuth permission="drills.view"><AdminDrillsPage /></RequireAuth>}
           />
           <Route
             path="/coach/drills"
-            element={<RequireAuth staffOnly><AdminDrillsPage /></RequireAuth>}
+            element={<RequireAuth permission="drills.view"><AdminDrillsPage /></RequireAuth>}
           />
           <Route
             path="/admin/reports/mobile-usage"

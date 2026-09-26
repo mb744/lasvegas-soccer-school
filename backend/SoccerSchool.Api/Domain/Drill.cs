@@ -56,6 +56,13 @@ public class Drill
     /// <summary>Archived drills stay in history (completions) but drop out of every kid's plan.</summary>
     public bool IsActive { get; set; } = true;
 
+    /// <summary>Identity user id of whoever authored the drill (admin or coach). A coach may edit,
+    /// archive or delete only drills they created; admins may edit any. Audit-style, no FK — the
+    /// drill outlives its author's account. Null for drills created before authorship was tracked
+    /// (admin-only to edit).</summary>
+    [MaxLength(450)]
+    public string? CreatedByUserId { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 

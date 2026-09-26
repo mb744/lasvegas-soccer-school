@@ -856,6 +856,8 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
         modelBuilder.Entity<Drill>(b =>
         {
             b.HasIndex(d => d.IsActive);
+            // "My drills" lookups for coaches.
+            b.HasIndex(d => d.CreatedByUserId);
         });
 
         modelBuilder.Entity<DrillAssignment>(b =>
