@@ -75,6 +75,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
     public DbSet<PhraseTranslation> PhraseTranslations => Set<PhraseTranslation>();
     public DbSet<InboundMessage> InboundMessages => Set<InboundMessage>();
     public DbSet<MessagingSettings> MessagingSettings => Set<MessagingSettings>();
+    public DbSet<MobileAppSettings> MobileAppSettings => Set<MobileAppSettings>();
     public DbSet<AgeClassification> AgeClassifications => Set<AgeClassification>();
     public DbSet<Uniform> Uniforms => Set<Uniform>();
     public DbSet<PlayerUniformAssignment> PlayerUniformAssignments => Set<PlayerUniformAssignment>();
@@ -801,6 +802,9 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
             // The message-list filter reads by blocker.
             b.HasIndex(x => x.BlockerUserId);
         });
+
+        // Singleton row (Id is always 1), so the key is set by the app, not the database.
+        modelBuilder.Entity<MobileAppSettings>().Property(s => s.Id).ValueGeneratedNever();
 
         modelBuilder.Entity<DeviceToken>(b =>
         {

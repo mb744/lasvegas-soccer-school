@@ -1,5 +1,6 @@
 import axios from 'axios'
 import type {
+  MobileAppSettings,
   AccessCatalog,
   EditableRole,
   PermissionAuditEntry,
@@ -426,6 +427,14 @@ export const Api = {
   },
   async accessAudit(take = 200) {
     const r = await api.get<PermissionAuditEntry[]>(`/admin/access/audit?take=${take}`)
+    return r.data
+  },
+  async mobileAppSettings() {
+    const r = await api.get<MobileAppSettings>('/admin/mobile-app-settings')
+    return r.data
+  },
+  async saveMobileAppSettings(payload: { minimumVersion: string | null }) {
+    const r = await api.put<MobileAppSettings>('/admin/mobile-app-settings', payload)
     return r.data
   },
   async listUsers() {

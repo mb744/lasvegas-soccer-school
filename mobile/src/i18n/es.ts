@@ -379,6 +379,19 @@ export const es: Translations = {
     verifySent: '¡Enviado! Revise su bandeja de entrada (y la carpeta de spam).',
     verifyFailed: 'No se pudo enviar ahora. Intente de nuevo en unos minutos.',
   },
+  update: {
+    availableTitle: 'Actualización disponible',
+    availableBody: 'La versión {{version}} de la app de LVSS está disponible con mejoras y nuevas funciones. ¿Actualizar ahora?',
+    update: 'Actualizar',
+    later: 'Más tarde',
+    readyTitle: 'Actualización lista',
+    readyBody: 'Se descargó una nueva versión de la app. ¿Reiniciar ahora para usarla?',
+    restart: 'Reiniciar',
+    requiredTitle: 'Actualice la app',
+    requiredBody: 'Esta versión de la app de LVSS ya no es compatible. Actualícela para seguir usándola.',
+    requiredBodyNoStore: 'Esta versión de la app de LVSS ya no es compatible. Instale la versión más reciente.',
+    checkAgain: 'Ya actualicé: volver a comprobar',
+  },
   training: {
     heading: 'App Entrenamiento Diario',
     intro:
