@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SoccerSchool.Api.Data;
 using SoccerSchool.Api.Domain;
+using SoccerSchool.Api.Services;
 
 namespace SoccerSchool.Api.Controllers.Mobile;
 
@@ -21,11 +22,13 @@ public class MobileStaffEventController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly UserManager<ApplicationUser> _users;
+    private readonly ICoachScopeService _coaches;
 
-    public MobileStaffEventController(AppDbContext db, UserManager<ApplicationUser> users)
+    public MobileStaffEventController(AppDbContext db, UserManager<ApplicationUser> users, ICoachScopeService coaches)
     {
         _db = db;
         _users = users;
+        _coaches = coaches;
     }
 
     [HttpGet("{id:int}/attendance")]
@@ -40,17 +43,10 @@ public class MobileStaffEventController : ControllerBase
             .FirstOrDefaultAsync(ct);
         if (ev is null) return NotFound();
 
-        // Staff = site admin OR the coach of this event's team. Coach match is by email on the
-        // TeamCoach card (same rule ChatAdminController uses to seed team chats).
-        var isAdmin = await _users.IsInRoleAsync(user, Roles.Admin);
-        var isTeamCoach = false;
-        if (!isAdmin && !string.IsNullOrEmpty(user.NormalizedEmail))
-        {
-            isTeamCoach = await _db.TeamCoaches.AnyAsync(
-                tc => tc.TeamId == ev.TeamId && tc.Email != null && tc.Email.Trim().ToUpper() == user.NormalizedEmail,
-                ct);
-        }
-        if (!isAdmin && !isTeamCoach) return Forbid();
+        // Staff = site admin OR the coach of this event's team (coach card linked to this login;
+        // never a bare email match, since sign-up doesn't verify email).
+        var scope = await _coaches.GetScopeAsync(User, ct);
+        if (!scope.CanManageTeam(ev.TeamId)) return Forbid();
 
         var rosterPlayerIds = await _db.TeamPlayers
             .Where(tp => tp.TeamId == ev.TeamId)
