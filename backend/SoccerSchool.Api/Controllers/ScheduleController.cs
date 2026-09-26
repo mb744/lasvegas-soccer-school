@@ -17,20 +17,24 @@ namespace SoccerSchool.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/schedule")]
-[Authorize(Roles = Roles.Admin, AuthenticationSchemes = AuthSchemes.CookieOrMobileJwt)]
+[Authorize(AuthenticationSchemes = AuthSchemes.CookieOrMobileJwt)]
 public class ScheduleController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly IScheduleSyncService _sync;
     private readonly ITeamSnapSyncService _teamSnapSync;
+    private readonly IPermissionService _permissions;
 
-    public ScheduleController(AppDbContext db, IScheduleSyncService sync, ITeamSnapSyncService teamSnapSync)
+    public ScheduleController(AppDbContext db, IScheduleSyncService sync, ITeamSnapSyncService teamSnapSync,
+        IPermissionService permissions)
     {
+        _permissions = permissions;
         _db = db;
         _sync = sync;
         _teamSnapSync = teamSnapSync;
     }
 
+    [Authorize(Roles = Roles.Admin)]
     [HttpGet("teams")]
     public async Task<ActionResult<IEnumerable<TeamSummary>>> ListTeams(CancellationToken ct)
     {
@@ -48,6 +52,7 @@ public class ScheduleController : ControllerBase
         return Ok(rows);
     }
 
+    [Authorize(Roles = Roles.Admin)]
     [HttpGet("teams/{id:int}")]
     public async Task<ActionResult<TeamDetail>> GetTeam(
         int id, CancellationToken ct, [FromQuery] bool includePast = false)
@@ -83,6 +88,7 @@ public class ScheduleController : ControllerBase
             team.CreatedAt, games, coaches));
     }
 
+    [Authorize(Roles = Roles.Admin)]
     [HttpPost("teams")]
     public async Task<ActionResult<TeamSummary>> CreateTeam(
         [FromBody] SaveTeamRequest request, CancellationToken ct)
@@ -106,6 +112,7 @@ public class ScheduleController : ControllerBase
         return Ok(await SummarizeAsync(team.Id, ct));
     }
 
+    [Authorize(Roles = Roles.Admin)]
     [HttpPut("teams/{id:int}")]
     public async Task<ActionResult<TeamSummary>> UpdateTeam(
         int id, [FromBody] SaveTeamRequest request, CancellationToken ct)
@@ -151,6 +158,7 @@ public class ScheduleController : ControllerBase
         return (name, eventId, teamId, null);
     }
 
+    [Authorize(Roles = Roles.Admin)]
     [HttpDelete("teams/{id:int}")]
     public async Task<IActionResult> DeleteTeam(int id, CancellationToken ct)
     {
@@ -161,6 +169,7 @@ public class ScheduleController : ControllerBase
         return NoContent();
     }
 
+    [Authorize(Roles = Roles.Admin)]
     [HttpPost("teams/{id:int}/sync")]
     public async Task<ActionResult<ScheduleSyncResultDto>> Sync(int id, CancellationToken ct)
     {
@@ -171,6 +180,7 @@ public class ScheduleController : ControllerBase
 
     // --- Tournaments (admin-owned events, optional GotSport import) ---
 
+    [Authorize(Roles = Roles.Admin)]
     [HttpGet("tournaments")]
     public async Task<ActionResult<IEnumerable<TournamentSummary>>> ListTournaments(CancellationToken ct)
     {
@@ -198,6 +208,7 @@ public class ScheduleController : ControllerBase
         return Ok(rows);
     }
 
+    [Authorize(Roles = Roles.Admin)]
     [HttpPost("tournaments")]
     public async Task<ActionResult<TournamentSummary>> CreateTournament(
         [FromBody] SaveTournamentRequest request, CancellationToken ct)
@@ -225,6 +236,7 @@ public class ScheduleController : ControllerBase
         return Ok(await SummarizeTournamentAsync(tournament.Id, ct));
     }
 
+    [Authorize(Roles = Roles.Admin)]
     [HttpPut("tournaments/{id:int}")]
     public async Task<ActionResult<TournamentSummary>> UpdateTournament(
         int id, [FromBody] SaveTournamentRequest request, CancellationToken ct)
@@ -250,6 +262,7 @@ public class ScheduleController : ControllerBase
         return Ok(await SummarizeTournamentAsync(tournament.Id, ct));
     }
 
+    [Authorize(Roles = Roles.Admin)]
     [HttpDelete("tournaments/{id:int}")]
     public async Task<IActionResult> DeleteTournament(int id, CancellationToken ct)
     {
@@ -261,6 +274,7 @@ public class ScheduleController : ControllerBase
         return NoContent();
     }
 
+    [Authorize(Roles = Roles.Admin)]
     [HttpPost("tournaments/{id:int}/sync")]
     public async Task<ActionResult<ScheduleSyncResultDto>> SyncTournament(int id, CancellationToken ct)
     {
@@ -272,6 +286,7 @@ public class ScheduleController : ControllerBase
     /// <summary>Legacy: creates a brand-new Team and points <c>Tournament.TeamId</c> at it. Kept
     /// for backward compat — new code path uses the multi-team <c>TournamentTeams</c> join via
     /// <see cref="AddTournamentTeam"/>.</summary>
+    [Authorize(Roles = Roles.Admin)]
     [HttpPost("tournaments/{id:int}/team")]
     public async Task<ActionResult<TournamentSummary>> CreateTeamForTournament(
         int id, [FromBody] CreateTournamentTeamRequest request, CancellationToken ct)
@@ -297,6 +312,7 @@ public class ScheduleController : ControllerBase
     /// <summary>Adds a team to a tournament. Either picks an existing team via
     /// <c>ExistingTeamId</c> or creates a fresh one via <c>NewTeamName</c>. Optional GotSport
     /// IDs (or a pasted schedule URL) wire up per-participation sync.</summary>
+    [Authorize(Roles = Roles.Admin)]
     [HttpPost("tournaments/{id:int}/teams")]
     public async Task<ActionResult<TournamentSummary>> AddTournamentTeam(
         int id, [FromBody] AddTournamentTeamRequest request, CancellationToken ct)
@@ -344,6 +360,7 @@ public class ScheduleController : ControllerBase
         return Ok(await SummarizeTournamentAsync(id, ct));
     }
 
+    [Authorize(Roles = Roles.Admin)]
     [HttpPut("tournaments/{id:int}/teams/{ttId:int}")]
     public async Task<ActionResult<TournamentSummary>> UpdateTournamentTeam(
         int id, int ttId, [FromBody] UpdateTournamentTeamRequest request, CancellationToken ct)
@@ -364,6 +381,7 @@ public class ScheduleController : ControllerBase
     /// <summary>Removes a team from this tournament. The underlying Team row stays — it might
     /// be reused for other tournaments or as a season team. Games for this team in this
     /// tournament keep existing (their TournamentId stays as a tag).</summary>
+    [Authorize(Roles = Roles.Admin)]
     [HttpDelete("tournaments/{id:int}/teams/{ttId:int}")]
     public async Task<ActionResult<TournamentSummary>> RemoveTournamentTeam(
         int id, int ttId, CancellationToken ct)
@@ -379,6 +397,7 @@ public class ScheduleController : ControllerBase
     /// when (TeamSnapEventId + TeamSnapParticipantId) are both set on the row; otherwise falls
     /// back to the GotSport scraper using (GotSportEventId + GotSportTeamId). Games are upserted
     /// onto the underlying Team with TournamentId = this tournament.</summary>
+    [Authorize(Roles = Roles.Admin)]
     [HttpPost("tournaments/{id:int}/teams/{ttId:int}/sync")]
     public async Task<ActionResult<ScheduleSyncResultDto>> SyncTournamentTeam(
         int id, int ttId, CancellationToken ct)
@@ -396,6 +415,7 @@ public class ScheduleController : ControllerBase
     /// <summary>Imports a schedule pasted out of the TeamSnap UI. Workaround for the public
     /// TeamSnap API not exposing per-match startDate/startTime/venueId — the admin pastes the
     /// visible schedule rows and we parse + upsert ScheduledGame rows for this team.</summary>
+    [Authorize(Roles = Roles.Admin)]
     [HttpPost("tournaments/{id:int}/teams/{ttId:int}/import-pasted-schedule")]
     public async Task<ActionResult<ScheduleSyncResultDto>> ImportPastedSchedule(
         int id, int ttId, [FromBody] ImportPastedScheduleRequest request, CancellationToken ct)
@@ -510,12 +530,14 @@ public class ScheduleController : ControllerBase
     // practices. They live in the same ScheduledGames table as games with Kind=Practice and a
     // synthesized ExternalUid (`practice-{guid}`) so the unique (team, uid) index doesn't trip.
 
+    [RequirePermission(Permissions.EventsCreate)]
     [HttpPost("teams/{teamId:int}/practices")]
     public async Task<ActionResult<ScheduledGameDto>> CreatePractice(
         int teamId, [FromBody] SavePracticeRequest request, CancellationToken ct)
     {
         var team = await _db.Teams.Include(t => t.MessageGroup).FirstOrDefaultAsync(t => t.Id == teamId, ct);
         if (team is null) return NotFound();
+        if (!await CanManageTeamAsync(team.Id, ct)) return OutOfScope();
         if (request.StartsAt == default) return BadRequest("Start time is required.");
         if (await ValidateVenueAsync(request.VenueId, ct) is string ve) return BadRequest(ve);
 
@@ -545,12 +567,14 @@ public class ScheduleController : ControllerBase
     /// All occurrences share a single SeriesId so the UI can show "(series)" badges and so a
     /// future "cancel entire series" action can target them as a group.
     /// </summary>
+    [RequirePermission(Permissions.EventsCreate)]
     [HttpPost("teams/{teamId:int}/practice-series")]
     public async Task<ActionResult<PracticeSeriesCreatedDto>> CreatePracticeSeries(
         int teamId, [FromBody] SavePracticeSeriesRequest request, CancellationToken ct)
     {
         var team = await _db.Teams.Include(t => t.MessageGroup).FirstOrDefaultAsync(t => t.Id == teamId, ct);
         if (team is null) return NotFound();
+        if (!await CanManageTeamAsync(team.Id, ct)) return OutOfScope();
         if (request.StartDate == default || request.EndDate == default)
             return BadRequest("StartDate and EndDate are required.");
         if (request.EndDate.Date < request.StartDate.Date)
@@ -628,6 +652,7 @@ public class ScheduleController : ControllerBase
         catch { return TimeZoneInfo.FindSystemTimeZoneById("Pacific Standard Time"); }
     }
 
+    [RequirePermission(Permissions.EventsCreate)]
     [HttpPut("practices/{id:int}")]
     public async Task<ActionResult<ScheduledGameDto>> UpdatePractice(
         int id, [FromBody] SavePracticeRequest request, CancellationToken ct)
@@ -636,6 +661,7 @@ public class ScheduleController : ControllerBase
             .Include(g => g.Team).ThenInclude(t => t!.MessageGroup)
             .FirstOrDefaultAsync(g => g.Id == id && g.Kind == ScheduledEventKind.Practice, ct);
         if (practice is null) return NotFound();
+        if (!await CanManageTeamAsync(practice.TeamId, ct)) return OutOfScope();
         if (request.StartsAt == default) return BadRequest("Start time is required.");
         if (await ValidateVenueAsync(request.VenueId, ct) is string ve) return BadRequest(ve);
 
@@ -651,12 +677,14 @@ public class ScheduleController : ControllerBase
         return Ok(ToDto(practice, practice.Team!));
     }
 
+    [RequirePermission(Permissions.EventsCreate)]
     [HttpDelete("practices/{id:int}")]
     public async Task<IActionResult> DeletePractice(int id, CancellationToken ct)
     {
         var practice = await _db.ScheduledGames
             .FirstOrDefaultAsync(g => g.Id == id && g.Kind == ScheduledEventKind.Practice, ct);
         if (practice is null) return NotFound();
+        if (!await CanManageTeamAsync(practice.TeamId, ct)) return OutOfScope();
         _db.ScheduledGames.Remove(practice);
         await _db.SaveChangesAsync(ct);
         return NoContent();
@@ -665,6 +693,7 @@ public class ScheduleController : ControllerBase
     /// <summary>Mark a practice as cancelled. The row stays in the DB so historical broadcasts
     /// that linked to it remain readable and so the cancellation-notification flow can look up
     /// who previously got the reminder. Hides it from the event picker; UI renders it muted.</summary>
+    [RequirePermission(Permissions.EventsCreate)]
     [HttpPost("practices/{id:int}/cancel")]
     public Task<ActionResult<ScheduledGameDto>> CancelPractice(int id, CancellationToken ct) =>
         CancelEventInternal(id, ScheduledEventKind.Practice, ct);
@@ -675,12 +704,14 @@ public class ScheduleController : ControllerBase
     // Same shape as practice rows (date + location + summary), just Kind=Miscellaneous so they
     // surface in their own tab and don't get confused with weekly practice scheduling.
 
+    [RequirePermission(Permissions.EventsCreate)]
     [HttpPost("teams/{teamId:int}/misc-events")]
     public async Task<ActionResult<ScheduledGameDto>> CreateMiscEvent(
         int teamId, [FromBody] SavePracticeRequest request, CancellationToken ct)
     {
         var team = await _db.Teams.Include(t => t.MessageGroup).FirstOrDefaultAsync(t => t.Id == teamId, ct);
         if (team is null) return NotFound();
+        if (!await CanManageTeamAsync(team.Id, ct)) return OutOfScope();
         if (request.StartsAt == default) return BadRequest("Start time is required.");
         if (await ValidateVenueAsync(request.VenueId, ct) is string ve) return BadRequest(ve);
 
@@ -704,6 +735,7 @@ public class ScheduleController : ControllerBase
         return Ok(ToDto(ev, team));
     }
 
+    [RequirePermission(Permissions.EventsCreate)]
     [HttpPut("misc-events/{id:int}")]
     public async Task<ActionResult<ScheduledGameDto>> UpdateMiscEvent(
         int id, [FromBody] SavePracticeRequest request, CancellationToken ct)
@@ -712,6 +744,7 @@ public class ScheduleController : ControllerBase
             .Include(g => g.Team).ThenInclude(t => t!.MessageGroup)
             .FirstOrDefaultAsync(g => g.Id == id && g.Kind == ScheduledEventKind.Miscellaneous, ct);
         if (ev is null) return NotFound();
+        if (!await CanManageTeamAsync(ev.TeamId, ct)) return OutOfScope();
         if (request.StartsAt == default) return BadRequest("Start time is required.");
         if (await ValidateVenueAsync(request.VenueId, ct) is string ve) return BadRequest(ve);
 
@@ -727,17 +760,20 @@ public class ScheduleController : ControllerBase
         return Ok(ToDto(ev, ev.Team!));
     }
 
+    [RequirePermission(Permissions.EventsCreate)]
     [HttpDelete("misc-events/{id:int}")]
     public async Task<IActionResult> DeleteMiscEvent(int id, CancellationToken ct)
     {
         var ev = await _db.ScheduledGames
             .FirstOrDefaultAsync(g => g.Id == id && g.Kind == ScheduledEventKind.Miscellaneous, ct);
         if (ev is null) return NotFound();
+        if (!await CanManageTeamAsync(ev.TeamId, ct)) return OutOfScope();
         _db.ScheduledGames.Remove(ev);
         await _db.SaveChangesAsync(ct);
         return NoContent();
     }
 
+    [RequirePermission(Permissions.EventsCreate)]
     [HttpPost("misc-events/{id:int}/cancel")]
     public Task<ActionResult<ScheduledGameDto>> CancelMiscEvent(int id, CancellationToken ct) =>
         CancelEventInternal(id, ScheduledEventKind.Miscellaneous, ct);
@@ -748,12 +784,14 @@ public class ScheduleController : ControllerBase
     // same table (Kind=Game). They get a synthesized ExternalUid (`manual-game-{guid}`) so the
     // unique (team, uid) index doesn't collide with scrape upserts.
 
+    [RequirePermission(Permissions.EventsCreate)]
     [HttpPost("teams/{teamId:int}/games")]
     public async Task<ActionResult<ScheduledGameDto>> CreateGame(
         int teamId, [FromBody] SaveGameRequest request, CancellationToken ct)
     {
         var team = await _db.Teams.Include(t => t.MessageGroup).FirstOrDefaultAsync(t => t.Id == teamId, ct);
         if (team is null) return NotFound();
+        if (!await CanManageTeamAsync(team.Id, ct)) return OutOfScope();
         if (request.StartsAt == default) return BadRequest("Start time is required.");
 
         // If tied to a tournament, this team must participate in it — either as the legacy
@@ -794,6 +832,7 @@ public class ScheduleController : ControllerBase
         return Ok(ToDto(game, team));
     }
 
+    [RequirePermission(Permissions.EventsCreate)]
     [HttpPut("games/{id:int}")]
     public async Task<ActionResult<ScheduledGameDto>> UpdateGame(
         int id, [FromBody] SaveGameRequest request, CancellationToken ct)
@@ -802,6 +841,7 @@ public class ScheduleController : ControllerBase
             .Include(g => g.Team).ThenInclude(t => t!.MessageGroup)
             .FirstOrDefaultAsync(g => g.Id == id && g.Kind == ScheduledEventKind.Game, ct);
         if (game is null) return NotFound();
+        if (!await CanManageTeamAsync(game.TeamId, ct)) return OutOfScope();
         if (request.StartsAt == default) return BadRequest("Start time is required.");
         if (request.UniformId is int uid && !await _db.Uniforms.AnyAsync(u => u.Id == uid, ct))
             return BadRequest("Uniform not found.");
@@ -825,6 +865,7 @@ public class ScheduleController : ControllerBase
         return Ok(ToDto(game, game.Team!));
     }
 
+    [RequirePermission(Permissions.EventsCreate)]
     [HttpDelete("games/{id:int}")]
     public async Task<IActionResult> DeleteGame(int id, CancellationToken ct)
     {
@@ -833,11 +874,13 @@ public class ScheduleController : ControllerBase
         var game = await _db.ScheduledGames
             .FirstOrDefaultAsync(g => g.Id == id && g.Kind == ScheduledEventKind.Game, ct);
         if (game is null) return NotFound();
+        if (!await CanManageTeamAsync(game.TeamId, ct)) return OutOfScope();
         _db.ScheduledGames.Remove(game);
         await _db.SaveChangesAsync(ct);
         return NoContent();
     }
 
+    [RequirePermission(Permissions.EventsCreate)]
     [HttpPost("games/{id:int}/cancel")]
     public Task<ActionResult<ScheduledGameDto>> CancelGame(int id, CancellationToken ct) =>
         CancelEventInternal(id, ScheduledEventKind.Game, ct);
@@ -849,6 +892,7 @@ public class ScheduleController : ControllerBase
             .Include(g => g.Team).ThenInclude(t => t!.MessageGroup)
             .FirstOrDefaultAsync(g => g.Id == id && g.Kind == kind, ct);
         if (ev is null) return NotFound();
+        if (!await CanManageTeamAsync(ev.TeamId, ct)) return OutOfScope();
         if (!ev.IsCancelled)
         {
             ev.IsCancelled = true;
@@ -858,9 +902,20 @@ public class ScheduleController : ControllerBase
         return Ok(ToDto(ev, ev.Team!));
     }
 
+    /// <summary>Event creators who aren't admins may only touch events of teams they coach.</summary>
+    private async Task<bool> CanManageTeamAsync(int teamId, CancellationToken ct)
+    {
+        var me = await _permissions.GetAsync(User, ct);
+        return me is not null && (me.IsAdmin || me.CoachTeamIds.Contains(teamId));
+    }
+
+    private ObjectResult OutOfScope() =>
+        StatusCode(StatusCodes.Status403Forbidden, "You can only manage events for teams you coach.");
+
     /// <summary>Returns the distinct recipients (phone + name + language) of every prior broadcast
     /// that announced this event. Drives the cancellation-notification flow: admin sees this list
     /// and the Compose tab pre-populates with them as an ad-hoc list.</summary>
+    [Authorize(Roles = Roles.Admin)]
     [HttpGet("events/{id:int}/broadcast-recipients")]
     public async Task<ActionResult<IEnumerable<EventRecipientDto>>> GetEventBroadcastRecipients(int id, CancellationToken ct)
     {
@@ -888,6 +943,7 @@ public class ScheduleController : ControllerBase
 
     /// <summary>The event's team roster with each player's confirmation status (Pending when no row
     /// exists yet) plus headline counts. Drives the "click an event → confirm players" panel.</summary>
+    [Authorize(Roles = Roles.Admin)]
     [HttpGet("events/{eventId:int}/attendance")]
     public async Task<ActionResult<EventAttendanceListDto>> GetAttendance(int eventId, CancellationToken ct)
     {
@@ -941,6 +997,7 @@ public class ScheduleController : ControllerBase
 
     /// <summary>Admin manually sets a rostered player's status for the event. Stamped Source=Admin
     /// so a later parent reply won't overwrite the deliberate call.</summary>
+    [Authorize(Roles = Roles.Admin)]
     [HttpPut("events/{eventId:int}/attendance/{playerId:int}")]
     public async Task<ActionResult<EventAttendanceListDto>> SetAttendance(
         int eventId, int playerId, [FromBody] SetAttendanceRequest request, CancellationToken ct)
@@ -967,6 +1024,7 @@ public class ScheduleController : ControllerBase
 
     /// <summary>Per-event confirmation counts for a team's upcoming events — drives the schedule
     /// row badges + the re-send button's enabled state. Pending = roster minus those who answered.</summary>
+    [Authorize(Roles = Roles.Admin)]
     [HttpGet("teams/{teamId:int}/attendance-summary")]
     public async Task<ActionResult<IEnumerable<EventAttendanceSummaryDto>>> AttendanceSummary(int teamId, CancellationToken ct)
     {
@@ -1003,6 +1061,7 @@ public class ScheduleController : ControllerBase
     /// <summary>Roster of the tournament's team with each player's confirmation status. Players
     /// with no row default to <see cref="AttendanceStatus.Pending"/>. Returned with the same
     /// headline counts the event-attendance UI uses.</summary>
+    [Authorize(Roles = Roles.Admin)]
     [HttpGet("tournaments/{tournamentId:int}/attendance")]
     public async Task<ActionResult<TournamentAttendanceListDto>> GetTournamentAttendance(int tournamentId, CancellationToken ct)
     {
@@ -1047,6 +1106,7 @@ public class ScheduleController : ControllerBase
             items));
     }
 
+    [Authorize(Roles = Roles.Admin)]
     [HttpPut("tournaments/{tournamentId:int}/attendance/{playerId:int}")]
     public async Task<ActionResult<TournamentAttendanceListDto>> SetTournamentAttendance(
         int tournamentId, int playerId, [FromBody] SetAttendanceRequest request, CancellationToken ct)
@@ -1082,6 +1142,7 @@ public class ScheduleController : ControllerBase
     /// <summary>Toggle the per-player Paid flag for a tournament. Drives the
     /// `tournamentfee_*`/`leaguefee_*` reminder fan-out — only players with Paid=false get
     /// the reminder. The row is auto-created when the admin first marks anyone paid.</summary>
+    [Authorize(Roles = Roles.Admin)]
     [HttpPut("tournaments/{tournamentId:int}/attendance/{playerId:int}/paid")]
     public async Task<ActionResult<TournamentAttendanceListDto>> SetTournamentPaid(
         int tournamentId, int playerId, [FromBody] SetTournamentPaidRequest request, CancellationToken ct)
@@ -1110,6 +1171,7 @@ public class ScheduleController : ControllerBase
     /// <summary>Attendance for one team's roster within a tournament. The attendance rows are
     /// per (tournament, player), but the listing is scoped to the picked team so each tournament-
     /// team tab can render its own panel without showing players from other teams.</summary>
+    [Authorize(Roles = Roles.Admin)]
     [HttpGet("tournaments/{tournamentId:int}/teams/{teamId:int}/attendance")]
     public async Task<ActionResult<TournamentAttendanceListDto>> GetTournamentTeamAttendance(
         int tournamentId, int teamId, CancellationToken ct)
@@ -1169,6 +1231,7 @@ public class ScheduleController : ControllerBase
     /// Upcoming games across all teams within the given window. Used by the Compose tab game
     /// picker to autofill template variables.
     /// </summary>
+    [Authorize(Roles = Roles.Admin)]
     [HttpGet("games")]
     public async Task<ActionResult<IEnumerable<ScheduledGameDto>>> ListGames(
         [FromQuery] int days = 14, CancellationToken ct = default)

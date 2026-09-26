@@ -340,6 +340,7 @@ export function TeamScheduleSection({
       })
       if (cancelState.markAfter) {
         if (cancelState.event.kind === 0) await Api.cancelGame(cancelState.event.id)
+        else if (cancelState.event.kind === 2) await Api.cancelMiscEvent(cancelState.event.id)
         else await Api.cancelPractice(cancelState.event.id)
       }
       const sent = b.recipients.filter(r => r.status !== 4 && r.status !== 5).length
