@@ -140,6 +140,8 @@ public class PermissionService : IPermissionService
     {
         if (role == AccessRole.Admin) return "The Admin role always has every permission.";
         if (!Permissions.IsKnown(permission)) return $"Unknown permission '{permission}'.";
+        if (enabled && Permissions.AdminRoleOnly.Contains(permission))
+            return $"'{permission}' is reserved for the Admin role; give the person admin instead.";
 
         var existing = await _db.RolePermissions.FirstOrDefaultAsync(r => r.Role == role && r.Permission == permission, ct);
         if (enabled == (existing is not null)) return null; // already in that state

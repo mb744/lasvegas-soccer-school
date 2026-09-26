@@ -26,6 +26,10 @@ public record UserAccessDto(
     IReadOnlyList<string> Grants,
     IReadOnlyList<string> Effective);
 
+/// <summary>Someone holding at least one individual grant, for the "who has extra permissions"
+/// list.</summary>
+public record UserGrantsDto(string UserId, string Email, string Name, IReadOnlyList<string> Grants);
+
 public record PermissionAuditEntryDto(
     int Id,
     string Action,

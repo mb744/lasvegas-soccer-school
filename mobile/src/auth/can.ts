@@ -14,4 +14,6 @@ export function can(me: Me | null | undefined, ...anyOf: string[]): boolean {
 export const Perm = {
   AdminAccess: 'admin.access',
   EventsCreate: 'events.create',
+  RolesManage: 'roles.manage',
+  UsersManage: 'users.manage',
 } as const;

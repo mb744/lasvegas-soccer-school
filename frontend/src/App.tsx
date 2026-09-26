@@ -19,6 +19,7 @@ import { AdminChatGroupsPage } from './pages/admin/ChatGroupsPage'
 import { AdminAnnouncementsPage } from './pages/admin/AnnouncementsPage'
 import { AdminDrillsPage } from './pages/admin/DrillsPage'
 import { AdminMobileUsagePage } from './pages/admin/MobileUsagePage'
+import { AdminAccessPage } from './pages/admin/AccessPage'
 import { TournamentPublicPage } from './pages/TournamentPublicPage'
 import { ResetPlayerPasswordPage } from './pages/ResetPlayerPasswordPage'
 import { LoginPage } from './pages/LoginPage'
@@ -119,6 +120,10 @@ export default function App() {
             element={<RequireAuth adminOnly><AdminAnnouncementsPage /></RequireAuth>}
           />
           {/* Admins author + assign; team coaches assign to their own teams (page adapts). */}
+          <Route
+            path="/admin/access"
+            element={<RequireAuth permission={['roles.manage', 'users.manage']}><AdminAccessPage /></RequireAuth>}
+          />
           <Route
             path="/admin/drills"
             element={<RequireAuth permission="drills.view"><AdminDrillsPage /></RequireAuth>}

@@ -240,6 +240,24 @@ public class PermissionServiceTests
         Assert.False((await h.Permissions.GetForUserAsync(parent, default)).Has(Permissions.UsersManage));
     }
 
+    [Theory]
+    [InlineData(AccessRole.Parent, Permissions.AdminAccess)]
+    [InlineData(AccessRole.Parent, Permissions.UsersManage)]
+    [InlineData(AccessRole.Coach, Permissions.RolesManage)]
+    public async Task Admin_only_permissions_cannot_be_given_to_a_role(AccessRole role, string permission)
+    {
+        await using var h = new Harness();
+        await h.Permissions.EnsureSeededAsync(default);
+        var admin = await h.UserAsync("admin@test", admin: true);
+        var parent = await h.UserAsync("parent@test");
+
+        Assert.NotNull(await h.Permissions.SetRolePermissionAsync(role, permission, true, Harness.Principal(admin), default));
+        Assert.DoesNotContain(permission, (await h.Permissions.GetRoleMatrixAsync(default))[role]);
+        Assert.False((await h.Permissions.GetForUserAsync(parent, default)).Has(permission));
+        // Turning one off is always allowed (e.g. cleaning up a row that predates the guard).
+        Assert.Null(await h.Permissions.SetRolePermissionAsync(role, permission, false, Harness.Principal(admin), default));
+    }
+
     [Fact]
     public async Task Changes_are_audited_with_actor_and_target()
     {

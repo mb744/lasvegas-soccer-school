@@ -56,6 +56,14 @@ export default function AdminHubScreen() {
       path: '/admin/users',
       permission: Perm.AdminAccess,
     },
+    {
+      key: 'access',
+      icon: '🔐',
+      label: t('admin.hubAccess'),
+      blurb: t('admin.hubAccessBlurb'),
+      path: '/admin/access',
+      permission: Perm.RolesManage,
+    },
   ];
   const tiles = allTiles.filter((tile) => can(me, tile.permission));
 

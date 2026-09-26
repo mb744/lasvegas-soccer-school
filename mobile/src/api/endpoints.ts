@@ -31,6 +31,7 @@ import type {
   UserCoachTeam,
 } from './types';
 import type { TrainingLogin } from './types';
+import type { AccessCatalog, EditableRole, PermissionAuditEntry, UserAccess } from './types';
 import type { EventMediaItem, MediaItem, MediaKind } from './types';
 
 // ---- Auth ----
@@ -462,4 +463,29 @@ export async function fetchUserCoachTeams(id: string): Promise<UserCoachTeam[]> 
  *  deletes cards for teams the caller removed, all keyed on the user's email. */
 export async function setUserCoachTeams(id: string, teamIds: number[]): Promise<void> {
   await api.put(`/admin/users/${encodeURIComponent(id)}/coach-teams`, { teamIds });
+}
+
+// ---- Access control ----
+
+export async function fetchAccessCatalog(): Promise<AccessCatalog> {
+  const { data } = await api.get<AccessCatalog>('/admin/access/catalog');
+  return data;
+}
+
+export async function setRolePermission(role: EditableRole, permission: string, enabled: boolean): Promise<void> {
+  await api.put(`/admin/access/roles/${role}/permissions/${encodeURIComponent(permission)}`, { enabled });
+}
+
+export async function fetchUserAccess(userId: string): Promise<UserAccess> {
+  const { data } = await api.get<UserAccess>(`/admin/access/users/${encodeURIComponent(userId)}`);
+  return data;
+}
+
+export async function setUserGrant(userId: string, permission: string, enabled: boolean): Promise<void> {
+  await api.put(`/admin/access/users/${encodeURIComponent(userId)}/grants/${encodeURIComponent(permission)}`, { enabled });
+}
+
+export async function fetchAccessAudit(take = 100): Promise<PermissionAuditEntry[]> {
+  const { data } = await api.get<PermissionAuditEntry[]>(`/admin/access/audit?take=${take}`);
+  return data;
 }

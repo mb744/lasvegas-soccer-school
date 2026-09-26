@@ -121,5 +121,12 @@ public static class Permissions
 
     public static bool IsKnown(string key) => Keys.Contains(key);
 
+    /// <summary>Permissions that only the Admin role may hold. Turning one on for Coach or Parent
+    /// would hand every coach or every parent control of the site, so the role editor refuses.</summary>
+    public static readonly IReadOnlySet<string> AdminRoleOnly = new HashSet<string>(StringComparer.Ordinal)
+    {
+        AdminAccess, UsersManage, RolesManage,
+    };
+
     public static PermissionInfo? Find(string key) => All.FirstOrDefault(p => p.Key == key);
 }
