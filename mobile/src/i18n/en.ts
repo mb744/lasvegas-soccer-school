@@ -377,6 +377,19 @@ export const en = {
     verifySent: 'Sent! Check your inbox (and spam folder).',
     verifyFailed: 'Could not send right now. Try again in a few minutes.',
   },
+  update: {
+    availableTitle: 'Update available',
+    availableBody: 'Version {{version}} of the LVSS app is available with fixes and new features. Update now?',
+    update: 'Update',
+    later: 'Later',
+    readyTitle: 'Update ready',
+    readyBody: 'A new version of the app was downloaded. Restart now to use it?',
+    restart: 'Restart',
+    requiredTitle: 'Please update the app',
+    requiredBody: 'This version of the LVSS app is no longer supported. Update it to keep using the app.',
+    requiredBodyNoStore: 'This version of the LVSS app is no longer supported. Please install the latest version.',
+    checkAgain: 'I’ve updated — check again',
+  },
   training: {
     heading: 'Daily Training app',
     intro:

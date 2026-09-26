@@ -516,3 +516,18 @@ export async function removeFamilyMember(member: FamilyMember): Promise<void> {
   if (member.contactId !== null) await api.delete(`/mobile/family/members/${member.contactId}`);
   else if (member.collaboratorId !== null) await api.delete(`/mobile/family/links/${member.collaboratorId}`);
 }
+
+// ---- App version (update prompts) ----
+
+export interface AppVersionInfo {
+  /** Version live in the store; null when unknown or not listed (Android today). */
+  latestVersion: string | null;
+  /** Oldest allowed version; older installs must update. */
+  minimumVersion: string | null;
+  storeUrl: string | null;
+}
+
+export async function fetchAppVersion(platform: 'ios' | 'android'): Promise<AppVersionInfo> {
+  const { data } = await api.get<AppVersionInfo>('/mobile/app-version', { params: { platform } });
+  return data;
+}

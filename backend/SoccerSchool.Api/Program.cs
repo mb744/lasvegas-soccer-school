@@ -220,6 +220,7 @@ builder.Services.AddHostedService<TwilioMessageReconcilerBackground>();
 builder.Services.AddScoped<IMobileTokenService, MobileTokenService>();
 builder.Services.AddScoped<IEmailVerificationService, EmailVerificationService>();
 builder.Services.AddScoped<IParentAccountResolver, ParentAccountResolver>();
+builder.Services.AddSingleton<IAppStoreVersionService, AppStoreVersionService>();
 builder.Services.AddScoped<IFamilyService, FamilyService>();
 builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddSingleton<IMediaStorage, MediaStorage>();

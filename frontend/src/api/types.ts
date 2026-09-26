@@ -376,6 +376,15 @@ export interface PermissionAuditEntry {
   at: string
 }
 
+/** Settings → Mobile app. */
+export interface MobileAppSettings {
+  /** Oldest allowed app version; older installs must update. Null = no minimum. */
+  minimumVersion: string | null
+  /** Version live in the App Store right now (null when Apple couldn't be reached). */
+  appStoreVersion: string | null
+  updatedAt: string | null
+}
+
 export interface UserSummary {
   id: string
   email: string
