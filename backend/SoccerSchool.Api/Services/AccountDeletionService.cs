@@ -64,6 +64,8 @@ public class AccountDeletionService : IAccountDeletionService
         // 2. Delete push devices.
         var devices = await _db.DeviceTokens.Where(d => d.UserId == userId).ToListAsync(ct);
         _db.DeviceTokens.RemoveRange(devices);
+        var installs = await _db.MobileAppInstalls.Where(i => i.UserId == userId).ToListAsync(ct);
+        _db.MobileAppInstalls.RemoveRange(installs);
 
         // Individual permission grants (e.g. Drill creator) end with the account.
         var grants = await _db.UserPermissionGrants.Where(g => g.UserId == userId).ToListAsync(ct);

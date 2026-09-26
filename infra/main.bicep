@@ -38,7 +38,7 @@ param acsSmsFromNumber string = ''
 param acsCustomEmailDomain string = ''
 
 @description('Local-part of the sender on the custom email domain. Must already exist as a Sender Username on that domain (created via the Azure portal).')
-param acsCustomEmailLocalPart string = 'registration'
+param acsCustomEmailLocalPart string = 'info'
 
 @description('Twilio Account SID. When provided alongside auth token + from number, OutreachSender uses Twilio for SMS instead of ACS.')
 param twilioAccountSid string = ''

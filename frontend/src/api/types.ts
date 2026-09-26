@@ -316,6 +316,12 @@ export interface MobileUsageRow {
   deviceCount: number
   lastLoginAt: string | null
   accountCreatedAt: string | null
+  /** At least one device has a live push token. */
+  pushEnabled: boolean
+  /** granted / denied / undetermined, from the newest app check-in; null for apps too old to check in. */
+  pushPermission: string | null
+  pushError: string | null
+  appVersion: string | null
 }
 
 export interface UserSummary {

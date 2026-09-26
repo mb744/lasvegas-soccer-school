@@ -345,7 +345,7 @@ gh variable set ENABLE_ACS --body "true" --repo <owner>/<repo>
 # App secrets/env vars.
 ```
 
-After deploy, admin's "Send registration link" via **Email** works immediately. The from-address is functional but not branded — to send from `registration@lasvegassoccerschool.org`, add a customer-managed domain to the Email Service (portal → Email Communication Service → Provision domains → Add custom domain) and verify ownership via DNS records.
+After deploy, admin's "Send registration link" via **Email** works immediately. The from-address is functional but not branded — to send from `info@lasvegassoccerschool.org`, add a customer-managed domain to the Email Service (portal → Email Communication Service → Provision domains → Add custom domain) and verify ownership via DNS records.
 
 #### SMS — manual phone-number purchase
 

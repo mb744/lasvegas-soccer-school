@@ -103,6 +103,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
     public DbSet<ChatMessageReport> ChatMessageReports => Set<ChatMessageReport>();
     public DbSet<ChatUserBlock> ChatUserBlocks => Set<ChatUserBlock>();
     public DbSet<DeviceToken> DeviceTokens => Set<DeviceToken>();
+    public DbSet<MobileAppInstall> MobileAppInstalls => Set<MobileAppInstall>();
     public DbSet<MobileRefreshToken> MobileRefreshTokens => Set<MobileRefreshToken>();
 
     // Daily Training app (kids): player logins + admin-authored drills and their assignments.
@@ -809,6 +810,16 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
                 .OnDelete(DeleteBehavior.Cascade);
             // One row per real device — Expo tokens uniquely identify an install.
             b.HasIndex(d => d.ExpoPushToken).IsUnique();
+        });
+
+        modelBuilder.Entity<MobileAppInstall>(b =>
+        {
+            b.HasOne(i => i.User)
+                .WithMany()
+                .HasForeignKey(i => i.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(i => i.InstallationId).IsUnique();
+            b.HasIndex(i => i.UserId);
         });
 
         modelBuilder.Entity<MobileRefreshToken>(b =>

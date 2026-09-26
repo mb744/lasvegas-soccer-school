@@ -1,8 +1,13 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { AppState } from 'react-native';
 import { fetchMe, login as apiLogin, logout as apiLogout } from '../api/endpoints';
 import { registerTokenListener, setTokens } from '../api/client';
 import type { Me, TokenResponse } from '../api/types';
 import { clearTokens, loadTokens, saveTokens } from './storage';
+import { checkIn } from '../push/register';
+
+/** How often a foregrounded app re-checks in (launches and sign-ins always do). */
+const CHECK_IN_INTERVAL_MS = 60 * 60 * 1000;
 
 interface AuthState {
   me: Me | null;
@@ -56,6 +61,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     })();
   }, []);
+
+  // Check in whenever a login becomes active (sign-in or restored session), and again when the app
+  // returns to the foreground after a while. Keeps "Last seen" current and registers push.
+  const lastCheckIn = useRef(0);
+  const userId = me?.userId;
+  useEffect(() => {
+    if (!userId) return;
+    lastCheckIn.current = Date.now();
+    void checkIn({ askPermission: true });
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active' && Date.now() - lastCheckIn.current > CHECK_IN_INTERVAL_MS) {
+        lastCheckIn.current = Date.now();
+        void checkIn();
+      }
+    });
+    return () => sub.remove();
+  }, [userId]);
 
   const adoptTokens = useCallback(async (res: TokenResponse) => {
     const tokens = { accessToken: res.accessToken, refreshToken: res.refreshToken };

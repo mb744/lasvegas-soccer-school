@@ -24,13 +24,11 @@ public class AdminReportsController : ControllerBase
         _db = db;
     }
 
-    /// <summary>Every parent-side login with a signal on mobile-app usage. "Has the app" is
-    /// derived from a live DeviceToken row (Expo re-registers on every cold-start; tokens Expo
-    /// reports as unregistered get deleted server-side, so a present row means the app is
-    /// installed today). Mobile-login timestamp comes from the newest issued refresh token — even
-    /// revoked/rotated ones are useful because they tell you when they last actually signed in
-    /// from the app. Rows are ordered "most recently seen" first so admins can scan for who's
-    /// active.</summary>
+    /// <summary>Every parent-side login with a signal on mobile-app usage. "Has the app" means
+    /// any of: an install check-in (the app sends one on every signed-in launch, notifications or
+    /// not), a push token, or a mobile session (older app versions that don't check in). Push
+    /// status is reported separately so parents who declined notifications still show up. Rows
+    /// are ordered "most recently seen" first so admins can scan for who's active.</summary>
     [HttpGet("mobile-usage")]
     public async Task<ActionResult<IEnumerable<MobileUsageRow>>> MobileUsage(CancellationToken ct)
     {
@@ -53,13 +51,25 @@ public class AdminReportsController : ControllerBase
                 LastSeenAt = _db.Set<DeviceToken>()
                     .Where(d => d.UserId == u.Id)
                     .Max(d => (DateTime?)d.LastSeenAt),
-                HasIos = _db.Set<DeviceToken>().Any(d => d.UserId == u.Id && d.Platform == DevicePlatform.Ios),
-                HasAndroid = _db.Set<DeviceToken>().Any(d => d.UserId == u.Id && d.Platform == DevicePlatform.Android),
+                HasIos = _db.Set<DeviceToken>().Any(d => d.UserId == u.Id && d.Platform == DevicePlatform.Ios)
+                    || _db.MobileAppInstalls.Any(i => i.UserId == u.Id && i.Platform == DevicePlatform.Ios),
+                HasAndroid = _db.Set<DeviceToken>().Any(d => d.UserId == u.Id && d.Platform == DevicePlatform.Android)
+                    || _db.MobileAppInstalls.Any(i => i.UserId == u.Id && i.Platform == DevicePlatform.Android),
+                InstallCount = _db.MobileAppInstalls.Count(i => i.UserId == u.Id),
+                FirstCheckInAt = _db.MobileAppInstalls.Where(i => i.UserId == u.Id).Min(i => (DateTime?)i.FirstSeenAt),
+                LastCheckInAt = _db.MobileAppInstalls.Where(i => i.UserId == u.Id).Max(i => (DateTime?)i.LastSeenAt),
+                LatestInstall = _db.MobileAppInstalls.Where(i => i.UserId == u.Id)
+                    .OrderByDescending(i => i.LastSeenAt)
+                    .Select(i => new { i.AppVersion, i.BuildNumber, i.PushPermission, i.PushError })
+                    .FirstOrDefault(),
                 LastMobileLoginAt = _db.Set<MobileRefreshToken>()
                     .Where(m => m.UserId == u.Id)
                     .Max(m => (DateTime?)m.CreatedAt),
             })
             .ToListAsync(ct);
+
+        static DateTime? Earliest(params DateTime?[] values) => values.Where(v => v.HasValue).Min();
+        static DateTime? Latest(params DateTime?[] values) => values.Where(v => v.HasValue).Max();
 
         var result = rows
             .Select(r => new MobileUsageRow(
@@ -69,15 +79,23 @@ public class AdminReportsController : ControllerBase
                     ? (r.Email ?? "")
                     : $"{r.Account?.FirstName} {r.Account?.LastName}".Trim(),
                 r.PlayerCount,
-                r.DeviceCount > 0,
-                r.FirstInstalledAt,
-                r.LastSeenAt,
+                r.InstallCount > 0 || r.DeviceCount > 0 || r.LastMobileLoginAt != null,
+                Earliest(r.FirstCheckInAt, r.FirstInstalledAt),
+                Latest(r.LastCheckInAt, r.LastSeenAt, r.LastMobileLoginAt),
                 r.LastMobileLoginAt,
                 r.HasIos,
                 r.HasAndroid,
-                r.DeviceCount,
+                Math.Max(r.DeviceCount, r.InstallCount),
                 r.LastLoginAt,
-                r.Account?.CreatedAt))
+                r.Account?.CreatedAt,
+                r.DeviceCount > 0,
+                r.LatestInstall?.PushPermission,
+                r.LatestInstall?.PushError,
+                r.LatestInstall?.AppVersion is null
+                    ? null
+                    : string.IsNullOrEmpty(r.LatestInstall.BuildNumber)
+                        ? r.LatestInstall.AppVersion
+                        : $"{r.LatestInstall.AppVersion} ({r.LatestInstall.BuildNumber})"))
             // Active mobile users first (most recent LastSeenAt), then the never-installed pile.
             .OrderByDescending(r => r.HasMobileApp)
             .ThenByDescending(r => r.LastSeenAt ?? DateTime.MinValue)

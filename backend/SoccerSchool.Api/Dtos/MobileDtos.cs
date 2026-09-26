@@ -217,6 +217,34 @@ public record RegisterDeviceRequest
     public DevicePlatform Platform { get; init; } = DevicePlatform.Unknown;
 }
 
+/// <summary>Sent by the app on every signed-in launch. Push fields describe this launch's attempt:
+/// a token when it got one, otherwise the permission state and the error, if any.</summary>
+public record DeviceCheckInRequest
+{
+    [Required, MaxLength(64)]
+    public string InstallationId { get; init; } = string.Empty;
+
+    public DevicePlatform Platform { get; init; } = DevicePlatform.Unknown;
+
+    [MaxLength(32)]
+    public string? AppVersion { get; init; }
+
+    [MaxLength(32)]
+    public string? BuildNumber { get; init; }
+
+    [MaxLength(32)]
+    public string? OsVersion { get; init; }
+
+    [MaxLength(16)]
+    public string? PushPermission { get; init; }
+
+    [MaxLength(256)]
+    public string? ExpoPushToken { get; init; }
+
+    [MaxLength(500)]
+    public string? PushError { get; init; }
+}
+
 // ---- Admin chat-group management (web) ----
 
 public record ChatGroupAdminDto(

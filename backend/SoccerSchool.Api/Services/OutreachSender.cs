@@ -64,11 +64,9 @@ public class OutreachSender : IOutreachSender
             var recipients = new EmailRecipients(new[] { new EmailAddress(outreach.Email!) });
             var message = new EmailMessage(_acs.EmailFromAddress, recipients, content);
 
-            var op = await client.SendAsync(WaitUntil.Completed, message, ct);
-            var status = op.Value.Status;
-            return status == EmailSendStatus.Succeeded
-                ? new SendResult(true, $"Email queued ({status}).")
-                : new SendResult(false, $"Email status: {status}.");
+            // Return once ACS accepts the message; see EmailSender for why we don't wait for delivery.
+            await client.SendAsync(WaitUntil.Started, message, ct);
+            return new SendResult(true, "Email queued.");
         }
         catch (RequestFailedException ex)
         {

@@ -202,6 +202,23 @@ export async function registerDevice(expoPushToken: string, platform: DevicePlat
   await api.post('/mobile/devices', { expoPushToken, platform });
 }
 
+export interface DeviceCheckIn {
+  installationId: string;
+  platform: DevicePlatform;
+  appVersion: string | null;
+  buildNumber: string | null;
+  osVersion: string | null;
+  /** granted / denied / undetermined, or 'unavailable' on a simulator. */
+  pushPermission: string;
+  expoPushToken: string | null;
+  pushError: string | null;
+}
+
+/** Every signed-in launch: records this install, and its push token when it has one. */
+export async function checkInDevice(req: DeviceCheckIn): Promise<void> {
+  await api.post('/mobile/devices/check-in', req);
+}
+
 export async function unregisterDevice(expoPushToken: string): Promise<void> {
   await api.delete('/mobile/devices', { data: { expoPushToken } });
 }

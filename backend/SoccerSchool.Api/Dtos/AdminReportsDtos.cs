@@ -6,8 +6,8 @@ public record MobileUsageRow(
     string Email,
     string Name,
     int PlayerCount,
-    /// <summary>True when at least one DeviceToken row exists for this user. The push-sender
-    /// cleans up unregistered tokens, so a live row is a solid "the app is installed" signal.</summary>
+    /// <summary>True when the user has signed into the parent app: an install check-in, a push
+    /// token or a mobile session. Doesn't depend on notifications being allowed.</summary>
     bool HasMobileApp,
     DateTime? FirstInstalledAt,
     DateTime? LastSeenAt,
@@ -21,4 +21,13 @@ public record MobileUsageRow(
     /// anywhere" case where the family registered on the web but never signed back in.</summary>
     DateTime? LastLoginAt,
     /// <summary>ParentAccount.CreatedAt — the moment the family opened its account.</summary>
-    DateTime? AccountCreatedAt);
+    DateTime? AccountCreatedAt,
+    /// <summary>True when at least one device has a live push token (notifications reach them).</summary>
+    bool PushEnabled,
+    /// <summary>From the newest install check-in: granted / denied / undetermined. Null when the
+    /// user's app is too old to check in.</summary>
+    string? PushPermission,
+    /// <summary>Why the newest install couldn't get a push token, if it couldn't.</summary>
+    string? PushError,
+    /// <summary>App version on the newest install check-in, e.g. "1.4.0 (31)".</summary>
+    string? AppVersion);

@@ -31,7 +31,49 @@ public class MobileDevicesController : ControllerBase
         if (string.IsNullOrEmpty(userId)) return Unauthorized();
         if (string.IsNullOrWhiteSpace(req.ExpoPushToken)) return BadRequest("Push token is required.");
 
-        var token = req.ExpoPushToken.Trim();
+        await UpsertPushTokenAsync(userId, req.ExpoPushToken.Trim(), req.Platform, ct);
+        await _db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
+    /// <summary>Called by the app on every signed-in launch, whether or not it got a push token.
+    /// Records the install (version, platform, notification permission, push error) so the admin
+    /// usage report sees parents who declined notifications too, and refreshes the push token when
+    /// there is one.</summary>
+    [HttpPost("check-in")]
+    public async Task<IActionResult> CheckIn([FromBody] DeviceCheckInRequest req, CancellationToken ct)
+    {
+        var userId = _users.GetUserId(User);
+        if (string.IsNullOrEmpty(userId)) return Unauthorized();
+        if (string.IsNullOrWhiteSpace(req.InstallationId)) return BadRequest("Installation id is required.");
+
+        var now = DateTime.UtcNow;
+        var installationId = req.InstallationId.Trim();
+        var token = string.IsNullOrWhiteSpace(req.ExpoPushToken) ? null : req.ExpoPushToken.Trim();
+
+        var install = await _db.MobileAppInstalls.FirstOrDefaultAsync(i => i.InstallationId == installationId, ct);
+        if (install is null)
+        {
+            install = new MobileAppInstall { InstallationId = installationId, FirstSeenAt = now };
+            _db.MobileAppInstalls.Add(install);
+        }
+        install.UserId = userId;
+        install.Platform = req.Platform;
+        install.AppVersion = Clean(req.AppVersion);
+        install.BuildNumber = Clean(req.BuildNumber);
+        install.OsVersion = Clean(req.OsVersion);
+        install.PushPermission = Clean(req.PushPermission);
+        install.HasPushToken = token is not null;
+        install.PushError = token is null ? Clean(req.PushError) : null;
+        install.LastSeenAt = now;
+
+        if (token is not null) await UpsertPushTokenAsync(userId, token, req.Platform, ct);
+        await _db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
+    private async Task UpsertPushTokenAsync(string userId, string token, DevicePlatform platform, CancellationToken ct)
+    {
         var existing = await _db.DeviceTokens.FirstOrDefaultAsync(d => d.ExpoPushToken == token, ct);
         if (existing is null)
         {
@@ -39,19 +81,19 @@ public class MobileDevicesController : ControllerBase
             {
                 UserId = userId,
                 ExpoPushToken = token,
-                Platform = req.Platform,
+                Platform = platform,
             });
         }
         else
         {
             // Token can move to a different login (shared device / re-login). Keep ownership current.
             existing.UserId = userId;
-            existing.Platform = req.Platform;
+            existing.Platform = platform;
             existing.LastSeenAt = DateTime.UtcNow;
         }
-        await _db.SaveChangesAsync(ct);
-        return NoContent();
     }
+
+    private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     /// <summary>Unregister on logout so a signed-out device stops receiving the family's pushes.</summary>
     [HttpDelete]
