@@ -2034,6 +2034,10 @@ export interface AdminDrill {
   isActive: boolean
   assignmentCount: number
   updatedAt: string
+  /** Author's display name; null for drills created before authorship was tracked. */
+  createdByName: string | null
+  /** Caller may edit/archive/delete: admins always, coaches only drills they wrote. */
+  canEdit: boolean
 }
 
 export interface SaveDrillRequest {

@@ -55,8 +55,11 @@ public interface IPermissionService
 
 public class PermissionService : IPermissionService
 {
-    /// <summary>Short enough that a revoke takes effect almost immediately even on another server
-    /// instance; changes made through this service invalidate the local cache at once.</summary>
+    /// <summary>Only data this service owns is cached — the role matrix and individual grants —
+    /// and every change made through it invalidates the local cache at once; the TTL bounds
+    /// staleness on another server instance. Admin membership and coach links are NOT cached: they
+    /// change in other places (Users page, team coach cards, email confirmation) and must apply on
+    /// the next request.</summary>
     private static readonly TimeSpan CacheFor = TimeSpan.FromSeconds(30);
     private const string RoleMatrixKey = "rbac:role-matrix";
 
@@ -88,14 +91,9 @@ public class PermissionService : IPermissionService
         var userId = _users.GetUserId(principal);
         if (string.IsNullOrEmpty(userId)) return null;
 
-        var cacheKey = $"rbac:user:{userId}:{Interlocked.Read(ref _generation)}";
-        if (_cache.TryGetValue(cacheKey, out EffectivePermissions? cached) && cached is not null) return cached;
-
         var user = await _users.FindByIdAsync(userId);
         if (user is null) return null;
-        var result = await GetForUserAsync(user, ct);
-        _cache.Set(cacheKey, result, CacheFor);
-        return result;
+        return await GetForUserAsync(user, ct);
     }
 
     public async Task<EffectivePermissions> GetForUserAsync(ApplicationUser user, CancellationToken ct)
@@ -156,12 +154,19 @@ public class PermissionService : IPermissionService
         return null;
     }
 
-    public async Task<IReadOnlyList<string>> GetUserGrantsAsync(string userId, CancellationToken ct) =>
-        await _db.UserPermissionGrants.AsNoTracking()
+    public async Task<IReadOnlyList<string>> GetUserGrantsAsync(string userId, CancellationToken ct)
+    {
+        var key = $"rbac:grants:{userId}:{Interlocked.Read(ref _generation)}";
+        if (_cache.TryGetValue(key, out IReadOnlyList<string>? cached) && cached is not null) return cached;
+
+        IReadOnlyList<string> grants = await _db.UserPermissionGrants.AsNoTracking()
             .Where(g => g.UserId == userId)
             .OrderBy(g => g.Permission)
             .Select(g => g.Permission)
             .ToListAsync(ct);
+        _cache.Set(key, grants, CacheFor);
+        return grants;
+    }
 
     public async Task<string?> SetUserGrantAsync(string userId, string permission, bool enabled, ClaimsPrincipal actor, CancellationToken ct)
     {

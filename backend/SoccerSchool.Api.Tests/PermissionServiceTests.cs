@@ -203,6 +203,27 @@ public class PermissionServiceTests
     }
 
     [Fact]
+    public async Task Coach_link_and_admin_role_made_elsewhere_apply_on_the_next_check()
+    {
+        // Coach links (Users page, team coach cards, email confirmation) and admin membership are
+        // changed outside PermissionService, so they must never be served from a stale cache.
+        await using var h = new Harness();
+        await h.Permissions.EnsureSeededAsync(default);
+        var user = await h.UserAsync("later-coach@test");
+        var principal = Harness.Principal(user);
+
+        Assert.False((await h.Permissions.GetAsync(principal, default))!.Has(Permissions.DrillsView));
+
+        await h.CoachAsync(user);
+        Assert.True((await h.Permissions.GetAsync(principal, default))!.Has(Permissions.DrillsView));
+
+        var roles = h.Services.GetRequiredService<RoleManager<IdentityRole>>();
+        if (!await roles.RoleExistsAsync(Roles.Admin)) await roles.CreateAsync(new IdentityRole(Roles.Admin));
+        await h.Users.AddToRoleAsync(user, Roles.Admin);
+        Assert.True((await h.Permissions.GetAsync(principal, default))!.Has(Permissions.UsersManage));
+    }
+
+    [Fact]
     public async Task Invalid_changes_are_rejected()
     {
         await using var h = new Harness();

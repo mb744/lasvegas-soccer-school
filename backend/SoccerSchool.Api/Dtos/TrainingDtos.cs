@@ -98,7 +98,13 @@ public record AdminDrillDto(
     string? VideoUrl,
     bool IsActive,
     int AssignmentCount,
-    DateTime UpdatedAt);
+    DateTime UpdatedAt,
+    /// <summary>Display name of the author (parent-profile name, else email); null for drills
+    /// created before authorship was tracked.</summary>
+    string? CreatedByName,
+    /// <summary>Whether the caller may edit/archive/delete this drill: admins always, coaches only
+    /// their own.</summary>
+    bool CanEdit);
 
 public record SaveDrillRequest
 {
