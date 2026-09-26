@@ -15,11 +15,13 @@ public class AdminUsersController : ControllerBase
 {
     private readonly UserManager<ApplicationUser> _users;
     private readonly AppDbContext _db;
+    private readonly Services.IPermissionService _permissions;
 
-    public AdminUsersController(UserManager<ApplicationUser> users, AppDbContext db)
+    public AdminUsersController(UserManager<ApplicationUser> users, AppDbContext db, Services.IPermissionService permissions)
     {
         _users = users;
         _db = db;
+        _permissions = permissions;
     }
 
     [HttpGet]
@@ -158,6 +160,7 @@ public class AdminUsersController : ControllerBase
             ? await _users.AddToRoleAsync(user, Roles.Admin)
             : await _users.RemoveFromRoleAsync(user, Roles.Admin);
         if (!result.Succeeded) return BadRequest(string.Join("; ", result.Errors.Select(e => e.Description)));
+        await _permissions.AuditAdminRoleChangeAsync(user, req.IsAdmin, User, ct);
         return NoContent();
     }
 

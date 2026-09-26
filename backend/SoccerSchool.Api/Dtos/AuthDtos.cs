@@ -45,7 +45,10 @@ public record MeResponse(
     /// <summary>True when a team's coach card is linked to this login (see CoachScopeService).</summary>
     bool IsCoach,
     /// <summary>False until the login proves it owns its email (see EmailVerificationService).</summary>
-    bool EmailConfirmed
+    bool EmailConfirmed,
+    /// <summary>Effective permission keys (see Auth/Permissions.cs) for showing/hiding UI. The
+    /// server enforces them independently.</summary>
+    IReadOnlyList<string> Permissions
 );
 
 public record ConfirmEmailRequest

@@ -410,7 +410,16 @@ public class MobileAuthController : ControllerBase
             coachTeamIds.Count > 0,
             coachTeamIds,
             players,
-            user.EmailConfirmed);
+            user.EmailConfirmed,
+            await PermissionKeysAsync(user, ct));
+    }
+
+    /// <summary>Effective permission keys (catalogue order) so the app can hide what the user can't
+    /// do. The server still enforces every permission itself.</summary>
+    private async Task<IReadOnlyList<string>> PermissionKeysAsync(ApplicationUser user, CancellationToken ct)
+    {
+        var effective = await HttpContext.RequestServices.GetRequiredService<IPermissionService>().GetForUserAsync(user, ct);
+        return Permissions.All.Select(p => p.Key).Where(effective.Has).ToList();
     }
 
     /// <summary>Pulls the <c>sub</c> claim out of a freshly-minted access token without re-validating

@@ -189,6 +189,10 @@ if (jwt.IsConfigured)
 }
 
 builder.Services.AddAuthorization();
+// Role-based access control: [RequirePermission(...)] policies resolved per request (Auth/Permissions.cs).
+builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<Microsoft.AspNetCore.Authorization.IAuthorizationPolicyProvider, PermissionPolicyProvider>();
+builder.Services.AddScoped<Microsoft.AspNetCore.Authorization.IAuthorizationHandler, PermissionHandler>();
 
 builder.Services.AddScoped<IOutreachSender, OutreachSender>();
 builder.Services.AddScoped<IMessageSender, MessageSender>();
@@ -229,6 +233,7 @@ builder.Services.AddScoped<IPasswordHasher<PlayerLogin>, PasswordHasher<PlayerLo
 builder.Services.AddScoped<IPlayerTokenService, PlayerTokenService>();
 builder.Services.AddScoped<ITrainingPlanService, TrainingPlanService>();
 builder.Services.AddScoped<ICoachScopeService, CoachScopeService>();
+builder.Services.AddScoped<IPermissionService, PermissionService>();
 // SignalR powers the real-time chat fan-out on top of the persisted ChatMessages history.
 builder.Services.AddSignalR();
 
@@ -255,6 +260,7 @@ using (var scope = app.Services.CreateScope())
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     await MigrateWithRetryAsync(db, app.Logger);
     await SeedAdminAsync(scope.ServiceProvider, app.Logger);
+    await scope.ServiceProvider.GetRequiredService<IPermissionService>().EnsureSeededAsync(CancellationToken.None);
     await SeedWhatsAppTemplatesAsync(db, app.Logger);
     await SeedPhraseTranslationsAsync(db, app.Logger);
 }

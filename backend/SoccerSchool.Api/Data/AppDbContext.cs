@@ -113,6 +113,12 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
     public DbSet<DrillAssignment> DrillAssignments => Set<DrillAssignment>();
     public DbSet<DrillCompletion> DrillCompletions => Set<DrillCompletion>();
 
+    // Role-based access control (see Auth/Permissions.cs and PermissionService).
+    public DbSet<RolePermission> RolePermissions => Set<RolePermission>();
+    public DbSet<UserPermissionGrant> UserPermissionGrants => Set<UserPermissionGrant>();
+    public DbSet<KnownPermission> KnownPermissions => Set<KnownPermission>();
+    public DbSet<PermissionAuditEntry> PermissionAuditEntries => Set<PermissionAuditEntry>();
+
     /// <summary>Backing store for the ASP.NET Core data-protection key ring (cookie encryption
     /// keys). Persisting these in SQL keeps auth cookies valid across container restarts.</summary>
     public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
@@ -897,6 +903,29 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
             // A drill can be completed once per day; also the streak/progress lookup key.
             b.HasIndex(c => new { c.PlayerId, c.Date, c.DrillId }).IsUnique();
             b.HasIndex(c => c.DrillId);
+        });
+
+        // -------- Role-based access control --------
+
+        modelBuilder.Entity<RolePermission>(b =>
+        {
+            b.HasIndex(r => new { r.Role, r.Permission }).IsUnique();
+        });
+
+        modelBuilder.Entity<UserPermissionGrant>(b =>
+        {
+            // Only path from AspNetUsers into this table, so a plain cascade is allowed.
+            b.HasOne(g => g.User)
+                .WithMany()
+                .HasForeignKey(g => g.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(g => new { g.UserId, g.Permission }).IsUnique();
+        });
+
+        modelBuilder.Entity<PermissionAuditEntry>(b =>
+        {
+            b.HasIndex(e => e.At);
+            b.HasIndex(e => e.TargetUserId);
         });
     }
 }
