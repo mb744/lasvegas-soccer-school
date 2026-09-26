@@ -68,13 +68,13 @@ public class EmailSender : IEmailSender
                 message.ReplyTo.Add(new EmailAddress(_acs.EmailReplyToAddress, displayName));
             }
 
-            var op = await client.SendAsync(WaitUntil.Completed, message, ct);
-            var status = op.Value.Status;
-            // op.Id is the ACS operation tracking id (used for status callbacks); the per-message
-            // result on op.Value doesn't expose an id in this SDK version.
-            return status == EmailSendStatus.Succeeded
-                ? new EmailSendResult(true, op.Id, $"Email queued ({status}).")
-                : new EmailSendResult(false, op.Id, $"Email status: {status}.");
+            // Return once ACS accepts the message (HTTP 202). Waiting for delivery polls for up to a
+            // minute, long enough for the calling request (a Twilio webhook, a signup) to end and
+            // cancel it, which logged "A task was canceled" even when the email went out. Bad
+            // addresses and config errors still throw here at submission.
+            var op = await client.SendAsync(WaitUntil.Started, message, ct);
+            // op.Id is the ACS operation tracking id (used for status callbacks).
+            return new EmailSendResult(true, op.Id, "Email queued.");
         }
         catch (RequestFailedException ex)
         {

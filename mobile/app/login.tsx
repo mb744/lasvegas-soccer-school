@@ -14,7 +14,6 @@ import { Redirect } from 'expo-router';
 import Constants from 'expo-constants';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../src/auth/AuthContext';
-import { registerForPush } from '../src/push/register';
 import {
   facebookConfigured,
   googleConfigured,
@@ -38,7 +37,6 @@ export default function LoginScreen() {
     setBusy(true);
     try {
       await signIn(email.trim(), password);
-      void registerForPush();
     } catch (e: any) {
       // The backend returns a friendly message for OAuth-only accounts and for locked-out
       // accounts — surface it so the parent knows to tap the Google/Facebook button instead
@@ -68,7 +66,6 @@ export default function LoginScreen() {
     try {
       const res = kind === 'google' ? await signInWithGoogle() : await signInWithFacebook();
       await signInWithTokens(res);
-      void registerForPush();
     } catch (e: any) {
       // 'cancel'/'dismiss' means the user closed the browser — silent.
       const msg = String(e?.message ?? '');

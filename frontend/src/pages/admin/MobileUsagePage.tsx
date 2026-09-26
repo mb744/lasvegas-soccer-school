@@ -96,6 +96,7 @@ export function AdminMobileUsagePage() {
                   <th className="py-2 pr-4">{t('admin.mobileUsageColKids')}</th>
                   <th className="py-2 pr-4">{t('admin.mobileUsageColApp')}</th>
                   <th className="py-2 pr-4">{t('admin.mobileUsageColPlatform')}</th>
+                  <th className="py-2 pr-4">{t('admin.mobileUsageColNotifications')}</th>
                   <th className="py-2 pr-4">{t('admin.mobileUsageColInstalled')}</th>
                   <th className="py-2 pr-4">{t('admin.mobileUsageColLastSeen')}</th>
                   <th className="py-2 pr-4">{t('admin.mobileUsageColLastMobileLogin')}</th>
@@ -121,6 +122,10 @@ export function AdminMobileUsagePage() {
                       {r.deviceCount > 1 && (
                         <span className="text-xs text-slate-500 ml-2">×{r.deviceCount}</span>
                       )}
+                      {r.appVersion && <div className="text-xs text-slate-500 mt-0.5">v{r.appVersion}</div>}
+                    </td>
+                    <td className="py-2 pr-4 whitespace-nowrap">
+                      {r.hasMobileApp ? <PushStatus row={r} /> : <span className="text-slate-300">—</span>}
                     </td>
                     <td className="py-2 pr-4 text-slate-600 whitespace-nowrap">{fmt(r.firstInstalledAt)}</td>
                     <td className="py-2 pr-4 text-slate-600 whitespace-nowrap">{fmt(r.lastSeenAt)}</td>
@@ -128,7 +133,7 @@ export function AdminMobileUsagePage() {
                   </tr>
                 ))}
                 {filtered.length === 0 && (
-                  <tr><td colSpan={7} className="py-4 text-center text-slate-400">—</td></tr>
+                  <tr><td colSpan={8} className="py-4 text-center text-slate-400">—</td></tr>
                 )}
               </tbody>
             </table>
@@ -137,6 +142,19 @@ export function AdminMobileUsagePage() {
       </div>
     </Layout>
   )
+}
+
+function PushStatus({ row }: { row: MobileUsageRow }) {
+  const { t } = useTranslation()
+  if (row.pushEnabled)
+    return <span className="text-xs bg-emerald-100 text-emerald-800 rounded px-2 py-0.5 font-semibold">{t('admin.mobileUsagePushOn')}</span>
+  if (row.pushPermission === 'denied')
+    return <span className="text-xs bg-amber-100 text-amber-800 rounded px-2 py-0.5">{t('admin.mobileUsagePushDenied')}</span>
+  if (row.pushError)
+    return <span className="text-xs bg-rose-100 text-rose-800 rounded px-2 py-0.5" title={row.pushError}>{t('admin.mobileUsagePushError')}</span>
+  if (row.pushPermission === 'undetermined')
+    return <span className="text-xs text-slate-500">{t('admin.mobileUsagePushNotAsked')}</span>
+  return <span className="text-xs text-slate-400">{t('admin.mobileUsagePushUnknown')}</span>
 }
 
 function fmt(iso: string | null): string {

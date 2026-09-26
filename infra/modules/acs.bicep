@@ -27,7 +27,7 @@ param senderDisplayName string = 'Las Vegas Soccer School'
 param customEmailDomain string = ''
 
 @description('Local-part of the sender email address on the custom domain. Must already exist as a Sender Username on that domain (created via the portal).')
-param customSenderLocalPart string = 'registration'
+param customSenderLocalPart string = 'info'
 
 var nameSuffix = uniqueString(resourceGroup().id)
 
@@ -74,7 +74,7 @@ resource customDomain 'Microsoft.Communication/emailServices/domains@2023-04-01'
 }
 
 // Sender username under the custom domain — equivalent to clicking "Add MailFrom
-// address" in the portal but declarative. Bicep creates the registration sender
+// address" in the portal but declarative. Bicep creates the info sender
 // (or updates display name if it already exists).
 resource customSenderUsername 'Microsoft.Communication/emailServices/domains/senderUsernames@2023-04-01' = if (hasCustomDomain) {
   parent: customDomain
