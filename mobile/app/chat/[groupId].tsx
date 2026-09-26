@@ -4,6 +4,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
@@ -13,6 +14,8 @@ import {
   View,
 } from 'react-native';
 import { Stack, useLocalSearchParams } from 'expo-router';
+import { useHeaderHeight } from 'expo-router/react-navigation';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -41,6 +44,25 @@ export default function ChatThreadScreen() {
   const [sending, setSending] = useState(false);
   const [uploadFraction, setUploadFraction] = useState<number | null>(null);
   const [viewing, setViewing] = useState<MediaItem | null>(null);
+
+  // The keyboard offset must equal the real navigation-header height (it varies by device —
+  // Dynamic Island phones are taller), or the keyboard covers the bottom of the composer.
+  const headerHeight = useHeaderHeight();
+  const insets = useSafeAreaInsets();
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const show = Keyboard.addListener(showEvt, () => setKeyboardOpen(true));
+    const hide = Keyboard.addListener(hideEvt, () => setKeyboardOpen(false));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+  // Keep the composer clear of the home indicator and rounded corners; while the keyboard is up it
+  // already covers that area, so the extra inset would just leave a gap above the keyboard.
+  const composerBottom = keyboardOpen ? spacing.sm : Math.max(insets.bottom, spacing.sm);
 
   // Title from the cached group list (avoids an extra fetch).
   const title = useMemo(() => {
@@ -235,7 +257,7 @@ export default function ChatThreadScreen() {
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? headerHeight : 0}
     >
       <Stack.Screen options={{ title }} />
       {isLoading ? (
@@ -262,7 +284,16 @@ export default function ChatThreadScreen() {
 
       {uploadFraction !== null ? <UploadProgress fraction={uploadFraction} label={t('media.uploading')} /> : null}
 
-      <View style={styles.composer}>
+      <View
+        style={[
+          styles.composer,
+          {
+            paddingBottom: composerBottom,
+            paddingLeft: Math.max(insets.left, spacing.sm),
+            paddingRight: Math.max(insets.right, spacing.sm),
+          },
+        ]}
+      >
         <TouchableOpacity
           style={[styles.attachBtn, uploadFraction !== null && styles.sendBtnDisabled]}
           onPress={onAttach}
