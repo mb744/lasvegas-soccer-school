@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
@@ -49,6 +50,8 @@ export function facebookConfigured(): boolean {
  * derived from the configured client ID here so the two stay in sync.
  */
 export async function signInWithGoogle(): Promise<TokenResponse> {
+  if (Platform.OS === 'android') return signInWithGoogleAndroid();
+
   const cfg = readConfig();
   const clientId = cfg.googleIosClientId || cfg.googleWebClientId || cfg.googleAndroidClientId;
   if (!clientId) throw new Error('google-not-configured');
@@ -94,6 +97,41 @@ export async function signInWithGoogle(): Promise<TokenResponse> {
     discovery,
   );
   const idToken = (tokenResult as { idToken?: string }).idToken;
+  if (!idToken) throw new Error('no-id-token');
+
+  const { data } = await api.post<TokenResponse>('/mobile/auth/google', { token: idToken });
+  return data;
+}
+
+/**
+ * Android: Google no longer allows the browser-redirect flow for new Android OAuth clients, so use
+ * the native Google Sign-In SDK. The id_token it returns is issued to the *web* client ID, which
+ * the backend already accepts. The app's package + signing-key SHA-1 must be registered on an
+ * Android OAuth client in the same Google Cloud project, or sign-in fails with DEVELOPER_ERROR.
+ * Required lazily so the iOS build never loads the module.
+ */
+async function signInWithGoogleAndroid(): Promise<TokenResponse> {
+  const cfg = readConfig();
+  if (!cfg.googleWebClientId) throw new Error('google-not-configured');
+
+  const { GoogleSignin, isSuccessResponse, isErrorWithCode, statusCodes } =
+    require('@react-native-google-signin/google-signin') as typeof import('@react-native-google-signin/google-signin');
+
+  GoogleSignin.configure({ webClientId: cfg.googleWebClientId });
+  let idToken: string | null = null;
+  try {
+    await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+    // Clear the cached account so the chooser appears every time (same as prompt=select_account on iOS).
+    await GoogleSignin.signOut().catch(() => undefined);
+    const res = await GoogleSignin.signIn();
+    if (!isSuccessResponse(res)) throw new Error('cancel');
+    idToken = res.data.idToken;
+  } catch (e) {
+    if (isErrorWithCode(e) && (e.code === statusCodes.SIGN_IN_CANCELLED || e.code === statusCodes.IN_PROGRESS)) {
+      throw new Error('cancel');
+    }
+    throw e;
+  }
   if (!idToken) throw new Error('no-id-token');
 
   const { data } = await api.post<TokenResponse>('/mobile/auth/google', { token: idToken });
