@@ -75,7 +75,11 @@ export default function AdminTeamDetailScreen() {
       await qc.invalidateQueries({ queryKey: ['adminTeams'] });
       router.back();
     },
-    onError: () => Alert.alert(t('common.retry'), t('admin.deleteFailed')),
+    // The server explains why a delete is refused (e.g. the team is in a hosted tournament).
+    onError: (e: unknown) => {
+      const data = (e as { response?: { data?: unknown } })?.response?.data;
+      Alert.alert(t('common.retry'), typeof data === 'string' && data ? data : t('admin.deleteFailed'));
+    },
   });
 
   const addPlayerMut = useMutation({

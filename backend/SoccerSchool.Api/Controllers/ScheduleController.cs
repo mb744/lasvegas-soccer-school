@@ -160,13 +160,15 @@ public class ScheduleController : ControllerBase
 
     [Authorize(Roles = Roles.Admin)]
     [HttpDelete("teams/{id:int}")]
-    public async Task<IActionResult> DeleteTeam(int id, CancellationToken ct)
+    public async Task<IActionResult> DeleteTeam(int id, [FromServices] ITeamDeletionService teams, CancellationToken ct)
     {
-        var team = await _db.Teams.FindAsync(new object?[] { id }, ct);
-        if (team is null) return NotFound();
-        _db.Teams.Remove(team);
-        await _db.SaveChangesAsync(ct);
-        return NoContent();
+        var result = await teams.DeleteAsync(id, ct);
+        return result.Outcome switch
+        {
+            TeamDeleteOutcome.NotFound => NotFound(),
+            TeamDeleteOutcome.Blocked => Conflict(result.Message),
+            _ => NoContent(),
+        };
     }
 
     [Authorize(Roles = Roles.Admin)]
