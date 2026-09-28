@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Layout } from '../../components/Layout'
 import { RequiredLabel, useRequiredValidation } from '../../components/RequiredField'
@@ -309,7 +309,11 @@ function ComposeTab({
   onError: (e: string) => void
 }) {
   const { t } = useTranslation()
-  const [channel, setChannel] = useState<MessageChannel>(0)
+  // Deep links from other admin pages can preselect the channel and a dynamic group, e.g.
+  // /admin/messaging?channel=email&group=no-app-parents from the Mobile app usage report.
+  const [searchParams] = useSearchParams()
+  const linkedGroup = searchParams.get('group')
+  const [channel, setChannel] = useState<MessageChannel>(() => (searchParams.get('channel') === 'email' ? 2 : 0))
   const [mode, setMode] = useState<SendMode>('broadcast')
   const [bodyMode, setBodyMode] = useState<ComposeBodyMode>('free-form')
   const [templateId, setTemplateId] = useState<number | ''>('')
@@ -319,11 +323,11 @@ function ComposeTab({
   const [templateManuallyPicked, setTemplateManuallyPicked] = useState(false)
   const [emailTemplateId, setEmailTemplateId] = useState<number | ''>('')
   const [templateValues, setTemplateValues] = useState<Record<string, string>>({})
-  const [recipientMode, setRecipientMode] = useState<RecipientMode>('individual')
+  const [recipientMode, setRecipientMode] = useState<RecipientMode>(linkedGroup ? 'dynamic' : 'individual')
   const [phone, setPhone] = useState('')
   const [name, setName] = useState('')
   const [customGroupId, setCustomGroupId] = useState<number | ''>('')
-  const [dynamicKey, setDynamicKey] = useState<string>('')
+  const [dynamicKey, setDynamicKey] = useState<string>(linkedGroup ?? '')
   const [listRaw, setListRaw] = useState('')
   const parsedList = useMemo(() => parseRecipientList(listRaw), [listRaw])
   const [title, setTitle] = useState('')
@@ -435,11 +439,19 @@ function ComposeTab({
       return g ? `${g.memberCount} recipients (${g.name})` : 'Pick a group'
     }
     if (recipientMode === 'list') {
-      return parsedList.length === 0 ? 'No phones parsed yet' : `${parsedList.length} recipients`
+      if (parsedList.length === 0) return isEmailChannel ? 'No email addresses found yet' : 'No phones parsed yet'
+      // On email, entries with only a phone are skipped at send time — say so up front.
+      if (isEmailChannel) {
+        const withEmail = parsedList.filter(r => r.email).length
+        return withEmail === parsedList.length
+          ? `${withEmail} recipients`
+          : `${withEmail} recipients (${parsedList.length - withEmail} phone-only entries will be skipped)`
+      }
+      return `${parsedList.length} recipients`
     }
     const d = dynamicGroups.find(x => x.key === dynamicKey)
     return d ? `${d.count} recipients (${d.label})` : 'Pick a group'
-  }, [recipientMode, phone, customGroupId, dynamicKey, curated, dynamicGroups, parsedList])
+  }, [recipientMode, phone, customGroupId, dynamicKey, curated, dynamicGroups, parsedList, isEmailChannel])
 
   const target = () => {
     if (recipientMode === 'individual') {
@@ -707,15 +719,15 @@ function ComposeTab({
         {recipientMode === 'list' && (
           <div className="space-y-2">
             <textarea rows={6} value={listRaw} onChange={e => setListRaw(e.target.value)}
-              placeholder={t('admin.msgListPlaceholder')}
+              placeholder={isEmailChannel ? t('admin.msgListPlaceholderEmail') : t('admin.msgListPlaceholder')}
               className="border border-slate-300 rounded-md px-3 py-2 text-sm font-mono w-full" />
-            <p className="text-xs text-slate-500">{t('admin.msgListHelp')}</p>
+            <p className="text-xs text-slate-500">{isEmailChannel ? t('admin.msgListHelpEmail') : t('admin.msgListHelp')}</p>
             {parsedList.length > 0 && (
               <details className="text-xs">
                 <summary className="cursor-pointer text-emerald-700 hover:underline">{t('admin.msgListPreview', { count: parsedList.length })}</summary>
                 <ul className="mt-1 space-y-0.5 text-slate-600">
                   {parsedList.map((r, i) => (
-                    <li key={i}>{r.name ? <span className="text-slate-800">{r.name}</span> : null} <span className="font-mono">{r.phone}</span></li>
+                    <li key={i}>{r.name ? <span className="text-slate-800">{r.name}</span> : null} <span className="font-mono">{r.email || r.phone}</span></li>
                   ))}
                 </ul>
               </details>
@@ -2703,17 +2715,20 @@ function parseRecipientList(raw: string): AdHocRecipient[] {
   for (const line of raw.split(/[\n;]+/)) {
     const trimmed = line.trim()
     if (!trimmed) continue
-    // Email-first detection: if the line contains an email-shaped token, treat the line as an
-    // email recipient (with optional preceding name). Otherwise fall back to phone parsing.
-    const emailMatch = trimmed.match(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/)
-    if (emailMatch) {
-      const email = emailMatch[0]
-      const key = `email:${email.toLowerCase()}`
-      if (seen.has(key)) continue
-      seen.add(key)
-      const before = trimmed.slice(0, emailMatch.index).trim()
-      const name = before.replace(/[,:]\s*$/, '').replace(/^~+/, '').replace(/~+/g, ' ').trim()
-      out.push({ phone: '', name: name || null, email })
+    // Email-first detection: a line with email-shaped tokens is email recipients. Every address on
+    // the line counts, so a pasted "a@x.com, b@y.com" list works; a name before the address is
+    // only kept when the line holds a single address ("Maria Lopez <maria@x.com>").
+    const emailMatches = [...trimmed.matchAll(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g)]
+    if (emailMatches.length > 0) {
+      for (const m of emailMatches) {
+        const email = m[0]
+        const key = `email:${email.toLowerCase()}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        const before = emailMatches.length === 1 ? trimmed.slice(0, m.index).trim() : ''
+        const name = before.replace(/[,:<]\s*$/, '').replace(/^~+/, '').replace(/~+/g, ' ').trim().replace(/^"|"$/g, '').trim()
+        out.push({ phone: '', name: name || null, email })
+      }
       continue
     }
     // Greedy phone-like run: optional +, then digits and phone punctuation, anchored by digits at the ends.
