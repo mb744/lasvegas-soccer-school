@@ -43,7 +43,12 @@ public class AdminReportsController : ControllerBase
                 Account = _db.ParentAccounts.Where(p => p.UserId == u.Id)
                     .Select(p => new { p.FirstName, p.LastName, p.CreatedAt })
                     .FirstOrDefault(),
-                PlayerCount = _db.Players.Count(p => p.ParentAccount != null && p.ParentAccount.UserId == u.Id),
+                // Kids this login sees in the app: its own family's plus every family it's linked to
+                // (co-parent, grandparent — guardian or view-only). A player has exactly one family,
+                // so nothing is double-counted.
+                PlayerCount = _db.Players.Count(p =>
+                    (p.ParentAccount != null && p.ParentAccount.UserId == u.Id)
+                    || _db.ParentAccountCollaborators.Any(c => c.UserId == u.Id && c.ParentAccountId == p.ParentAccountId)),
                 DeviceCount = _db.Set<DeviceToken>().Count(d => d.UserId == u.Id),
                 FirstInstalledAt = _db.Set<DeviceToken>()
                     .Where(d => d.UserId == u.Id)
