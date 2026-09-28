@@ -114,6 +114,10 @@ public class StorageOptions
     public long MaxImageBytes { get; set; } = 10L * 1024 * 1024;
     public long MaxVideoBytes { get; set; } = 100L * 1024 * 1024;
 
+    /// <summary>Queue that Azure Event Grid fills with ACS email delivery reports. Empty turns
+    /// email delivery tracking off (emails then stay at "Queued" in History).</summary>
+    public string EmailEventsQueueName { get; set; } = string.Empty;
+
     public bool IsConfigured => !string.IsNullOrWhiteSpace(ConnectionString);
 }
 
