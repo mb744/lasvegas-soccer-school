@@ -31,7 +31,7 @@ param customDomain string = ''
 @description('When true, provisions Azure Communication Services (ACS) + Email Communication Service + Azure-managed email domain. Wired into the container app for email outreach. SMS phone numbers must still be purchased separately and provided via acsSmsFromNumber.')
 param enableAcs bool = false
 
-@description('Track email delivery (Delivered / Bounced / ...) via Event Grid and send ACS logs to Log Analytics. Requires enableAcs and the Microsoft.EventGrid resource provider registered on the subscription.')
+@description('Track email delivery (Delivered / Bounced / ...) via Event Grid. Requires enableAcs and the Microsoft.EventGrid resource provider registered on the subscription.')
 param enableEmailDeliveryTracking bool = true
 
 @description('Sender phone number for ACS SMS in E.164 format (e.g. +18005551212). Purchase the number in the Azure portal first; ACS does not expose phone-number purchase to Bicep. Empty disables SMS outreach.')
@@ -183,7 +183,6 @@ module emailDelivery 'modules/email-delivery.bicep' = if (trackEmailDelivery) {
     acsName: acs!.outputs.acsName
     storageAccountName: storage.outputs.name
     emailEventsQueueName: storage.outputs.emailEventsQueueName
-    logAnalyticsWorkspaceId: logAnalytics.outputs.id
     tags: commonTags
   }
 }
