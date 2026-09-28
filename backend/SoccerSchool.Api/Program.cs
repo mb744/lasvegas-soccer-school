@@ -224,6 +224,7 @@ builder.Services.AddSingleton<IAppStoreVersionService, AppStoreVersionService>()
 builder.Services.AddScoped<IFamilyService, FamilyService>();
 builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddSingleton<IMediaStorage, MediaStorage>();
+builder.Services.AddScoped<ITeamDeletionService, TeamDeletionService>();
 builder.Services.AddScoped<EmailDeliveryReportProcessor>();
 builder.Services.AddHostedService<EmailDeliveryReportWorker>();
 builder.Services.AddScoped<IAccountDeletionService, AccountDeletionService>();
