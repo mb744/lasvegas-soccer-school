@@ -224,6 +224,8 @@ builder.Services.AddSingleton<IAppStoreVersionService, AppStoreVersionService>()
 builder.Services.AddScoped<IFamilyService, FamilyService>();
 builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddSingleton<IMediaStorage, MediaStorage>();
+builder.Services.AddScoped<EmailDeliveryReportProcessor>();
+builder.Services.AddHostedService<EmailDeliveryReportWorker>();
 builder.Services.AddScoped<IAccountDeletionService, AccountDeletionService>();
 builder.Services.AddSingleton<IReclaimHasher, ReclaimHasher>();
 builder.Services.AddHttpClient<IExternalIdentityService, ExternalIdentityService>();
