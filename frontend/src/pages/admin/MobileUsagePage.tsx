@@ -46,7 +46,15 @@ export function AdminMobileUsagePage() {
       <div className="max-w-6xl mx-auto px-4 py-10 space-y-6">
         <div>
           <Link to="/admin" className="text-sm text-emerald-700 hover:underline">← {t('admin.backToHub')}</Link>
-          <h1 className="text-3xl font-bold text-emerald-800 mt-2">{t('admin.hubMobileUsage')}</h1>
+          <div className="flex flex-wrap items-end justify-between gap-3 mt-2">
+            <h1 className="text-3xl font-bold text-emerald-800">{t('admin.hubMobileUsage')}</h1>
+            <Link
+              to="/admin/messaging?channel=email&group=no-app-parents"
+              className="text-sm font-semibold bg-emerald-700 text-white rounded-md px-4 py-2 hover:bg-emerald-800"
+            >
+              ✉️ {t('admin.mobileUsageEmailNoApp')}
+            </Link>
+          </div>
           <p className="mt-1 text-sm text-slate-600">{t('admin.mobileUsageBlurb')}</p>
         </div>
 

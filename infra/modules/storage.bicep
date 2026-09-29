@@ -6,6 +6,9 @@ param location string
 param tags object = {}
 param mediaContainerName string = 'media'
 
+@description('Queue Event Grid fills with email delivery reports for the API to read.')
+param emailEventsQueueName string = 'email-delivery-events'
+
 resource account 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   name: name
   location: location
@@ -33,6 +36,16 @@ resource mediaContainer 'Microsoft.Storage/storageAccounts/blobServices/containe
   properties: {
     publicAccess: 'None'
   }
+}
+
+resource queueService 'Microsoft.Storage/storageAccounts/queueServices@2023-05-01' = {
+  parent: account
+  name: 'default'
+}
+
+resource emailEventsQueue 'Microsoft.Storage/storageAccounts/queueServices/queues@2023-05-01' = {
+  parent: queueService
+  name: emailEventsQueueName
 }
 
 // Uploads the device started but never confirmed leave orphan blobs; they're only reachable by
@@ -68,5 +81,6 @@ resource lifecycle 'Microsoft.Storage/storageAccounts/managementPolicies@2023-05
 
 output name string = account.name
 output mediaContainerName string = mediaContainer.name
+output emailEventsQueueName string = emailEventsQueue.name
 #disable-next-line outputs-should-not-contain-secrets
 output connectionString string = 'DefaultEndpointsProtocol=https;AccountName=${account.name};AccountKey=${account.listKeys().keys[0].value};EndpointSuffix=${environment().suffixes.storage}'

@@ -76,6 +76,9 @@ param storageConnectionString string = ''
 
 param storageMediaContainerName string = 'media'
 
+@description('Storage queue with ACS email delivery reports. Empty leaves email delivery tracking off.')
+param storageEmailEventsQueueName string = ''
+
 @description('Min replicas (0 enables scale-to-zero).')
 param minReplicas int = 0
 param maxReplicas int = 3
@@ -185,7 +188,10 @@ var storageEnv = hasStorage ? [
   { name: 'Storage__ConnectionString', secretRef: 'storage-connection-string' }
   { name: 'Storage__MediaContainerName', value: storageMediaContainerName }
 ] : []
-var allEnv = concat(baseEnv, googleEnv, googleMobileEnv, facebookEnv, adminEnv, acsEnvCore, acsEnvEmail, acsEnvSms, twilioEnv, twilioWhatsAppEnv, twilioWhatsAppTemplateEnv, twilioConversationsEnv, jwtEnv, storageEnv)
+var storageEventsEnv = hasStorage && !empty(storageEmailEventsQueueName) ? [
+  { name: 'Storage__EmailEventsQueueName', value: storageEmailEventsQueueName }
+] : []
+var allEnv = concat(baseEnv, googleEnv, googleMobileEnv, facebookEnv, adminEnv, acsEnvCore, acsEnvEmail, acsEnvSms, twilioEnv, twilioWhatsAppEnv, twilioWhatsAppTemplateEnv, twilioConversationsEnv, jwtEnv, storageEnv, storageEventsEnv)
 
 resource app 'Microsoft.App/containerApps@2024-03-01' = {
   name: name

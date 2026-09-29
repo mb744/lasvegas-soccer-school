@@ -61,6 +61,11 @@ public class RecipientResolver : IRecipientResolver
     public const string DynamicActiveSeasonParents = "active-season-parents";
     public const string DynamicTrialOverParents = "trial-over-parents";
 
+    /// <summary>Parents/guardians who have never used the mobile app — for "download the app"
+    /// nudges. Counted per person, so a co-parent who hasn't installed it is included even when
+    /// their partner has.</summary>
+    public const string DynamicNoAppParents = "no-app-parents";
+
     /// <summary>Prefix for per-team dynamic groups: key <c>team-{id}</c> resolves to the parents of
     /// that team's roster players. Lets the Compose tab target a team's roster with the existing
     /// broadcast pipeline, with the audience always reflecting the current roster.</summary>
@@ -99,6 +104,7 @@ public class RecipientResolver : IRecipientResolver
         var allCount = (await LoadAllParentsAsync(ct)).Count;
         var activeCount = (await LoadActiveSeasonParentsAsync(ct)).Count;
         var trialOverCount = (await LoadTrialOverParentsAsync(ct)).Count;
+        var noAppCount = (await LoadNoAppParentsAsync(ct)).Count;
 
         var teams = await _db.Teams
             .Where(t => t.Roster.Any())
@@ -110,7 +116,8 @@ public class RecipientResolver : IRecipientResolver
         {
             new(DynamicAllParents, "All parents/guardians on file", allCount),
             new(DynamicActiveSeasonParents, $"Parents/guardians registered in {season}", activeCount),
-            new(DynamicTrialOverParents, "Parents/guardians whose free trial is over", trialOverCount)
+            new(DynamicTrialOverParents, "Parents/guardians whose free trial is over", trialOverCount),
+            new(DynamicNoAppParents, "Parents/guardians without the mobile app", noAppCount)
         };
         foreach (var t in teams)
         {
@@ -207,6 +214,8 @@ public class RecipientResolver : IRecipientResolver
                         new RecipientList($"Parents registered in {_app.ActiveSeason}", await LoadActiveSeasonParentsAsync(ct)),
                     DynamicTrialOverParents =>
                         new RecipientList("Parents whose free trial is over", await LoadTrialOverParentsAsync(ct)),
+                    DynamicNoAppParents =>
+                        new RecipientList("Parents without the mobile app", await LoadNoAppParentsAsync(ct)),
                     _ => new RecipientList("Unknown group", Array.Empty<ResolvedRecipient>())
                 };
 
@@ -258,6 +267,41 @@ public class RecipientResolver : IRecipientResolver
             .ToList();
         // null = every account's contacts, matching the "all parents" scope.
         var contacts = await LoadContactsAsync(null, ct);
+        return DedupeByReachability(parents.Concat(contacts));
+    }
+
+    /// <summary>Everyone from the "all parents" scope who has never used the mobile app. A login
+    /// counts as an app user if it ever checked in from the app, registered a push token, or
+    /// signed in on mobile (the refresh-token history survives rotation). Guardian contacts with
+    /// no login of their own are included — they can't have the app yet.</summary>
+    private async Task<IReadOnlyList<ResolvedRecipient>> LoadNoAppParentsAsync(CancellationToken ct)
+    {
+        var rows = await _db.ParentAccounts
+            .Where(p => !p.NoCommunications
+                && ((p.CellPhone != null && p.CellPhone != "") || (p.User != null && p.User.Email != null && p.User.Email != ""))
+                && !_db.MobileAppInstalls.Any(i => i.UserId == p.UserId)
+                && !_db.DeviceTokens.Any(d => d.UserId == p.UserId)
+                && !_db.MobileRefreshTokens.Any(r => r.UserId == p.UserId))
+            .Select(p => new { p.Id, p.CellPhone, p.FirstName, p.LastName, p.Language, p.HasWhatsApp, Email = p.User!.Email })
+            .ToListAsync(ct);
+        var parents = rows
+            .Select(r => new ResolvedRecipient(r.CellPhone ?? string.Empty, $"{r.FirstName} {r.LastName}".Trim(), r.Id, r.Language, r.Email, r.HasWhatsApp))
+            .ToList();
+
+        var contactRows = await _db.ParentContacts
+            .Where(c => c.AccessLevel == FamilyAccessLevel.Guardian && !c.ParentAccount!.NoCommunications
+                && ((c.CellPhone != null && c.CellPhone != "") || (c.Email != null && c.Email != ""))
+                && (c.UserId == null
+                    || (!_db.MobileAppInstalls.Any(i => i.UserId == c.UserId)
+                        && !_db.DeviceTokens.Any(d => d.UserId == c.UserId)
+                        && !_db.MobileRefreshTokens.Any(r => r.UserId == c.UserId))))
+            .Select(c => new { c.ParentAccountId, c.CellPhone, c.FirstName, c.LastName, c.Language, c.HasWhatsApp, c.Email })
+            .ToListAsync(ct);
+        var contacts = contactRows
+            .Select(c => new ResolvedRecipient(
+                c.CellPhone ?? string.Empty, $"{c.FirstName} {c.LastName}".Trim(), c.ParentAccountId, c.Language, c.Email, c.HasWhatsApp))
+            .ToList();
+
         return DedupeByReachability(parents.Concat(contacts));
     }
 

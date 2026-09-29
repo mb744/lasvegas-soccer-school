@@ -104,6 +104,7 @@ jobs:
             facebookOAuthAppId=${{ vars.FACEBOOK_OAUTH_APP_ID }}
             facebookOAuthAppSecret=${{ secrets.FACEBOOK_OAUTH_APP_SECRET }}
             enableAcs=${{ vars.ENABLE_ACS || 'false' }}
+            enableEmailDeliveryTracking=${{ vars.ENABLE_EMAIL_DELIVERY_TRACKING || 'true' }}
             acsSmsFromNumber=${{ vars.ACS_SMS_FROM_NUMBER }}
             acsCustomEmailDomain=${{ vars.ACS_CUSTOM_EMAIL_DOMAIN }}
             acsCustomEmailLocalPart=${{ vars.ACS_CUSTOM_EMAIL_LOCAL_PART || 'info' }}
