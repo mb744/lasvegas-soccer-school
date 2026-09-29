@@ -535,7 +535,7 @@ public class ScheduleController : ControllerBase
     [RequirePermission(Permissions.EventsCreate)]
     [HttpPost("teams/{teamId:int}/practices")]
     public async Task<ActionResult<ScheduledGameDto>> CreatePractice(
-        int teamId, [FromBody] SavePracticeRequest request, CancellationToken ct)
+        int teamId, [FromBody] SavePracticeRequest request, [FromServices] EventNotificationQueue notify, CancellationToken ct)
     {
         var team = await _db.Teams.Include(t => t.MessageGroup).FirstOrDefaultAsync(t => t.Id == teamId, ct);
         if (team is null) return NotFound();
@@ -560,6 +560,7 @@ public class ScheduleController : ControllerBase
         };
         _db.ScheduledGames.Add(practice);
         await _db.SaveChangesAsync(ct);
+        if (request.NotifyParents) notify.Enqueue(new EventNotificationJob(practice.Id, null));
         return Ok(ToDto(practice, team));
     }
 
@@ -657,7 +658,7 @@ public class ScheduleController : ControllerBase
     [RequirePermission(Permissions.EventsCreate)]
     [HttpPut("practices/{id:int}")]
     public async Task<ActionResult<ScheduledGameDto>> UpdatePractice(
-        int id, [FromBody] SavePracticeRequest request, CancellationToken ct)
+        int id, [FromBody] SavePracticeRequest request, [FromServices] EventNotificationQueue notify, CancellationToken ct)
     {
         var practice = await _db.ScheduledGames
             .Include(g => g.Team).ThenInclude(t => t!.MessageGroup)
@@ -666,6 +667,7 @@ public class ScheduleController : ControllerBase
         if (!await CanManageTeamAsync(practice.TeamId, ct)) return OutOfScope();
         if (request.StartsAt == default) return BadRequest("Start time is required.");
         if (await ValidateVenueAsync(request.VenueId, ct) is string ve) return BadRequest(ve);
+        var before = request.NotifyParents ? await EventSnapshot.LoadAsync(_db, id, ct) : null;
 
         practice.StartsAt = DateTime.SpecifyKind(request.StartsAt, DateTimeKind.Utc);
         practice.EndsAt = request.EndsAt.HasValue ? DateTime.SpecifyKind(request.EndsAt.Value, DateTimeKind.Utc) : null;
@@ -676,6 +678,7 @@ public class ScheduleController : ControllerBase
         practice.Description = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim();
         practice.LastSeenAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
+        if (before is not null) notify.Enqueue(new EventNotificationJob(id, before));
         return Ok(ToDto(practice, practice.Team!));
     }
 
@@ -709,7 +712,7 @@ public class ScheduleController : ControllerBase
     [RequirePermission(Permissions.EventsCreate)]
     [HttpPost("teams/{teamId:int}/misc-events")]
     public async Task<ActionResult<ScheduledGameDto>> CreateMiscEvent(
-        int teamId, [FromBody] SavePracticeRequest request, CancellationToken ct)
+        int teamId, [FromBody] SavePracticeRequest request, [FromServices] EventNotificationQueue notify, CancellationToken ct)
     {
         var team = await _db.Teams.Include(t => t.MessageGroup).FirstOrDefaultAsync(t => t.Id == teamId, ct);
         if (team is null) return NotFound();
@@ -734,13 +737,14 @@ public class ScheduleController : ControllerBase
         };
         _db.ScheduledGames.Add(ev);
         await _db.SaveChangesAsync(ct);
+        if (request.NotifyParents) notify.Enqueue(new EventNotificationJob(ev.Id, null));
         return Ok(ToDto(ev, team));
     }
 
     [RequirePermission(Permissions.EventsCreate)]
     [HttpPut("misc-events/{id:int}")]
     public async Task<ActionResult<ScheduledGameDto>> UpdateMiscEvent(
-        int id, [FromBody] SavePracticeRequest request, CancellationToken ct)
+        int id, [FromBody] SavePracticeRequest request, [FromServices] EventNotificationQueue notify, CancellationToken ct)
     {
         var ev = await _db.ScheduledGames
             .Include(g => g.Team).ThenInclude(t => t!.MessageGroup)
@@ -749,6 +753,7 @@ public class ScheduleController : ControllerBase
         if (!await CanManageTeamAsync(ev.TeamId, ct)) return OutOfScope();
         if (request.StartsAt == default) return BadRequest("Start time is required.");
         if (await ValidateVenueAsync(request.VenueId, ct) is string ve) return BadRequest(ve);
+        var before = request.NotifyParents ? await EventSnapshot.LoadAsync(_db, id, ct) : null;
 
         ev.StartsAt = DateTime.SpecifyKind(request.StartsAt, DateTimeKind.Utc);
         ev.EndsAt = request.EndsAt.HasValue ? DateTime.SpecifyKind(request.EndsAt.Value, DateTimeKind.Utc) : null;
@@ -759,6 +764,7 @@ public class ScheduleController : ControllerBase
         ev.Description = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim();
         ev.LastSeenAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
+        if (before is not null) notify.Enqueue(new EventNotificationJob(id, before));
         return Ok(ToDto(ev, ev.Team!));
     }
 
@@ -789,7 +795,7 @@ public class ScheduleController : ControllerBase
     [RequirePermission(Permissions.EventsCreate)]
     [HttpPost("teams/{teamId:int}/games")]
     public async Task<ActionResult<ScheduledGameDto>> CreateGame(
-        int teamId, [FromBody] SaveGameRequest request, CancellationToken ct)
+        int teamId, [FromBody] SaveGameRequest request, [FromServices] EventNotificationQueue notify, CancellationToken ct)
     {
         var team = await _db.Teams.Include(t => t.MessageGroup).FirstOrDefaultAsync(t => t.Id == teamId, ct);
         if (team is null) return NotFound();
@@ -831,13 +837,14 @@ public class ScheduleController : ControllerBase
         };
         _db.ScheduledGames.Add(game);
         await _db.SaveChangesAsync(ct);
+        if (request.NotifyParents) notify.Enqueue(new EventNotificationJob(game.Id, null));
         return Ok(ToDto(game, team));
     }
 
     [RequirePermission(Permissions.EventsCreate)]
     [HttpPut("games/{id:int}")]
     public async Task<ActionResult<ScheduledGameDto>> UpdateGame(
-        int id, [FromBody] SaveGameRequest request, CancellationToken ct)
+        int id, [FromBody] SaveGameRequest request, [FromServices] EventNotificationQueue notify, CancellationToken ct)
     {
         var game = await _db.ScheduledGames
             .Include(g => g.Team).ThenInclude(t => t!.MessageGroup)
@@ -848,6 +855,7 @@ public class ScheduleController : ControllerBase
         if (request.UniformId is int uid && !await _db.Uniforms.AnyAsync(u => u.Id == uid, ct))
             return BadRequest("Uniform not found.");
         if (await ValidateVenueAsync(request.VenueId, ct) is string ve) return BadRequest(ve);
+        var before = request.NotifyParents ? await EventSnapshot.LoadAsync(_db, id, ct) : null;
 
         game.StartsAt = DateTime.SpecifyKind(request.StartsAt, DateTimeKind.Utc);
         game.EndsAt = request.EndsAt.HasValue ? DateTime.SpecifyKind(request.EndsAt.Value, DateTimeKind.Utc) : null;
@@ -864,6 +872,7 @@ public class ScheduleController : ControllerBase
         game.Description = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim();
         game.LastSeenAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
+        if (before is not null) notify.Enqueue(new EventNotificationJob(id, before));
         return Ok(ToDto(game, game.Team!));
     }
 

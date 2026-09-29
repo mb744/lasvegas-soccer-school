@@ -100,6 +100,11 @@ public record SavePracticeRequest
 
     /// <summary>Footwear (0 = Unspecified, 1 = Cleats, 2 = Turf, 3 = Tennis-court).</summary>
     public ShoeType ShoeType { get; init; } = ShoeType.Unspecified;
+
+    /// <summary>Push + email the team's parents about this new/changed event. On by default so
+    /// older clients that don't send it still notify; edits only notify when a parent-facing
+    /// field actually changed.</summary>
+    public bool NotifyParents { get; init; } = true;
 }
 
 /// <summary>Admin-entered game (manual; not scraped from GotSport). Lives in the same
@@ -144,6 +149,10 @@ public record SaveGameRequest
 
     /// <summary>Footwear (0 = Unspecified, 1 = Cleats, 2 = Turf, 3 = Tennis-court).</summary>
     public ShoeType ShoeType { get; init; } = ShoeType.Unspecified;
+
+    /// <summary>Push + email the team's parents about this new/changed game (see
+    /// <see cref="SavePracticeRequest.NotifyParents"/>).</summary>
+    public bool NotifyParents { get; init; } = true;
 }
 
 /// <summary>Create a recurring practice series. Each combination of (day-of-week × occurrence date

@@ -353,6 +353,8 @@ export interface SavePracticeRequest {
   notes: string | null;
   venueId: number | null;
   shoeType?: number;
+  /** Alert + email the team's parents (server default true). */
+  notifyParents?: boolean;
 }
 
 export interface SaveGameRequest {
@@ -367,6 +369,8 @@ export interface SaveGameRequest {
   uniformId: number | null;
   venueId: number | null;
   shoeType?: number;
+  /** Alert + email the team's parents (server default true). */
+  notifyParents?: boolean;
 }
 
 export interface SaveChatGroupRequest {

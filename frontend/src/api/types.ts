@@ -1060,6 +1060,8 @@ export interface SavePracticeRequest {
   notes?: string | null      // free-form notes shown to parents on the mobile event detail
   venueId?: number | null
   shoeType?: ShoeType
+  /** Push + email the team's parents (default true server-side). */
+  notifyParents?: boolean
 }
 
 export interface SaveGameRequest {
@@ -1075,6 +1077,8 @@ export interface SaveGameRequest {
   uniformId?: number | null  // explicit uniform override; null = use mapping
   venueId?: number | null    // structured venue/park; null = none
   shoeType?: ShoeType        // 0 = Unspecified … 3 = Tennis court shoes
+  /** Push + email the team's parents (default true server-side). */
+  notifyParents?: boolean
 }
 
 export interface SavePracticeSeriesRequest {
@@ -1120,6 +1124,23 @@ export interface ScheduleSyncResult {
 // --- Event attendance (per rostered player confirmation) ---
 
 export type AttendanceStatus = 0 | 1 | 2 | 3 // Pending | Confirmed | Declined | Maybe
+
+/** Event + player behind an emailed attendance link (/rsvp). */
+export interface RsvpInfo {
+  teamName: string
+  kind: number            // 0 game, 1 practice, 2 event
+  opponentName: string | null
+  summary: string | null
+  startsAt: string
+  endsAt: string | null
+  arriveAt: string | null
+  place: string | null
+  playerFirstName: string
+  status: AttendanceStatus
+  isCancelled: boolean
+  lockedByCoach: boolean
+  canChange: boolean
+}
 export type AttendanceSource = 0 | 1 // ParentReply | Admin
 
 export interface EventAttendance {

@@ -70,6 +70,8 @@ export default function AdminEventComposer() {
   const [notes, setNotes] = React.useState('');
   // Not editable here yet, but carried through so saving from the phone keeps what the web set.
   const [shoeType, setShoeType] = React.useState(0);
+  // Alert + email the team's parents on save (edits only notify when parent-facing details change).
+  const [notifyParents, setNotifyParents] = React.useState(true);
   const [seeded, setSeeded] = React.useState(false);
 
   React.useEffect(() => {
@@ -117,6 +119,7 @@ export default function AdminEventComposer() {
           uniformId,
           venueId,
           shoeType,
+          notifyParents,
         };
         if (isNew) await createGame(teamId, payload);
         else await updateGame(numericId!, payload);
@@ -129,6 +132,7 @@ export default function AdminEventComposer() {
           notes: trimmedNotes,
           venueId,
           shoeType,
+          notifyParents,
         };
         if (isNew) await createMiscEvent(teamId, payload);
         else await updateMiscEvent(numericId!, payload);
@@ -141,6 +145,7 @@ export default function AdminEventComposer() {
           notes: trimmedNotes,
           venueId,
           shoeType,
+          notifyParents,
         };
         if (isNew) await createPractice(teamId, payload);
         else await updatePractice(numericId!, payload);
@@ -290,6 +295,14 @@ export default function AdminEventComposer() {
           maxLength={2000}
         />
 
+        <View style={styles.notifyRow}>
+          <View style={{ flex: 1, marginRight: spacing.md }}>
+            <Text style={styles.notifyTitle}>{t('admin.notifyParents')}</Text>
+            <Text style={styles.notifyHelp}>{isNew ? t('admin.notifyParentsHelp') : t('admin.notifyParentsEditHelp')}</Text>
+          </View>
+          <Switch value={notifyParents} onValueChange={setNotifyParents} />
+        </View>
+
         <TouchableOpacity
           style={[styles.primaryBtn, (save.isPending || !teamId || !startsAt) && styles.btnDisabled]}
           onPress={() => save.mutate()}
@@ -368,6 +381,18 @@ const styles = StyleSheet.create({
   pillActive: { backgroundColor: colors.brand, borderColor: colors.brand },
   pillText: { fontSize: 13, fontWeight: '700', color: colors.subtext },
   pillTextActive: { color: colors.white },
+  notifyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: spacing.lg,
+    padding: spacing.md,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+  },
+  notifyTitle: { fontSize: 15, fontWeight: '800', color: colors.text },
+  notifyHelp: { fontSize: 12, color: colors.subtext, marginTop: 2 },
   primaryBtn: {
     marginTop: spacing.xl,
     backgroundColor: colors.brand,

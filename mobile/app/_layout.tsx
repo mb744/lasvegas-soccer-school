@@ -4,7 +4,7 @@ import { Stack, useRouter } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import * as Notifications from 'expo-notifications';
 import { AuthProvider } from '../src/auth/AuthContext';
 import { UpdateGate } from '../src/update/UpdateGate';
@@ -16,6 +16,7 @@ const queryClient = new QueryClient({
 /** Routes a tapped push notification to the right screen using its data payload. */
 function NotificationRouter() {
   const router = useRouter();
+  const qc = useQueryClient();
   useEffect(() => {
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
       const data = response.notification.request.content.data as
@@ -23,12 +24,17 @@ function NotificationRouter() {
         | undefined;
       if (data?.type === 'chat' && data.groupId) {
         router.push(`/chat/${data.groupId}`);
+      } else if (data?.type === 'event' && data.eventId) {
+        // A new or just-changed event may not be in the cached schedule yet; refresh it first so
+        // the event screen doesn't open empty.
+        void qc.invalidateQueries({ queryKey: ['schedule'] });
+        router.push(`/events/${data.eventId}`);
       } else if (data?.type === 'event') {
         router.push('/(tabs)/schedule');
       }
     });
     return () => sub.remove();
-  }, [router]);
+  }, [router, qc]);
   return null;
 }
 

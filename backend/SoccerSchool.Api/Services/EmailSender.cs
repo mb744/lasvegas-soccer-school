@@ -15,6 +15,10 @@ public interface IEmailSender
 {
     bool IsAvailable { get; }
     Task<EmailSendResult> SendAsync(string toEmail, string subject, string body, CancellationToken ct);
+
+    /// <summary>Send with a caller-built HTML body (for system emails with buttons). The HTML
+    /// must already escape any user-entered text.</summary>
+    Task<EmailSendResult> SendAsync(string toEmail, string subject, string plainText, string html, CancellationToken ct);
 }
 
 public record EmailSendResult(bool Success, string? MessageId, string? Message);
@@ -32,8 +36,12 @@ public class EmailSender : IEmailSender
 
     public bool IsAvailable => _acs.IsEmailConfigured;
 
+    // Admin-authored text: send it as plain text plus an escaped HTML wrapper.
+    public Task<EmailSendResult> SendAsync(string toEmail, string subject, string body, CancellationToken ct) =>
+        SendAsync(toEmail, subject, body, WrapAsHtml(body), ct);
+
     public async Task<EmailSendResult> SendAsync(
-        string toEmail, string subject, string body, CancellationToken ct)
+        string toEmail, string subject, string body, string html, CancellationToken ct)
     {
         if (!IsAvailable)
             return new EmailSendResult(false, null, "Email not configured (set Acs:ConnectionString and Acs:EmailFromAddress).");
@@ -45,13 +53,10 @@ public class EmailSender : IEmailSender
         try
         {
             var client = new EmailClient(_acs.ConnectionString);
-            // Send both plain text (admin-authored) and a minimal HTML wrapper so clients that
-            // prefer HTML get something reasonable. The HTML wrap preserves line breaks and
-            // escapes user content so injected markup doesn't get rendered.
             var content = new EmailContent(subject)
             {
                 PlainText = body,
-                Html = WrapAsHtml(body)
+                Html = html
             };
             var recipients = new EmailRecipients(new[] { new EmailAddress(toEmail) });
             var message = new EmailMessage(_acs.EmailFromAddress, recipients, content);

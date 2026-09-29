@@ -11,6 +11,7 @@ import type {
   CreateDrillAssignmentRequest,
   DrillTargetOptions,
   PlayerPasswordResetInfo,
+  RsvpInfo,
   SaveDrillRequest,
 } from './types'
 import type {
@@ -1369,6 +1370,16 @@ export const Api = {
   // --- Daily Training: parent resets a child's password from the emailed link (no login) ---
   async playerPasswordResetInfo(token: string) {
     const r = await api.get<PlayerPasswordResetInfo>(`/public/player-password-reset?token=${encodeURIComponent(token)}`)
+    return r.data
+  },
+  /** One-click attendance from event emails: read the current answer (no change). */
+  async getRsvp(token: string) {
+    const r = await api.get<RsvpInfo>(`/rsvp?t=${encodeURIComponent(token)}`)
+    return r.data
+  },
+  /** Record an answer from an event email link: going | maybe | no. */
+  async answerRsvp(token: string, answer: 'going' | 'maybe' | 'no') {
+    const r = await api.post<RsvpInfo>('/rsvp', { token, answer })
     return r.data
   },
   async resetPlayerPassword(token: string, newPassword: string) {
