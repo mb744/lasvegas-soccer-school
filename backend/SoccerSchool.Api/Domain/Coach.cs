@@ -55,6 +55,13 @@ public class Coach
 
     public Language Language { get; set; } = Language.English;
 
+    /// <summary>The app/web login that belongs to this coach. Makes the login coach of every team
+    /// card that points at this profile, whatever email is on the card. Linked automatically when a
+    /// login with a verified matching email signs in, or explicitly by an admin (Coaches page).</summary>
+    [MaxLength(450)]
+    public string? UserId { get; set; }
+    public ApplicationUser? User { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 

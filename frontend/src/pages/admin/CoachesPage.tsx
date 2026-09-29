@@ -5,7 +5,7 @@ import { Layout } from '../../components/Layout'
 import { Api } from '../../api/client'
 import type {
   Coach, CoachSummary, CoachCertification,
-  SaveCoachRecordRequest, SaveCoachCertificationRequest, Language,
+  SaveCoachRecordRequest, SaveCoachCertificationRequest, Language, UserSummary,
 } from '../../api/types'
 
 function errMsg(e: any): string {
@@ -353,9 +353,121 @@ function CoachDetail({
         )}
       </section>
 
+      <CoachLoginSection detail={detail} onChanged={onCertChanged}
+        onError={onError} onNotice={onNotice} />
+
       <CoachCertsSection detail={detail} onChanged={onCertChanged}
         onError={onError} onNotice={onNotice} />
     </>
+  )
+}
+
+/** Which app/web login belongs to this coach. Linked, the login coaches every team whose coach
+ *  card points at this profile — even if the card's email differs from the login's. */
+function CoachLoginSection({
+  detail, onChanged, onError, onNotice,
+}: {
+  detail: Coach
+  onChanged: (updated: Coach) => void
+  onError: (e: string) => void
+  onNotice: (n: string) => void
+}) {
+  const { t } = useTranslation()
+  const [picking, setPicking] = useState(false)
+  const [users, setUsers] = useState<UserSummary[] | null>(null)
+  const [q, setQ] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const startPicking = async () => {
+    setPicking(true)
+    setQ(detail.email ?? '')
+    if (users === null) {
+      try { setUsers(await Api.listUsers()) } catch (e: any) { onError(errMsg(e)) }
+    }
+  }
+
+  const matches = useMemo(() => {
+    const needle = q.trim().toLowerCase()
+    if (!users || !needle) return []
+    return users
+      .filter(u => `${u.firstName} ${u.lastName} ${u.email}`.toLowerCase().includes(needle))
+      .slice(0, 8)
+  }, [users, q])
+
+  const link = async (userId: string | null) => {
+    onError('')
+    setBusy(true)
+    try {
+      const updated = await Api.setCoachLogin(detail.id, userId)
+      onChanged(updated)
+      setPicking(false)
+      onNotice(userId ? t('admin.coachLoginLinked', { email: updated.linkedUserEmail ?? '' }) : t('admin.coachLoginUnlinked'))
+    } catch (e: any) {
+      onError(errMsg(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const unlink = () => {
+    if (!confirm(t('admin.coachLoginUnlinkConfirm'))) return
+    void link(null)
+  }
+
+  return (
+    <section className="bg-white border border-slate-200 rounded-lg p-4">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <h3 className="font-bold text-emerald-800">{t('admin.coachLogin')}</h3>
+          {detail.linkedUserEmail
+            ? <div className="text-sm text-slate-700 mt-1">{detail.linkedUserEmail}</div>
+            : <div className="text-sm text-slate-400 mt-1">{t('admin.coachLoginNone')}</div>}
+        </div>
+        <div className="text-sm whitespace-nowrap">
+          <button onClick={startPicking} disabled={busy} className="text-emerald-700 hover:underline disabled:opacity-60">
+            {detail.linkedUserEmail ? t('admin.coachLoginChange') : t('admin.coachLoginLink')}
+          </button>
+          {detail.linkedUserEmail && (
+            <>
+              <span className="mx-2 text-slate-300">|</span>
+              <button onClick={unlink} disabled={busy} className="text-rose-700 hover:underline disabled:opacity-60">
+                {t('admin.coachLoginUnlink')}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+      <p className="text-xs text-slate-500 mt-2">{t('admin.coachLoginHelp')}</p>
+
+      {picking && (
+        <div className="mt-3 space-y-2">
+          <div className="flex gap-2">
+            <input autoFocus value={q} onChange={e => setQ(e.target.value)}
+              placeholder={t('admin.coachLoginSearch')}
+              className="flex-1 border border-slate-300 rounded-md px-3 py-1.5 text-sm" />
+            <button onClick={() => setPicking(false)} className="text-sm text-slate-600 hover:underline">{t('admin.cancel')}</button>
+          </div>
+          {users === null && <div className="text-sm text-slate-500">…</div>}
+          {users !== null && q.trim() !== '' && matches.length === 0 && (
+            <div className="text-sm text-slate-500">{t('admin.coachLoginNoMatch')}</div>
+          )}
+          <ul className="divide-y divide-slate-100 border border-slate-200 rounded-md">
+            {matches.map(u => (
+              <li key={u.id} className="flex items-center justify-between px-3 py-2 text-sm">
+                <div>
+                  <div className="text-slate-800">{[u.firstName, u.lastName].filter(Boolean).join(' ') || '—'}</div>
+                  <div className="text-xs text-slate-500">{u.email}</div>
+                </div>
+                <button onClick={() => link(u.id)} disabled={busy || u.id === detail.linkedUserId}
+                  className="text-emerald-700 hover:underline disabled:text-slate-300 disabled:no-underline">
+                  {u.id === detail.linkedUserId ? t('admin.coachLoginCurrent') : t('admin.coachLoginPick')}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
   )
 }
 

@@ -1564,6 +1564,8 @@ export interface ThreadSummary {
   lastDirection: ThreadDirection
   inboundCount: number
   outboundCount: number
+  /** The phone belongs to a coach (profile or team card). */
+  isCoach: boolean
 }
 
 /** One registered parent in the Inbox "Message a parent" picker — for starting a thread
@@ -1610,6 +1612,7 @@ export interface ThreadDetail {
   parentRegistered: boolean
   language: Language | null
   messages: ThreadMessage[]
+  isCoach: boolean
 }
 
 export interface SendThreadReplyRequest {
@@ -1667,6 +1670,9 @@ export interface Coach {
   createdAt: string
   updatedAt: string
   certifications: CoachCertification[]
+  /** The app/web login linked to this coach profile, if any. */
+  linkedUserId: string | null
+  linkedUserEmail: string | null
 }
 
 export interface CoachCertification {
@@ -1692,6 +1698,7 @@ export interface CoachSummary {
   monthlyPayment: number | null
   certificationCount: number
   updatedAt: string
+  linkedUserEmail: string | null
 }
 
 export interface SaveCoachRecordRequest {

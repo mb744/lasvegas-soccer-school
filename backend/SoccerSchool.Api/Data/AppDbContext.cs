@@ -385,6 +385,15 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
             // truncating type. 10,2 covers anything realistic for a youth-league stipend.
             b.Property(c => c.MonthlyPayment).HasPrecision(10, 2);
             b.HasIndex(c => new { c.LastName, c.FirstName });
+            // Optional login link. ClientSetNull (no DB cascade): AspNetUsers already reaches
+            // TeamCoaches directly, and Coaches → TeamCoaches cascades, so a DB-level SetNull here
+            // would be a second cascade path SQL Server rejects (error 1785).
+            b.HasOne(c => c.User)
+                .WithMany()
+                .HasForeignKey(c => c.UserId)
+                .OnDelete(DeleteBehavior.ClientSetNull);
+            // One coach profile per login.
+            b.HasIndex(c => c.UserId).IsUnique().HasFilter("[UserId] IS NOT NULL");
         });
 
         modelBuilder.Entity<CoachCertification>(b =>

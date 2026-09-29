@@ -1406,18 +1406,34 @@ public class MessagingController : ControllerBase
             .ToListAsync(ct))
             .GroupBy(c => c.CellPhone!)
             .ToDictionary(g => g.Key, g => g.First());
+        // Coaches too — profile phone first, then team coach cards — so they aren't "Unregistered".
+        var coachNamesByForm = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var c in await _db.Coaches
+                     .Where(c => c.CellPhone != null && allCandidates.Contains(c.CellPhone))
+                     .Select(c => new { Phone = c.CellPhone!, Name = (c.FirstName + " " + c.LastName).Trim() })
+                     .ToListAsync(ct))
+            coachNamesByForm.TryAdd(c.Phone, c.Name);
+        foreach (var c in await _db.TeamCoaches
+                     .Where(c => c.Phone != null && allCandidates.Contains(c.Phone))
+                     .Select(c => new { Phone = c.Phone!, c.Name })
+                     .ToListAsync(ct))
+            coachNamesByForm.TryAdd(c.Phone, c.Name);
 
         // Resolve a thread phone to a known person: registered account holder first, then any
-        // additional guardian. "Known" suppresses the inbox's unregistered badge either way.
-        (string? Name, int? ParentAccountId, bool Known) ResolveIdentity(string phone)
+        // additional guardian, then a coach. "Known" suppresses the inbox's unregistered badge.
+        (string? Name, int? ParentAccountId, bool Known, bool IsCoach) ResolveIdentity(string phone)
         {
+            var isCoach = PhoneNormalizer.Variants(phone).Any(coachNamesByForm.ContainsKey);
             foreach (var v in PhoneNormalizer.Variants(phone))
                 if (parentsByForm.TryGetValue(v, out var p))
-                    return ($"{p.FirstName} {p.LastName}".Trim(), p.Id, true);
+                    return ($"{p.FirstName} {p.LastName}".Trim(), p.Id, true, isCoach);
             foreach (var v in PhoneNormalizer.Variants(phone))
                 if (contactsByForm.TryGetValue(v, out var c))
-                    return ($"{c.FirstName} {c.LastName}".Trim(), c.ParentAccountId, true);
-            return (null, null, false);
+                    return ($"{c.FirstName} {c.LastName}".Trim(), c.ParentAccountId, true, isCoach);
+            foreach (var v in PhoneNormalizer.Variants(phone))
+                if (coachNamesByForm.TryGetValue(v, out var coachName))
+                    return (coachName, null, true, true);
+            return (null, null, false, false);
         }
 
         var summaries = byPhone
@@ -1436,7 +1452,8 @@ public class MessagingController : ControllerBase
                     last.Body,
                     last.Direction,
                     inboundCount,
-                    outboundCount);
+                    outboundCount,
+                    who.IsCoach);
             })
             .OrderByDescending(s => s.LastAt)
             .Take(200)
@@ -1576,13 +1593,40 @@ public class MessagingController : ControllerBase
             }
         }
 
+        // Coaches (profile or team card) are known people too — label them instead of "Unregistered".
+        var coach = await FindCoachByPhoneAsync(phoneVariants, ct);
+        if (coach is not null && !known)
+        {
+            name = coach.Value.Name;
+            known = true;
+            language = coach.Value.Language;
+        }
+
         return Ok(new ThreadDetailDto(
             phone,
             string.IsNullOrWhiteSpace(name) ? null : name,
             parentAccountId,
             known,
             language,
-            messages));
+            messages,
+            IsCoach: coach is not null));
+    }
+
+    /// <summary>A coach reachable at one of these phone forms: the coach profile first, then any
+    /// team coach card. Null when none match.</summary>
+    private async Task<(string Name, Language Language)?> FindCoachByPhoneAsync(List<string> phoneVariants, CancellationToken ct)
+    {
+        var profile = await _db.Coaches
+            .Where(c => c.CellPhone != null && phoneVariants.Contains(c.CellPhone))
+            .Select(c => new { c.FirstName, c.LastName, c.Language })
+            .FirstOrDefaultAsync(ct);
+        if (profile is not null) return ($"{profile.FirstName} {profile.LastName}".Trim(), profile.Language);
+
+        var card = await _db.TeamCoaches
+            .Where(c => c.Phone != null && phoneVariants.Contains(c.Phone))
+            .Select(c => new { c.Name, c.Language })
+            .FirstOrDefaultAsync(ct);
+        return card is null ? null : (card.Name, card.Language);
     }
 
     /// <summary>Sends a one-off reply on the chosen channel as a single-recipient broadcast. Reuses

@@ -38,7 +38,8 @@ public class CoachesController : ControllerBase
             .OrderBy(c => c.LastName).ThenBy(c => c.FirstName)
             .Select(c => new CoachSummary(
                 c.Id, c.FirstName, c.LastName, c.CellPhone, c.Email,
-                c.MonthlyPayment, c.Certifications.Count, c.UpdatedAt))
+                c.MonthlyPayment, c.Certifications.Count, c.UpdatedAt,
+                c.User != null ? c.User.Email : null))
             .ToListAsync(ct);
         return Ok(items);
     }
@@ -48,6 +49,7 @@ public class CoachesController : ControllerBase
     {
         var c = await _db.Coaches
             .Include(x => x.Certifications)
+            .Include(x => x.User)
             .FirstOrDefaultAsync(x => x.Id == id, ct);
         if (c is null) return NotFound();
         return Ok(ToDto(c));
@@ -69,7 +71,7 @@ public class CoachesController : ControllerBase
     [HttpPut("{id:int}")]
     public async Task<ActionResult<CoachDto>> Update(int id, [FromBody] SaveCoachRecordRequest request, CancellationToken ct)
     {
-        var c = await _db.Coaches.Include(x => x.Certifications).FirstOrDefaultAsync(x => x.Id == id, ct);
+        var c = await _db.Coaches.Include(x => x.Certifications).Include(x => x.User).FirstOrDefaultAsync(x => x.Id == id, ct);
         if (c is null) return NotFound();
         if (string.IsNullOrWhiteSpace(request.FirstName) || string.IsNullOrWhiteSpace(request.LastName))
             return BadRequest("First name and last name are required.");
@@ -87,6 +89,34 @@ public class CoachesController : ControllerBase
         _db.Coaches.Remove(c);  // Certifications cascade-delete via the FK config.
         await _db.SaveChangesAsync(ct);
         return NoContent();
+    }
+
+    /// <summary>Links this coach profile to a login (or unlinks with a null <c>UserId</c>). The
+    /// login then coaches every team whose card points at this profile, even when the card's
+    /// email differs from the login's or the login's email isn't verified — the admin vouches.</summary>
+    [HttpPut("{id:int}/login")]
+    [RequirePermission(Permissions.UsersManage)]
+    public async Task<ActionResult<CoachDto>> SetLogin(int id, [FromBody] SetCoachLoginRequest request, CancellationToken ct)
+    {
+        var c = await _db.Coaches.Include(x => x.Certifications).FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (c is null) return NotFound();
+
+        var userId = string.IsNullOrWhiteSpace(request.UserId) ? null : request.UserId.Trim();
+        if (userId is not null)
+        {
+            if (!await _db.Users.AnyAsync(u => u.Id == userId, ct)) return BadRequest("That login doesn't exist.");
+            var other = await _db.Coaches
+                .Where(x => x.UserId == userId && x.Id != id)
+                .Select(x => new { x.FirstName, x.LastName })
+                .FirstOrDefaultAsync(ct);
+            if (other is not null)
+                return Conflict($"That login is already linked to the coach profile {other.FirstName} {other.LastName}. Unlink it there first.");
+        }
+
+        c.UserId = userId;
+        c.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        return Ok(ToDto(await ReloadAsync(id, ct)));
     }
 
     /// <summary>Emails the coach a link to sign up for a login. Their signup uses the standard
@@ -210,7 +240,7 @@ public class CoachesController : ControllerBase
     }
 
     private async Task<Coach> ReloadAsync(int id, CancellationToken ct) =>
-        (await _db.Coaches.Include(x => x.Certifications).FirstAsync(x => x.Id == id, ct));
+        (await _db.Coaches.Include(x => x.Certifications).Include(x => x.User).FirstAsync(x => x.Id == id, ct));
 
     private static CoachDto ToDto(Coach c) => new(
         c.Id, c.FirstName, c.LastName, c.CellPhone, c.HasWhatsApp, c.Email,
@@ -222,5 +252,7 @@ public class CoachesController : ControllerBase
             .Select(x => new CoachCertificationDto(
                 x.Id, x.CoachId, x.Name, x.IssuingBody, x.IssuedOn, x.ExpiresOn,
                 x.CertificateNumber, x.Notes, x.CreatedAt))
-            .ToList());
+            .ToList(),
+        c.UserId,
+        c.User?.Email);
 }

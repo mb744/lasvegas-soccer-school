@@ -22,7 +22,15 @@ public record CoachDto(
     Language Language,
     DateTime CreatedAt,
     DateTime UpdatedAt,
-    IReadOnlyList<CoachCertificationDto> Certifications);
+    IReadOnlyList<CoachCertificationDto> Certifications,
+    string? LinkedUserId = null,
+    string? LinkedUserEmail = null);
+
+/// <summary>Links a coach profile to a login (null unlinks).</summary>
+public record SetCoachLoginRequest
+{
+    [MaxLength(450)] public string? UserId { get; init; }
+}
 
 public record SendCoachInviteResult(bool Success, string Message);
 
@@ -47,7 +55,8 @@ public record CoachSummary(
     string? Email,
     decimal? MonthlyPayment,
     int CertificationCount,
-    DateTime UpdatedAt);
+    DateTime UpdatedAt,
+    string? LinkedUserEmail = null);
 
 public record SaveCoachRecordRequest
 {

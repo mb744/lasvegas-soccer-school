@@ -529,7 +529,8 @@ public record ThreadSummaryDto(
     string? LastBody,
     ThreadDirection LastDirection,
     int InboundCount,
-    int OutboundCount);
+    int OutboundCount,
+    bool IsCoach = false);
 
 public record ThreadDetailDto(
     string Phone,
@@ -537,7 +538,8 @@ public record ThreadDetailDto(
     int? ParentAccountId,
     bool ParentRegistered,
     Language? Language,
-    IReadOnlyList<ThreadMessageDto> Messages);
+    IReadOnlyList<ThreadMessageDto> Messages,
+    bool IsCoach = false);
 
 public record SendThreadReplyRequest
 {
