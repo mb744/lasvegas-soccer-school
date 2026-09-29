@@ -54,6 +54,15 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="roster"
+        options={{
+          // Staff only: coaches (their teams) and admins (all teams) hold players.view by default.
+          href: can(me, Perm.PlayersView) ? undefined : null,
+          title: t('tabs.roster'),
+          tabBarIcon: ({ color }) => <TabIcon icon="📋" color={color} />,
+        }}
+      />
+      <Tabs.Screen
         name="chat"
         options={{
           // View-only family members (grandparents, friends) aren't in team chats.

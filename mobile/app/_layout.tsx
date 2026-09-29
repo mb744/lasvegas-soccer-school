@@ -63,6 +63,8 @@ export default function RootLayout() {
               <Stack.Screen name="admin/users/[id]" options={{ headerShown: true, title: '' }} />
               <Stack.Screen name="admin/access/index" options={{ headerShown: true, title: '' }} />
               <Stack.Screen name="family/invite" options={{ headerShown: true, title: '' }} />
+              <Stack.Screen name="roster/[teamId]/index" options={{ headerShown: true, title: '' }} />
+              <Stack.Screen name="roster/[teamId]/[playerId]" options={{ headerShown: true, title: '' }} />
             </Stack>
           </AuthProvider>
         </QueryClientProvider>
