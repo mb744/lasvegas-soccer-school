@@ -66,10 +66,32 @@ public class CoachScopeService : ICoachScopeService
             }
         }
 
+        await LinkCoachProfileByEmailAsync(_db, user, ct);
+
+        // A login coaches a team when a card is stamped with it, or when the card points at the
+        // coach profile the login is linked to (admin-linked or email-matched).
         return await _db.TeamCoaches
-            .Where(tc => tc.UserId == user.Id)
+            .Where(tc => tc.UserId == user.Id || (tc.Coach != null && tc.Coach.UserId == user.Id))
             .Select(tc => tc.TeamId)
             .Distinct()
             .ToListAsync(ct);
+    }
+
+    /// <summary>Links an unclaimed coach profile whose email matches this login's verified email,
+    /// unless the login is already linked to a profile. Shared by web (here) and mobile sign-in.</summary>
+    public static async Task LinkCoachProfileByEmailAsync(AppDbContext db, ApplicationUser user, CancellationToken ct)
+    {
+        if (!user.EmailConfirmed || string.IsNullOrEmpty(user.NormalizedEmail)) return;
+        if (await db.Coaches.AnyAsync(c => c.UserId == user.Id, ct)) return;
+
+        var normalized = user.NormalizedEmail;
+        var profile = await db.Coaches
+            .Where(c => c.UserId == null && c.Email != null && c.Email.Trim().ToUpper() == normalized)
+            .OrderBy(c => c.Id)
+            .FirstOrDefaultAsync(ct);
+        if (profile is null) return;
+
+        profile.UserId = user.Id;
+        await db.SaveChangesAsync(ct);
     }
 }

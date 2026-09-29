@@ -1576,7 +1576,11 @@ function InboxTab({
                 className={`w-full text-left px-2 py-2 rounded text-sm hover:bg-emerald-50 ${selectedPhone === thr.phone ? 'bg-emerald-50 text-emerald-800 font-medium' : ''}`}>
                 <div className="flex items-center justify-between">
                   <span className="font-medium">{thr.name ?? thr.phone}</span>
-                  {!thr.parentRegistered && (
+                  {thr.isCoach ? (
+                    <span className="text-[10px] uppercase tracking-wide bg-sky-100 text-sky-800 px-1.5 py-0.5 rounded">
+                      {t('admin.msgInboxCoach')}
+                    </span>
+                  ) : !thr.parentRegistered && (
                     <span className="text-[10px] uppercase tracking-wide bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">
                       {t('admin.msgInboxUnregistered')}
                     </span>
@@ -1613,7 +1617,11 @@ function InboxTab({
               <div>
                 <div className="font-bold text-emerald-800">{thread?.name ?? selectedPhone}</div>
                 <div className="text-xs text-slate-500 font-mono">{selectedPhone}</div>
-                {thread && !thread.parentRegistered && (
+                {thread?.isCoach ? (
+                  <div className="text-[10px] uppercase tracking-wide bg-sky-100 text-sky-800 px-1.5 py-0.5 rounded inline-block mt-1">
+                    {t('admin.msgInboxCoach')}
+                  </div>
+                ) : thread && !thread.parentRegistered && (
                   <div className="text-[10px] uppercase tracking-wide bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded inline-block mt-1">
                     {t('admin.msgInboxUnregistered')}
                   </div>

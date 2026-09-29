@@ -346,7 +346,15 @@ public class MobileAuthController : ControllerBase
             }
         }
         if (linkedNow) await _db.SaveChangesAsync(ct);
-        var coachTeamIds = coachCards.Select(tc => tc.TeamId).Distinct().ToList();
+
+        // Coach profile link (admin-linked or verified-email match) makes the login coach of every
+        // card pointing at that profile, even when a card's email differs from the login's.
+        await CoachScopeService.LinkCoachProfileByEmailAsync(_db, user, ct);
+        var profileTeamIds = await _db.TeamCoaches
+            .Where(tc => tc.Coach != null && tc.Coach.UserId == user.Id)
+            .Select(tc => tc.TeamId)
+            .ToListAsync(ct);
+        var coachTeamIds = coachCards.Select(tc => tc.TeamId).Concat(profileTeamIds).Distinct().ToList();
 
         // Additional parents: link every invite / registration contact for this verified email, at
         // its access level, so the rest of the app treats this login as part of those families.

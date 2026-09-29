@@ -1121,6 +1121,11 @@ export const Api = {
     const r = await api.put<Coach>(`/coaches/${id}`, payload)
     return r.data
   },
+  /** Links the coach profile to a login; null unlinks. */
+  async setCoachLogin(id: number, userId: string | null) {
+    const r = await api.put<Coach>(`/coaches/${id}/login`, { userId })
+    return r.data
+  },
   async deleteCoach(id: number) {
     await api.delete(`/coaches/${id}`)
   },

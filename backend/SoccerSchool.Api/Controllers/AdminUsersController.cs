@@ -61,7 +61,12 @@ public class AdminUsersController : ControllerBase
             .Select(tc => tc.UserId!)
             .Distinct()
             .ToListAsync(ct);
-        var coachUserIdSet = coachUserIds.ToHashSet(StringComparer.Ordinal);
+        // Logins linked to a coach profile are coaches too (even before a team card exists).
+        var profileUserIds = await _db.Coaches
+            .Where(c => c.UserId != null)
+            .Select(c => c.UserId!)
+            .ToListAsync(ct);
+        var coachUserIdSet = coachUserIds.Concat(profileUserIds).ToHashSet(StringComparer.Ordinal);
 
         var now = DateTimeOffset.UtcNow;
         return Ok(users.Select(u => new UserSummary(
