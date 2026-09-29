@@ -350,6 +350,12 @@ export const es: Translations = {
     pending: 'Toque para confirmar',
     lockedByAdmin: 'Establecido por su entrenador — contáctelo para cambiar.',
     notAnswered: 'Sin respuesta',
+    team_one: 'Asistencia del equipo · {{count}} jugador',
+    team_other: 'Asistencia del equipo · {{count}} jugadores',
+    teamTitle: 'Asistencia del equipo',
+    nobody: 'Ningún jugador en "{{status}}".',
+    listUnavailable: 'La lista de jugadores aún no está disponible. Cierre este evento y ábralo de nuevo.',
+    noReply: 'Sin respuesta',
   },
   chat: {
     title: 'Chat',

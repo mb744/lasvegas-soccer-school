@@ -291,6 +291,15 @@ export interface StaffEventAttendance {
   notGoing: number;
   pending: number;
   rosterSize: number;
+  /** Every rostered player with their answer (Pending = no reply). Missing from older servers. */
+  players?: StaffAttendancePlayer[];
+}
+
+export interface StaffAttendancePlayer {
+  playerId: number;
+  firstName: string;
+  lastName: string;
+  status: AttendanceStatus;
 }
 
 export interface AdminPlayerOption {

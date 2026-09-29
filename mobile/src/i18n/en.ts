@@ -348,6 +348,12 @@ export const en = {
     pending: 'Tap to confirm',
     lockedByAdmin: 'Set by your coach — contact them to change.',
     notAnswered: 'Not answered yet',
+    team_one: 'Team attendance · {{count}} player',
+    team_other: 'Team attendance · {{count}} players',
+    teamTitle: 'Team attendance',
+    nobody: 'No players in "{{status}}".',
+    listUnavailable: 'Player list not available yet. Close this event and open it again.',
+    noReply: 'No reply',
   },
   chat: {
     title: 'Chat',
