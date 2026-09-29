@@ -30,9 +30,9 @@ import {
   ScheduledEventKind,
   type EventPlayer,
   type ScheduleEvent,
-  type StaffEventAttendance,
 } from '../../src/api/types';
 import { useAuth } from '../../src/auth/AuthContext';
+import { TeamAttendance } from '../../src/attendance/TeamAttendance';
 import { ReadOnlyAttendance, useCanManagePlayer, useIsFamilyViewer } from '../../src/family/access';
 import { longDate, timeLabel } from '../../src/format';
 import { colors, radius, spacing } from '../../src/theme';
@@ -52,7 +52,7 @@ export default function EventDetailScreen() {
   });
   const event = React.useMemo(() => (data ?? []).find((e) => e.id === eventId), [data, eventId]);
 
-  // Staff = admin OR coach of the event's team. Only staff see the team-wide counts on the chips;
+  // Staff = admin OR coach of the event's team. Only staff get the tappable team-attendance counts;
   // parents keep the plain "Going / Maybe / Not going" chips they've always had.
   const isStaff =
     !!me &&
@@ -170,7 +170,6 @@ export default function EventDetailScreen() {
                   key={p.playerId}
                   player={p}
                   showName={event.players.length > 1}
-                  counts={isStaff ? staffAttendance : undefined}
                   onSet={(status) => mutation.mutate({ playerId: p.playerId, status })}
                 />
               ) : (
@@ -180,12 +179,11 @@ export default function EventDetailScreen() {
           </View>
         ) : null}
 
-        {isStaff && !event.isCancelled && event.players.length === 0 && staffAttendance ? (
-          // Staff on a team where none of the kids belong to this login (unusual but possible for
-          // an admin viewing another team's event). Still show the team-wide counts so they can
-          // gauge turnout.
+        {isStaff && !event.isCancelled && staffAttendance ? (
+          // Coaches/admins: team-wide answers. Tap a count to see who's going, maybe, not going or
+          // hasn't replied. Kept separate from their own kid's chips above, which set that kid's answer.
           <View style={styles.heroAttendance}>
-            <StaffOnlyChips counts={staffAttendance} />
+            <TeamAttendance counts={staffAttendance} />
           </View>
         ) : null}
       </View>
@@ -370,35 +368,17 @@ function LocationMap({ address }: { address: string }) {
 function PlayerAttendance({
   player,
   showName,
-  counts,
   onSet,
 }: {
   player: EventPlayer;
   showName: boolean;
-  /** When provided (staff viewers only), each chip appends the team-wide count for that status. */
-  counts: StaffEventAttendance | undefined;
   onSet: (status: AttendanceStatus) => void;
 }) {
   const { t } = useTranslation();
-  const options: { status: AttendanceStatus; label: string; color: string; count: number | null }[] = [
-    {
-      status: AttendanceStatus.Confirmed,
-      label: t('attendance.going'),
-      color: colors.success,
-      count: counts?.going ?? null,
-    },
-    {
-      status: AttendanceStatus.Maybe,
-      label: t('attendance.maybe'),
-      color: colors.warning,
-      count: counts?.maybe ?? null,
-    },
-    {
-      status: AttendanceStatus.Declined,
-      label: t('attendance.notGoing'),
-      color: colors.danger,
-      count: counts?.notGoing ?? null,
-    },
+  const options: { status: AttendanceStatus; label: string; color: string }[] = [
+    { status: AttendanceStatus.Confirmed, label: t('attendance.going'), color: colors.success },
+    { status: AttendanceStatus.Maybe, label: t('attendance.maybe'), color: colors.warning },
+    { status: AttendanceStatus.Declined, label: t('attendance.notGoing'), color: colors.danger },
   ];
 
   return (
@@ -413,39 +393,10 @@ function PlayerAttendance({
               style={[styles.chip, active && { backgroundColor: opt.color, borderColor: opt.color }]}
               onPress={() => onSet(opt.status)}
             >
-              <Text style={[styles.chipText, active && styles.chipTextActive]}>
-                {opt.label}
-                {opt.count !== null ? ` · ${opt.count}` : ''}
-              </Text>
+              <Text style={[styles.chipText, active && styles.chipTextActive]}>{opt.label}</Text>
             </TouchableOpacity>
           );
         })}
-      </View>
-    </View>
-  );
-}
-
-/** Staff-only, non-interactive summary chips shown when the staff viewer has no kids on this event. */
-function StaffOnlyChips({ counts }: { counts: StaffEventAttendance }) {
-  const { t } = useTranslation();
-  const items = [
-    { label: t('attendance.going'), color: colors.success, count: counts.going },
-    { label: t('attendance.maybe'), color: colors.warning, count: counts.maybe },
-    { label: t('attendance.notGoing'), color: colors.danger, count: counts.notGoing },
-  ];
-  return (
-    <View style={styles.attendanceRow}>
-      <View style={styles.chips}>
-        {items.map((it) => (
-          <View
-            key={it.label}
-            style={[styles.chip, { backgroundColor: it.color, borderColor: it.color }]}
-          >
-            <Text style={[styles.chipText, styles.chipTextActive]}>
-              {it.label} · {it.count}
-            </Text>
-          </View>
-        ))}
       </View>
     </View>
   );

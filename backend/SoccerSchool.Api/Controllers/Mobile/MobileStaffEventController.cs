@@ -48,10 +48,11 @@ public class MobileStaffEventController : ControllerBase
         var scope = await _coaches.GetScopeAsync(User, ct);
         if (!scope.CanManageTeam(ev.TeamId)) return Forbid();
 
-        var rosterPlayerIds = await _db.TeamPlayers
+        var roster = await _db.TeamPlayers
             .Where(tp => tp.TeamId == ev.TeamId)
-            .Select(tp => tp.PlayerId)
+            .Select(tp => new { tp.PlayerId, tp.Player!.FirstName, tp.Player.LastName })
             .ToListAsync(ct);
+        var rosterPlayerIds = roster.Select(r => r.PlayerId).ToList();
 
         var attendanceByPlayer = await _db.EventAttendances
             .Where(a => a.ScheduledGameId == ev.Id && rosterPlayerIds.Contains(a.PlayerId))
@@ -72,8 +73,20 @@ public class MobileStaffEventController : ControllerBase
             }
         }
 
-        return Ok(new MobileStaffAttendanceDto(going, maybe, notGoing, pending, rosterPlayerIds.Count));
+        var players = roster
+            .OrderBy(r => r.FirstName).ThenBy(r => r.LastName)
+            .Select(r => new MobileStaffAttendancePlayerDto(r.PlayerId, r.FirstName, r.LastName,
+                statusByPlayer.TryGetValue(r.PlayerId, out var st) ? st : AttendanceStatus.Pending))
+            .ToList();
+
+        return Ok(new MobileStaffAttendanceDto(going, maybe, notGoing, pending, rosterPlayerIds.Count, players));
     }
 }
 
-public record MobileStaffAttendanceDto(int Going, int Maybe, int NotGoing, int Pending, int RosterSize);
+/// <summary>Team-wide answers for one event. Players: every rostered player with their answer
+/// (Pending = no reply yet), so staff can see who's going, maybe, or not.</summary>
+public record MobileStaffAttendanceDto(
+    int Going, int Maybe, int NotGoing, int Pending, int RosterSize,
+    IReadOnlyList<MobileStaffAttendancePlayerDto>? Players = null);
+
+public record MobileStaffAttendancePlayerDto(int PlayerId, string FirstName, string LastName, AttendanceStatus Status);
