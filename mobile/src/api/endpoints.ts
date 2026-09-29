@@ -35,6 +35,7 @@ import type { Family, FamilyInviteRequest, FamilyMember } from './types';
 import { FamilyAccessLevel } from './types';
 import type { AccessCatalog, EditableRole, PermissionAuditEntry, UserAccess } from './types';
 import type { EventMediaItem, MediaItem, MediaKind } from './types';
+import type { Roster, RosterPlayerDetail, RosterTeam } from './types';
 
 // ---- Auth ----
 
@@ -529,5 +530,22 @@ export interface AppVersionInfo {
 
 export async function fetchAppVersion(platform: 'ios' | 'android'): Promise<AppVersionInfo> {
   const { data } = await api.get<AppVersionInfo>('/mobile/app-version', { params: { platform } });
+  return data;
+}
+
+// ---- Roster (staff: admins and coaches; server limits coaches to their own teams) ----
+
+export async function fetchRosterTeams(): Promise<RosterTeam[]> {
+  const { data } = await api.get<RosterTeam[]>('/mobile/roster/teams');
+  return data;
+}
+
+export async function fetchRoster(teamId: number): Promise<Roster> {
+  const { data } = await api.get<Roster>(`/mobile/roster/teams/${teamId}`);
+  return data;
+}
+
+export async function fetchRosterPlayer(teamId: number, playerId: number): Promise<RosterPlayerDetail> {
+  const { data } = await api.get<RosterPlayerDetail>(`/mobile/roster/teams/${teamId}/players/${playerId}`);
   return data;
 }

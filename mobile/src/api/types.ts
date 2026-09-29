@@ -471,3 +471,44 @@ export interface FamilyInviteRequest {
   accessLevel: FamilyAccessLevel;
   language?: Language;
 }
+
+// ---- Roster (staff: admins and coaches) ----
+
+export interface RosterTeam {
+  id: number;
+  name: string;
+  playerCount: number;
+}
+
+export interface RosterPlayer {
+  playerId: number;
+  firstName: string;
+  lastName: string;
+  /** Numbers on the player's active uniforms (usually one). */
+  jerseyNumbers: string[];
+}
+
+export interface Roster {
+  teamId: number;
+  teamName: string;
+  players: RosterPlayer[];
+}
+
+export interface RosterGuardian {
+  name: string;
+  /** The family's account holder. */
+  isPrimary: boolean;
+  phone: string | null;
+  email: string | null;
+  language: Language;
+}
+
+export interface RosterPlayerDetail {
+  playerId: number;
+  firstName: string;
+  lastName: string;
+  teamId: number;
+  teamName: string;
+  jerseyNumbers: string[];
+  guardians: RosterGuardian[];
+}
