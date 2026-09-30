@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using SoccerSchool.Api.Controllers;
 using SoccerSchool.Api.Domain;
@@ -250,6 +251,35 @@ public class EventNotificationTests
         await NotificationPreferencesStore.SaveAsync(h.Db, PreferenceSubject.ForUser(dad.Id),
             EmailPreference.Default, EmailPreference.Default, false, default);
         Assert.Equal(new[] { mom.Id }, await NotificationPreferenceRules.WithoutMutedAsync(h.Db, new[] { mom.Id, dad.Id }, default));
+    }
+
+    [Fact]
+    public async Task Every_email_gets_the_recipients_preferences_link_when_we_know_them()
+    {
+        await using var h = new Harness();
+        var (_, _, mom, _, _) = await SeedAsync(h);
+        var links = new EmailPreferencesLink(h.Services.GetRequiredService<IServiceScopeFactory>(), PrefTokens,
+            Microsoft.Extensions.Options.Options.Create(new AppOptions { PublicBaseUrl = "https://lvss.test/" }));
+
+        // A login: the link opens that account's settings.
+        var maria = await links.ForAsync("Mom@Test", default);
+        Assert.NotNull(maria);
+        Assert.Contains("Don\u2019t want these emails?", maria!.Html);
+        Assert.Equal(mom.Id, PrefTokens.Read(PrefsToken(maria.Html))!.UserId);
+
+        // A family contact without a login, in their language.
+        var jose = await links.ForAsync("JOSE@test", default);
+        Assert.Contains("Actualice sus preferencias aquí.", jose!.Html);
+        Assert.NotNull(PrefTokens.Read(PrefsToken(jose.Html))!.ContactId);
+
+        // Someone we don't know has no settings to change.
+        Assert.Null(await links.ForAsync("stranger@test", default));
+
+        var (plain, html) = EmailPreferencesLink.AddTo("Hello", "<html><body><p>Hello</p></body></html>", maria);
+        Assert.EndsWith(maria.Html + "</body></html>", html);
+        Assert.Contains("https://lvss.test/notification-preferences?t=", plain);
+        // Event emails already carry it: not added twice.
+        Assert.Equal(html, EmailPreferencesLink.AddTo(plain, html, maria).Html);
     }
 
     [Fact]

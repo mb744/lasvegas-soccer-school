@@ -229,6 +229,7 @@ builder.Services.AddScoped<EmailDeliveryReportProcessor>();
 builder.Services.AddHostedService<EmailDeliveryReportWorker>();
 builder.Services.AddSingleton<IRsvpTokens, RsvpTokens>();
 builder.Services.AddSingleton<IPreferenceTokens, PreferenceTokens>();
+builder.Services.AddSingleton<IEmailPreferencesLink, EmailPreferencesLink>();
 builder.Services.AddSingleton<EventNotificationQueue>();
 builder.Services.AddScoped<EventNotificationSender>();
 builder.Services.AddHostedService<EventNotificationWorker>();
