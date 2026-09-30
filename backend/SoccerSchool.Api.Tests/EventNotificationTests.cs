@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -94,7 +95,7 @@ public class EventNotificationTests
         Assert.Contains("&amp;s=going", maria.Html); // HTML-encoded in the href
         Assert.Contains("&s=maybe", maria.Plain);
         var jose = email.Sent.Single(e => e.To == "jose@test");
-        Assert.StartsWith("Nuevo partido", jose.Subject);
+        Assert.StartsWith("Nuevo en el calendario: U11 Red vs Rebels", jose.Subject);
         Assert.Contains("¿Ana asistirá?", jose.Html);
     }
 
@@ -124,6 +125,58 @@ public class EventNotificationTests
         Assert.Contains("Field 5", maria.Html);
         Assert.Contains("Field 2", maria.Html); // the old value, shown struck through
         Assert.Contains(push.Sent, p => p.Note.Title.StartsWith("Game updated") && p.Note.Body.Contains("Date & time, Location"));
+    }
+
+    [Fact]
+    public async Task Admin_wording_replaces_the_default_for_its_language_and_reset_restores_it()
+    {
+        await using var h = new Harness();
+        var (_, gameId, _, _, _) = await SeedAsync(h);
+        var admin = new EventEmailTemplatesController(h.Db)
+        {
+            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
+        };
+
+        Assert.IsType<OkObjectResult>((await admin.Save(EventEmailKind.Created, Language.English, new SaveEventEmailTemplateRequest
+        {
+            Subject = "Heads up:\n{team.name} {event.title}",
+            Message = "Hello {parent.name}!\n\n{players.names} has a {event.type} on {event.date}. Directions: https://lvss.test/map.",
+            Footer = "Questions? Reply to this email.",
+        }, default)).Result);
+
+        var email = new FakeEmail();
+        await Sender(h, new FakePush(), email).SendAsync(new EventNotificationJob(gameId, null), default);
+        var maria = email.Sent.Single(e => e.To == "mom@test");
+        Assert.Equal("Heads up: U11 Red vs Rebels", maria.Subject); // line break flattened
+        Assert.Contains("Hello Maria!", maria.Html);
+        Assert.Contains("Ana has a game on", maria.Plain);
+        Assert.Contains("<a href=\"https://lvss.test/map\"", maria.Html); // link clickable, period left out
+        Assert.Contains("Questions? Reply to this email.", maria.Html);
+        Assert.Contains("&amp;s=going", maria.Html); // the answer buttons are always there
+        // Jose reads Spanish, which still has the default wording.
+        Assert.StartsWith("Nuevo en el calendario", email.Sent.Single(e => e.To == "jose@test").Subject);
+
+        Assert.IsType<NoContentResult>(await admin.Reset(EventEmailKind.Created, Language.English, default));
+        email.Sent.Clear();
+        await Sender(h, new FakePush(), email).SendAsync(new EventNotificationJob(gameId, null), default);
+        Assert.StartsWith("New game: U11 Red vs Rebels", email.Sent.Single(e => e.To == "mom@test").Subject);
+    }
+
+    [Fact]
+    public async Task Preview_renders_unsaved_wording_and_escapes_it()
+    {
+        await using var h = new Harness();
+        var admin = new EventEmailTemplatesController(h.Db);
+
+        var preview = Assert.IsType<EventEmailPreviewDto>(Assert.IsType<OkObjectResult>(admin.Preview(new EventEmailPreviewRequest
+        {
+            Kind = EventEmailKind.Updated, Language = Language.Spanish,
+            Subject = "Cambio: {team.name}", Message = "Hola {parent.name}: {event.changes} <b>{event.typo}</b>", Footer = "",
+        }).Result).Value);
+        Assert.Equal("Cambio: U11 Red", preview.Subject);
+        Assert.Contains("Hola Maria: Fecha y hora, Lugar", preview.Html);
+        Assert.Contains("&lt;b&gt;{event.typo}&lt;/b&gt;", preview.Html); // admin text is escaped; unknown placeholder stays visible
+        Assert.Contains("Qué cambió", preview.Html);
     }
 
     [Fact]

@@ -11,13 +11,14 @@ import { MappedFieldsSection } from './MappedFieldsSection'
 import { FailedMessagesSection } from './FailedMessagesSection'
 import { ChargeTypesSection } from './ChargeTypesSection'
 import { MobileAppSettingsSection } from './MobileAppSettingsSection'
+import { EventEmailsSection } from './EventEmailsSection'
 import type { WhatsAppTemplate, EmailTemplate } from '../../api/types'
 
 function errMsg(e: any): string {
   return e?.response?.data?.title || e?.response?.data || e?.message || 'Error'
 }
 
-type Tab = 'templates' | 'dictionary' | 'autoResponse' | 'ageClassifications' | 'uniforms' | 'venues' | 'chargeTypes' | 'mappedFields' | 'failedMessages' | 'mobileApp' | 'backfill'
+type Tab = 'templates' | 'dictionary' | 'autoResponse' | 'ageClassifications' | 'uniforms' | 'venues' | 'chargeTypes' | 'mappedFields' | 'failedMessages' | 'mobileApp' | 'eventEmails' | 'backfill'
 
 /** Top-level admin settings hub. Tabs mirror the Messaging page so the layout is consistent
  *  across admin cards. Currently houses:
@@ -91,6 +92,7 @@ export function AdminSettingsPage() {
           {tabBtn('mappedFields', t('admin.settingsTabMappedFields'))}
           {tabBtn('failedMessages', t('admin.settingsTabFailedMessages'))}
           {tabBtn('mobileApp', t('admin.settingsTabMobileApp'))}
+          {tabBtn('eventEmails', t('admin.settingsTabEventEmails'))}
           {tabBtn('backfill', t('admin.settingsTabBackfill'))}
         </div>
 
@@ -189,6 +191,15 @@ export function AdminSettingsPage() {
         {tab === 'mobileApp' && (
           <section className="bg-white border border-slate-200 rounded-lg p-4">
             <MobileAppSettingsSection
+              onError={(e) => { setError(e); if (e) setNotice(null) }}
+              onNotice={(n) => { setNotice(n); if (n) setError(null) }}
+            />
+          </section>
+        )}
+
+        {tab === 'eventEmails' && (
+          <section className="bg-white border border-slate-200 rounded-lg p-4">
+            <EventEmailsSection
               onError={(e) => { setError(e); if (e) setNotice(null) }}
               onNotice={(n) => { setNotice(n); if (n) setError(null) }}
             />

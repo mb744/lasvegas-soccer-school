@@ -272,6 +272,8 @@ public class EventNotificationSender
         }
 
         var baseUrl = (_app.PublicBaseUrl ?? string.Empty).TrimEnd('/');
+        var wordingFor = await EventEmailWording.LoadAllAsync(_db, ct);
+        var kind = job.Before is null ? EventEmailKind.Created : EventEmailKind.Updated;
         var emails = 0;
         foreach (var (address, r) in recipients)
         {
@@ -280,7 +282,7 @@ public class EventNotificationSender
                 .Select(k => new KidRsvp(k.First, answers.TryGetValue(k.Id, out var s) ? s : AttendanceStatus.Pending,
                     $"{baseUrl}/rsvp?t={Uri.EscapeDataString(_tokens.Create(job.EventId, k.Id, after.StartsAt))}"))
                 .ToList();
-            var (subject, plain, html) = EventEmail.Build(text, after, job.Before, changes, r.Name, kidLinks, baseUrl);
+            var (subject, plain, html) = EventEmail.Build(text, wordingFor(kind, r.Lang), after, job.Before, changes, r.Name, kidLinks);
             var result = await _email.SendAsync(address, subject, plain, html, ct);
             if (result.Success) emails++;
             else _logger.LogWarning("Event email to {Email} failed: {Message}", address, result.Message);
@@ -325,7 +327,7 @@ public class EventMessageText
         ScheduledEventKind.Miscellaneous => _es ? "Evento" : "Event",
         _ => _es ? "Partido" : "Game",
     };
-    private string KindLower(ScheduledEventKind k) => Kind(k).ToLower(_culture);
+    public string KindLower(ScheduledEventKind k) => Kind(k).ToLower(_culture);
 
     public string Title(EventSnapshot e) =>
         e.Kind == ScheduledEventKind.Game
@@ -391,34 +393,18 @@ public class EventMessageText
     public string Maybe => _es ? "Tal vez" : "Maybe";
     public string NotGoing => _es ? "No asiste" : "Not going";
 
-    public string SubjectNew(EventSnapshot e) => _es
-        ? $"Nuevo {KindLower(e.Kind)}: {e.TeamName} {Title(e)} — {WhenShort(e.StartsAt)}"
-        : $"New {KindLower(e.Kind)}: {e.TeamName} {Title(e)} — {WhenShort(e.StartsAt)}";
-    public string SubjectUpdated(EventSnapshot e) => _es
-        ? $"Actualizado: {e.TeamName} {Title(e)} — {WhenShort(e.StartsAt)}"
-        : $"Updated: {e.TeamName} {Title(e)} — {WhenShort(e.StartsAt)}";
-
-    public string Hello(string name) => string.IsNullOrWhiteSpace(name) ? (_es ? "Hola:" : "Hi,") : (_es ? $"Hola {name}:" : $"Hi {name},");
-    public string IntroNew(EventSnapshot e) => _es
-        ? $"Se agregó un nuevo {KindLower(e.Kind)} para {e.TeamName}."
-        : $"A new {KindLower(e.Kind)} was added for {e.TeamName}.";
-    public string IntroUpdated(EventSnapshot e) => _es
-        ? $"Se actualizó este {KindLower(e.Kind)} de {e.TeamName}."
-        : $"This {e.TeamName} {KindLower(e.Kind)} was updated.";
     public string WhatChanged => _es ? "Qué cambió" : "What changed";
     public string Was => _es ? "antes" : "was";
     public string Details => _es ? "Detalles" : "Details";
     public string WillAttend(string kid) => _es ? $"¿{kid} asistirá?" : $"Will {kid} be there?";
     public string CurrentAnswer(string status) => _es ? $"Respuesta actual: {status}" : $"Current answer: {status}";
-    public string TapToAnswer => _es ? "Toque una opción para responder. Puede cambiarla en cualquier momento." : "Tap an option to answer. You can change it any time.";
-    public string OpenApp => _es ? "También puede verlo en la app LV Soccer School." : "You can also see it in the LV Soccer School app.";
     public string Signature => "Las Vegas Soccer School";
 
-    public string PushNewTitle(EventSnapshot e) => _es ? $"Nuevo {KindLower(e.Kind)}: {e.TeamName}" : $"New {KindLower(e.Kind)}: {e.TeamName}";
+    public string PushNewTitle(EventSnapshot e) => _es ? $"Nuevo en el calendario: {e.TeamName}" : $"New {KindLower(e.Kind)}: {e.TeamName}";
     public string PushNewBody(EventSnapshot e, string names) => _es
         ? $"{Title(e)} · {WhenShort(e.StartsAt)}. Toque para confirmar si asiste {names}."
         : $"{Title(e)} · {WhenShort(e.StartsAt)}. Tap to confirm for {names}.";
-    public string PushUpdatedTitle(EventSnapshot e) => _es ? $"{Kind(e.Kind)} actualizado: {e.TeamName}" : $"{Kind(e.Kind)} updated: {e.TeamName}";
+    public string PushUpdatedTitle(EventSnapshot e) => _es ? $"Cambio en el calendario: {e.TeamName}" : $"{Kind(e.Kind)} updated: {e.TeamName}";
     public string PushUpdatedBody(EventSnapshot e, IReadOnlyList<EventField> changes) =>
         $"{string.Join(", ", changes.Select(FieldLabel))} · {Title(e)} {WhenShort(e.StartsAt)}";
 }
@@ -426,11 +412,15 @@ public class EventMessageText
 public static class EventEmail
 {
     public static (string Subject, string Plain, string Html) Build(
-        EventMessageText t, EventSnapshot e, EventSnapshot? before, IReadOnlyList<EventField> changes,
-        string recipientName, IReadOnlyList<KidRsvp> kids, string baseUrl)
+        EventMessageText t, EventEmailWording wording, EventSnapshot e, EventSnapshot? before,
+        IReadOnlyList<EventField> changes, string recipientName, IReadOnlyList<KidRsvp> kids)
     {
         var isUpdate = before is not null;
-        var subject = isUpdate ? t.SubjectUpdated(e) : t.SubjectNew(e);
+        var values = EventEmailPlaceholders.Values(t, e, changes, recipientName, kids.Select(k => k.FirstName));
+        // A subject is one line: an admin's stray line break would otherwise break the header.
+        var subject = System.Text.RegularExpressions.Regex.Replace(EventEmailPlaceholders.Render(wording.Subject, values), @"\s+", " ").Trim();
+        var message = EventEmailPlaceholders.Render(wording.Message, values).Trim();
+        var footer = EventEmailPlaceholders.Render(wording.Footer, values).Trim();
         static string H(string s) => Esc(s);
 
         // Details shown for every email: the fields that have a value.
@@ -443,8 +433,7 @@ public static class EventEmail
         if (!string.IsNullOrWhiteSpace(e.Notes)) detailFields.Add(EventField.Notes);
 
         var plain = new StringBuilder();
-        plain.AppendLine(t.Hello(recipientName)).AppendLine();
-        plain.AppendLine(isUpdate ? t.IntroUpdated(e) : t.IntroNew(e)).AppendLine();
+        plain.AppendLine(message).AppendLine();
         plain.AppendLine($"{t.Kind(e.Kind)}: {t.Title(e)}");
         if (isUpdate)
         {
@@ -461,7 +450,8 @@ public static class EventEmail
             plain.AppendLine($"  {t.Maybe}: {k.LinkBase}&s=maybe");
             plain.AppendLine($"  {t.NotGoing}: {k.LinkBase}&s=no");
         }
-        plain.AppendLine().AppendLine(t.OpenApp).AppendLine().AppendLine(t.Signature);
+        if (footer.Length > 0) plain.AppendLine().AppendLine(footer);
+        plain.AppendLine().AppendLine(t.Signature);
 
         var html = new StringBuilder();
         html.Append("<!doctype html><html><body style=\"margin:0;background:#f3f5f4;font-family:Arial,Helvetica,sans-serif;color:#1f2a24\">");
@@ -471,8 +461,7 @@ public static class EventEmail
         html.Append($"<div style=\"font-size:22px;font-weight:bold;margin-top:4px\">{H(t.Title(e))}</div>");
         html.Append($"<div style=\"font-size:15px;margin-top:4px\">{H(t.WhenLong(e))}</div></div>");
         html.Append("<div style=\"background:#fff;border-radius:0 0 10px 10px;padding:20px\">");
-        html.Append($"<p style=\"margin:0 0 8px\">{H(t.Hello(recipientName))}</p>");
-        html.Append($"<p style=\"margin:0 0 16px\">{H(isUpdate ? t.IntroUpdated(e) : t.IntroNew(e))}</p>");
+        html.Append(EventEmailPlaceholders.ToHtmlParagraphs(message, "margin:0 0 12px;line-height:1.45"));
 
         if (isUpdate && changes.Count > 0)
         {
@@ -500,7 +489,10 @@ public static class EventEmail
             html.Append(Button(k.LinkBase + "&s=no", t.NotGoing, "#c62828"));
             html.Append("</div>");
         }
-        html.Append($"<p style=\"font-size:12px;color:#5b6b63;margin:16px 0 0\">{H(t.TapToAnswer)} {H(t.OpenApp)}</p>");
+        if (footer.Length > 0)
+            html.Append("<div style=\"margin-top:16px\">")
+                .Append(EventEmailPlaceholders.ToHtmlParagraphs(footer, "font-size:12px;color:#5b6b63;margin:0 0 6px;line-height:1.45"))
+                .Append("</div>");
         html.Append("</div>");
         html.Append($"<p style=\"text-align:center;font-size:12px;color:#8a978f;margin-top:12px\">{H(t.Signature)}</p>");
         html.Append("</div></body></html>");

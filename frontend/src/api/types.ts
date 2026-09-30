@@ -377,6 +377,43 @@ export interface PermissionAuditEntry {
 }
 
 /** Settings → Mobile app. */
+/** 0 = new event, 1 = event updated (backend EventEmailKind). */
+export type EventEmailKind = 0 | 1
+
+/** Wording of one automatic event email (Admin → Settings → Event emails). */
+export interface EventEmailTemplate {
+  kind: EventEmailKind
+  /** 0 = English, 1 = Spanish. */
+  language: number
+  subject: string
+  message: string
+  footer: string
+  /** False = the built-in default is in use. */
+  isCustom: boolean
+  updatedAt: string | null
+  updatedBy: string | null
+  defaultSubject: string
+  defaultMessage: string
+  defaultFooter: string
+}
+
+export interface EventEmailPlaceholder {
+  key: string
+  labelEn: string
+  labelEs: string
+}
+
+export interface EventEmailTemplatesResponse {
+  templates: EventEmailTemplate[]
+  placeholders: EventEmailPlaceholder[]
+}
+
+export interface EventEmailWording {
+  subject: string
+  message: string
+  footer: string
+}
+
 export interface MobileAppSettings {
   /** Oldest allowed app version; older installs must update. Null = no minimum. */
   minimumVersion: string | null

@@ -1,6 +1,10 @@
 import axios from 'axios'
 import type {
   MobileAppSettings,
+  EventEmailKind,
+  EventEmailTemplate,
+  EventEmailTemplatesResponse,
+  EventEmailWording,
   AccessCatalog,
   EditableRole,
   PermissionAuditEntry,
@@ -436,6 +440,21 @@ export const Api = {
   },
   async saveMobileAppSettings(payload: { minimumVersion: string | null }) {
     const r = await api.put<MobileAppSettings>('/admin/mobile-app-settings', payload)
+    return r.data
+  },
+  async eventEmailTemplates() {
+    const r = await api.get<EventEmailTemplatesResponse>('/admin/event-email-templates')
+    return r.data
+  },
+  async saveEventEmailTemplate(kind: EventEmailKind, language: number, payload: EventEmailWording) {
+    const r = await api.put<EventEmailTemplate>(`/admin/event-email-templates/${kind}/${language}`, payload)
+    return r.data
+  },
+  async resetEventEmailTemplate(kind: EventEmailKind, language: number) {
+    await api.delete(`/admin/event-email-templates/${kind}/${language}`)
+  },
+  async previewEventEmail(kind: EventEmailKind, language: number, payload: EventEmailWording) {
+    const r = await api.post<{ subject: string; html: string }>('/admin/event-email-templates/preview', { kind, language, ...payload })
     return r.data
   },
   async listUsers() {
