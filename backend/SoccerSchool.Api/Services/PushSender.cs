@@ -45,6 +45,10 @@ public class ExpoPushSender : IPushSender
         using var scope = _services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
+        // People who turned push off in their notification preferences get nothing, whatever the push is.
+        ids = await NotificationPreferenceRules.WithoutMutedAsync(db, ids, ct);
+        if (ids.Count == 0) return;
+
         var tokens = await db.DeviceTokens
             .Where(d => ids.Contains(d.UserId))
             .Select(d => d.ExpoPushToken)

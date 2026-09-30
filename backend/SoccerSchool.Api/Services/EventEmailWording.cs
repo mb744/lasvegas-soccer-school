@@ -16,6 +16,14 @@ public record EventEmailWording(string Subject, string Message, string Footer)
             "Nuevo en el calendario: {team.name} {event.title} — {event.whenShort}",
             "Hola {parent.name}:\n\nHay una nueva actividad en el calendario de {team.name}: {event.title}.",
             "Toque una opción para responder. Puede cambiarla en cualquier momento. También puede verlo en la app LV Soccer School."),
+        (EventEmailKind.Reminder, Language.Spanish) => new(
+            "Recordatorio: {team.name} {event.title} — {event.whenShort}",
+            "Hola {parent.name}:\n\nLe recordamos la próxima actividad de {team.name}: {event.title}, {event.when}.",
+            "Toque una opción para responder. Puede cambiarla en cualquier momento. También puede verlo en la app LV Soccer School."),
+        (EventEmailKind.Reminder, _) => new(
+            "Reminder: {team.name} {event.title} — {event.whenShort}",
+            "Hi {parent.name},\n\nA reminder that {team.name} has a {event.type} coming up: {event.title}, {event.when}.",
+            "Tap an option to answer. You can change it any time. You can also see it in the LV Soccer School app."),
         (EventEmailKind.Updated, Language.Spanish) => new(
             "Actualizado: {team.name} {event.title} — {event.whenShort}",
             "Hola {parent.name}:\n\nHubo cambios en esta actividad de {team.name}: {event.changes}.",

@@ -36,10 +36,19 @@ public class EventNotificationTests
     }
 
     private static readonly IRsvpTokens Tokens = new RsvpTokens(new EphemeralDataProtectionProvider());
+    private static readonly IPreferenceTokens PrefTokens = new PreferenceTokens(new EphemeralDataProtectionProvider());
 
     private static EventNotificationSender Sender(Harness h, FakePush push, FakeEmail email) =>
-        new(h.Db, push, email, Tokens, Microsoft.Extensions.Options.Options.Create(new AppOptions { PublicBaseUrl = "https://lvss.test" }),
+        new(h.Db, push, email, Tokens, PrefTokens, Microsoft.Extensions.Options.Options.Create(new AppOptions { PublicBaseUrl = "https://lvss.test" }),
             NullLogger<EventNotificationSender>.Instance);
+
+    /// <summary>The token in an email's "Update your preferences here" link.</summary>
+    private static string PrefsToken(string html)
+    {
+        var m = System.Text.RegularExpressions.Regex.Match(html, @"/notification-preferences\?t=([^""&]+)");
+        Assert.True(m.Success, "email has no preferences link");
+        return Uri.UnescapeDataString(m.Groups[1].Value);
+    }
 
     /// <summary>Team with two families: Lopez (English owner + Spanish co-parent contact, plus a
     /// guardian login) and an opted-out family (push only).</summary>
@@ -177,6 +186,70 @@ public class EventNotificationTests
         Assert.Contains("Hola Maria: Fecha y hora, Lugar", preview.Html);
         Assert.Contains("&lt;b&gt;{event.typo}&lt;/b&gt;", preview.Html); // admin text is escaped; unknown placeholder stays visible
         Assert.Contains("Qué cambió", preview.Html);
+    }
+
+    [Fact]
+    public async Task Game_and_event_email_choices_are_respected_and_the_email_link_changes_them()
+    {
+        await using var h = new Harness();
+        var (teamId, gameId, mom, _, _) = await SeedAsync(h);
+
+        // Maria turns off game emails in the app; practices still come.
+        await NotificationPreferencesStore.SaveAsync(h.Db, PreferenceSubject.ForUser(mom.Id),
+            EmailPreference.DontEmail, EmailPreference.Default, null, default);
+
+        var email = new FakeEmail();
+        await Sender(h, new FakePush(), email).SendAsync(new EventNotificationJob(gameId, null), default);
+        var jose = Assert.Single(email.Sent);
+        Assert.Equal("jose@test", jose.To);
+        Assert.Contains("¿No quiere recibir estos recordatorios?", jose.Html);
+
+        // Jose (a contact without a login) uses his link to stop game emails too.
+        var link = new NotificationPreferencesController(h.Db, PrefTokens);
+        var token = PrefsToken(jose.Html);
+        var view = Assert.IsType<NotificationPreferencesDto>(Assert.IsType<OkObjectResult>((await link.Get(token, default)).Result).Value);
+        Assert.Equal(("Jose", false, EmailPreference.Default), (view.FirstName, view.HasLogin, view.GameEmails));
+        Assert.IsType<OkObjectResult>((await link.Save(new SaveNotificationPreferencesByLinkRequest
+        {
+            Token = token, GameEmails = EmailPreference.DontEmail, EventEmails = EmailPreference.Email,
+        }, default)).Result);
+        Assert.IsType<BadRequestObjectResult>((await link.Get(token + "x", default)).Result);
+
+        email.Sent.Clear();
+        await Sender(h, new FakePush(), email).SendAsync(new EventNotificationJob(gameId, null), default);
+        Assert.Empty(email.Sent);
+
+        // A practice still reaches both of them.
+        var practice = new ScheduledGame
+        {
+            TeamId = teamId, Kind = ScheduledEventKind.Practice, ExternalUid = "p1",
+            StartsAt = DateTime.UtcNow.AddDays(2), Location = "Field 1",
+        };
+        h.Db.ScheduledGames.Add(practice);
+        await h.Db.SaveChangesAsync();
+        await Sender(h, new FakePush(), email).SendAsync(new EventNotificationJob(practice.Id, null), default);
+        Assert.Equal(new[] { "jose@test", "mom@test" }, email.Sent.Select(e => e.To).OrderBy(x => x));
+        // Maria has a login, so her link opens her account's settings (the same ones as the app).
+        Assert.True(PrefTokens.Read(PrefsToken(email.Sent.Single(e => e.To == "mom@test").Html))!.UserId == mom.Id);
+    }
+
+    [Fact]
+    public async Task Reminder_email_goes_once_per_family_and_muted_logins_get_no_push()
+    {
+        await using var h = new Harness();
+        var (_, gameId, mom, dad, _) = await SeedAsync(h);
+
+        var email = new FakeEmail();
+        var sender = Sender(h, new FakePush(), email);
+        Assert.Equal(2, await sender.SendReminderAsync(gameId, default));
+        Assert.All(email.Sent, e => Assert.Contains("/notification-preferences?t=", e.Html));
+        Assert.StartsWith("Reminder: U11 Red vs Rebels", email.Sent.Single(e => e.To == "mom@test").Subject);
+        Assert.StartsWith("Recordatorio:", email.Sent.Single(e => e.To == "jose@test").Subject);
+        Assert.Equal(0, await sender.SendReminderAsync(gameId, default)); // already reminded
+
+        await NotificationPreferencesStore.SaveAsync(h.Db, PreferenceSubject.ForUser(dad.Id),
+            EmailPreference.Default, EmailPreference.Default, false, default);
+        Assert.Equal(new[] { mom.Id }, await NotificationPreferenceRules.WithoutMutedAsync(h.Db, new[] { mom.Id, dad.Id }, default));
     }
 
     [Fact]

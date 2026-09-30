@@ -137,6 +137,7 @@ export function EventEmailsSection({
         <div className="flex gap-2">
           <button className={pill(kind === 0)} onClick={() => select(0, language)}>{t('admin.evtEmailNew')}</button>
           <button className={pill(kind === 1)} onClick={() => select(1, language)}>{t('admin.evtEmailUpdated')}</button>
+          <button className={pill(kind === 2)} onClick={() => select(2, language)}>{t('admin.evtEmailReminder')}</button>
         </div>
         <div className="flex gap-2">
           {[0, 1].map(l => (

@@ -25,6 +25,12 @@ public class AttendanceReminderJob : BackgroundService
     private static readonly TimeSpan WindowStart = TimeSpan.FromHours(6);
     private static readonly TimeSpan WindowEnd = TimeSpan.FromHours(48);
 
+    /// <summary>Reminder emails go out about a day ahead: for events starting within 30h (and
+    /// after <see cref="WindowStart"/>). Events added in the last day are skipped: their "new
+    /// event" email just went out.</summary>
+    private static readonly TimeSpan EmailWindowEnd = TimeSpan.FromHours(30);
+    private static readonly TimeSpan RecentlyAdded = TimeSpan.FromHours(24);
+
     public AttendanceReminderJob(IServiceProvider services, ILogger<AttendanceReminderJob> logger)
     {
         _services = services;
@@ -61,6 +67,8 @@ public class AttendanceReminderJob : BackgroundService
         using var scope = _services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var push = scope.ServiceProvider.GetRequiredService<IPushSender>();
+
+        await SendReminderEmailsAsync(scope.ServiceProvider, db, now, ct);
 
         var events = await db.ScheduledGames
             .Where(g => !g.IsCancelled && g.StartsAt >= from && g.StartsAt <= to)
@@ -136,6 +144,29 @@ public class AttendanceReminderJob : BackgroundService
 
         if (reminded > 0)
             _logger.LogInformation("Attendance reminder job pushed {Count} player reminder(s).", reminded);
+    }
+
+    private async Task SendReminderEmailsAsync(IServiceProvider sp, AppDbContext db, DateTime now, CancellationToken ct)
+    {
+        var from = now + WindowStart;
+        var to = now + EmailWindowEnd;
+        var addedBefore = now - RecentlyAdded;
+        var ids = await db.ScheduledGames
+            .Where(g => !g.IsCancelled && g.StartsAt >= from && g.StartsAt <= to && g.CreatedAt < addedBefore)
+            .Select(g => g.Id)
+            .ToListAsync(ct);
+        if (ids.Count == 0) return;
+
+        var sender = sp.GetRequiredService<EventNotificationSender>();
+        foreach (var id in ids)
+        {
+            if (ct.IsCancellationRequested) break;
+            try { await sender.SendReminderAsync(id, ct); }
+            catch (Exception ex) when (!ct.IsCancellationRequested)
+            {
+                _logger.LogWarning(ex, "Reminder email for event {EventId} failed.", id);
+            }
+        }
     }
 
     /// <summary>Pacific wall-clock phrasing for the push body, e.g. "Sat 1:50 PM".</summary>

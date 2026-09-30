@@ -8,6 +8,8 @@ public enum EventEmailKind
     Created = 0,
     /// <summary>Sent when a parent-facing detail of an event changes.</summary>
     Updated = 1,
+    /// <summary>Sent about a day before the event.</summary>
+    Reminder = 2,
 }
 
 /// <summary>

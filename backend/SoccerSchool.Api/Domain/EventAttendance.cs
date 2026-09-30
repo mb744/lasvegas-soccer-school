@@ -43,4 +43,8 @@ public class EventAttendance
     /// time it nudges a family, so a parent only gets one push per event no matter how often the job
     /// runs (and the marker survives container restarts, unlike an in-memory set).</summary>
     public DateTime? ReminderSentAt { get; set; }
+
+    /// <summary>When the reminder email before the event went out to this player's family. Null =
+    /// not yet. Stamped before sending so a family never gets the same reminder twice.</summary>
+    public DateTime? ReminderEmailSentAt { get; set; }
 }

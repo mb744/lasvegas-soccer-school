@@ -485,6 +485,34 @@ export interface FamilyInviteRequest {
   language?: Language;
 }
 
+// ---- Notification preferences (Profile → Notifications) ----
+
+/** Matches the backend EmailPreference enum. Default follows the club default (email). */
+export enum EmailPreference {
+  Default = 0,
+  Email = 1,
+  DontEmail = 2,
+}
+
+export interface NotificationPreferences {
+  firstName: string;
+  email: string;
+  hasLogin: boolean;
+  /** Push notifications to this person's phones. */
+  pushNotifications: boolean;
+  /** Emails about each game (new, changed, reminder). */
+  gameEmails: EmailPreference;
+  /** Emails about each practice or other event. */
+  eventEmails: EmailPreference;
+  appPlatforms: string[];
+}
+
+export interface SaveNotificationPreferencesRequest {
+  gameEmails: EmailPreference;
+  eventEmails: EmailPreference;
+  pushNotifications: boolean;
+}
+
 // ---- Roster (staff: admins and coaches) ----
 
 export interface RosterTeam {

@@ -5,6 +5,8 @@ import type {
   EventEmailTemplate,
   EventEmailTemplatesResponse,
   EventEmailWording,
+  NotificationPreferences,
+  EmailPreference,
   AccessCatalog,
   EditableRole,
   PermissionAuditEntry,
@@ -1394,6 +1396,16 @@ export const Api = {
   /** One-click attendance from event emails: read the current answer (no change). */
   async getRsvp(token: string) {
     const r = await api.get<RsvpInfo>(`/rsvp?t=${encodeURIComponent(token)}`)
+    return r.data
+  },
+  async getNotificationPreferences(token: string) {
+    const r = await api.get<NotificationPreferences>(`/notification-preferences?t=${encodeURIComponent(token)}`)
+    return r.data
+  },
+  async saveNotificationPreferences(payload: {
+    token: string; gameEmails: EmailPreference; eventEmails: EmailPreference; pushNotifications: boolean | null
+  }) {
+    const r = await api.put<NotificationPreferences>('/notification-preferences', payload)
     return r.data
   },
   /** Record an answer from an event email link: going | maybe | no. */

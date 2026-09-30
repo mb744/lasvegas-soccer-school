@@ -27,7 +27,7 @@ public class EventEmailTemplatesController : ControllerBase
     {
         var saved = await _db.EventEmailTemplates.AsNoTracking().ToListAsync(ct);
         var items = new List<EventEmailTemplateDto>();
-        foreach (var kind in new[] { EventEmailKind.Created, EventEmailKind.Updated })
+        foreach (var kind in new[] { EventEmailKind.Created, EventEmailKind.Updated, EventEmailKind.Reminder })
             foreach (var lang in new[] { Language.English, Language.Spanish })
             {
                 var def = EventEmailWording.Default(kind, lang);
@@ -97,7 +97,7 @@ public class EventEmailTemplatesController : ControllerBase
         }
         var kids = new[] { new KidRsvp("Ana", AttendanceStatus.Pending, "#") };
         var wording = new EventEmailWording(req.Subject ?? string.Empty, req.Message ?? string.Empty, req.Footer ?? string.Empty);
-        var (subject, _, html) = EventEmail.Build(text, wording, sample, before, changes, "Maria", kids);
+        var (subject, _, html) = EventEmail.Build(text, wording, sample, before, changes, "Maria", kids, "#");
         return Ok(new EventEmailPreviewDto(subject, html));
     }
 }
