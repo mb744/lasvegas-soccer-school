@@ -26,11 +26,13 @@ public record EmailSendResult(bool Success, string? MessageId, string? Message);
 public class EmailSender : IEmailSender
 {
     private readonly AcsOptions _acs;
+    private readonly IEmailPreferencesLink _prefsLink;
     private readonly ILogger<EmailSender> _logger;
 
-    public EmailSender(IOptions<AcsOptions> acs, ILogger<EmailSender> logger)
+    public EmailSender(IOptions<AcsOptions> acs, IEmailPreferencesLink prefsLink, ILogger<EmailSender> logger)
     {
         _acs = acs.Value;
+        _prefsLink = prefsLink;
         _logger = logger;
     }
 
@@ -52,6 +54,9 @@ public class EmailSender : IEmailSender
 
         try
         {
+            // Every LVSS email ends with the recipient's "Update your preferences here" link.
+            (body, html) = EmailPreferencesLink.AddTo(body, html, await _prefsLink.ForAsync(toEmail, ct));
+
             var client = new EmailClient(_acs.ConnectionString);
             var content = new EmailContent(subject)
             {

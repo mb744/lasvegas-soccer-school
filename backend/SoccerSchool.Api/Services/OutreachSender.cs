@@ -21,12 +21,15 @@ public class OutreachSender : IOutreachSender
 {
     private readonly AcsOptions _acs;
     private readonly TwilioOptions _twilio;
+    private readonly IEmailPreferencesLink _prefsLink;
     private readonly ILogger<OutreachSender> _logger;
 
-    public OutreachSender(IOptions<AcsOptions> acs, IOptions<TwilioOptions> twilio, ILogger<OutreachSender> logger)
+    public OutreachSender(IOptions<AcsOptions> acs, IOptions<TwilioOptions> twilio, IEmailPreferencesLink prefsLink,
+        ILogger<OutreachSender> logger)
     {
         _acs = acs.Value;
         _twilio = twilio.Value;
+        _prefsLink = prefsLink;
         _logger = logger;
     }
 
@@ -55,6 +58,7 @@ public class OutreachSender : IOutreachSender
         {
             var client = new EmailClient(_acs.ConnectionString);
             var (subject, plain, html) = BuildEmailContent(outreach.Language, link);
+            (plain, html) = EmailPreferencesLink.AddTo(plain, html, await _prefsLink.ForAsync(outreach.Email!, ct));
 
             var content = new EmailContent(subject)
             {

@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using SoccerSchool.Api.Data;
 
@@ -11,9 +12,11 @@ using SoccerSchool.Api.Data;
 namespace SoccerSchool.Api.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260930135640_AddEventEmailTemplates")]
+    partial class AddEventEmailTemplates
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -276,12 +279,6 @@ namespace SoccerSchool.Api.Data.Migrations
                     b.Property<bool>("EmailConfirmed")
                         .HasColumnType("bit");
 
-                    b.Property<int>("EventEmails")
-                        .HasColumnType("int");
-
-                    b.Property<int>("GameEmails")
-                        .HasColumnType("int");
-
                     b.Property<DateTime?>("LastLoginAt")
                         .HasColumnType("datetime2");
 
@@ -309,9 +306,6 @@ namespace SoccerSchool.Api.Data.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<bool>("PhoneNumberConfirmed")
-                        .HasColumnType("bit");
-
-                    b.Property<bool>("PushMuted")
                         .HasColumnType("bit");
 
                     b.Property<string>("SecurityStamp")
@@ -1106,9 +1100,6 @@ namespace SoccerSchool.Api.Data.Migrations
 
                     b.Property<int>("PlayerId")
                         .HasColumnType("int");
-
-                    b.Property<DateTime?>("ReminderEmailSentAt")
-                        .HasColumnType("datetime2");
 
                     b.Property<DateTime?>("ReminderSentAt")
                         .HasColumnType("datetime2");
@@ -2303,16 +2294,10 @@ namespace SoccerSchool.Api.Data.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
-                    b.Property<int>("EventEmails")
-                        .HasColumnType("int");
-
                     b.Property<string>("FirstName")
                         .IsRequired()
                         .HasMaxLength(80)
                         .HasColumnType("nvarchar(80)");
-
-                    b.Property<int>("GameEmails")
-                        .HasColumnType("int");
 
                     b.Property<bool>("HasWhatsApp")
                         .HasColumnType("bit");

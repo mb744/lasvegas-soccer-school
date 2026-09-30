@@ -36,6 +36,7 @@ import { FamilyAccessLevel } from './types';
 import type { AccessCatalog, EditableRole, PermissionAuditEntry, UserAccess } from './types';
 import type { EventMediaItem, MediaItem, MediaKind } from './types';
 import type { Roster, RosterPlayerDetail, RosterTeam } from './types';
+import type { NotificationPreferences, SaveNotificationPreferencesRequest } from './types';
 
 // ---- Auth ----
 
@@ -60,6 +61,18 @@ export async function deleteAccount(): Promise<void> {
 /** Emails the signed-in user a fresh "confirm your email" link (opens on the website). */
 export async function resendEmailConfirmation(): Promise<void> {
   await api.post('/auth/resend-confirmation');
+}
+
+// ---- Notification preferences ----
+
+export async function fetchNotificationPreferences(): Promise<NotificationPreferences> {
+  const { data } = await api.get<NotificationPreferences>('/mobile/notification-preferences');
+  return data;
+}
+
+export async function saveNotificationPreferences(req: SaveNotificationPreferencesRequest): Promise<NotificationPreferences> {
+  const { data } = await api.put<NotificationPreferences>('/mobile/notification-preferences', req);
+  return data;
 }
 
 // ---- Players ----

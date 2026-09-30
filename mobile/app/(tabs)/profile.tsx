@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '../../src/auth/AuthContext';
 import { deleteAccount, resendEmailConfirmation } from '../../src/api/endpoints';
 import { colors, radius, spacing } from '../../src/theme';
 import { FamilySection } from '../../src/family/FamilySection';
+import { NotificationsSection } from '../../src/profile/NotificationsSection';
 
 export default function ProfileScreen() {
   const { t } = useTranslation();
@@ -13,6 +14,17 @@ export default function ProfileScreen() {
   const router = useRouter();
   const [deleting, setDeleting] = useState(false);
   const [verifyState, setVerifyState] = useState<'idle' | 'sending' | 'sent' | 'failed'>('idle');
+  // "Update your preferences here" in an email opens lvss://profile?section=notifications.
+  const { section } = useLocalSearchParams<{ section?: string }>();
+  const scrollRef = useRef<ScrollView>(null);
+  const [notificationsY, setNotificationsY] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (section === 'notifications' && notificationsY !== null) {
+      scrollRef.current?.scrollTo({ y: Math.max(0, notificationsY - spacing.lg), animated: true });
+      router.setParams({ section: undefined }); // scroll once, not on every visit
+    }
+  }, [section, notificationsY, router]);
 
   if (!me) return null;
 
@@ -54,7 +66,7 @@ export default function ProfileScreen() {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ padding: spacing.lg }}>
+    <ScrollView ref={scrollRef} style={styles.container} contentContainerStyle={{ padding: spacing.lg }}>
       <View style={styles.header}>
         <View style={styles.avatar}>
           <Text style={styles.avatarText}>
@@ -104,6 +116,10 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         ))
       )}
+
+      <View onLayout={(e) => setNotificationsY(e.nativeEvent.layout.y)}>
+        <NotificationsSection />
+      </View>
 
       <FamilySection />
 

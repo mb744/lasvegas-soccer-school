@@ -54,5 +54,10 @@ public class ParentContact
     /// <summary>When the last invite email went out. Null for contacts that were never emailed.</summary>
     public DateTime? InviteSentAt { get; set; }
 
+    /// <summary>Event-email choices for a contact without a login (set from the email's preferences
+    /// link). Once the contact is linked to a login (<see cref="UserId"/>), the login's choices apply.</summary>
+    public EmailPreference GameEmails { get; set; }
+    public EmailPreference EventEmails { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

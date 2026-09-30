@@ -179,19 +179,28 @@ public class EventNotificationSender
     private readonly IPushSender _push;
     private readonly IEmailSender _email;
     private readonly IRsvpTokens _tokens;
+    private readonly IPreferenceTokens _prefTokens;
     private readonly AppOptions _app;
     private readonly ILogger<EventNotificationSender> _logger;
 
     public EventNotificationSender(AppDbContext db, IPushSender push, IEmailSender email, IRsvpTokens tokens,
-        IOptions<AppOptions> app, ILogger<EventNotificationSender> logger)
+        IPreferenceTokens prefTokens, IOptions<AppOptions> app, ILogger<EventNotificationSender> logger)
     {
         _db = db;
         _push = push;
         _email = email;
         _tokens = tokens;
+        _prefTokens = prefTokens;
         _app = app.Value;
         _logger = logger;
     }
+
+    /// <summary>One rostered kid with what we need to reach their family.</summary>
+    private record Kid(int PlayerId, string FirstName, int ParentAccountId, string? OwnerUserId, string? OwnerEmail,
+        string OwnerName, Language OwnerLanguage, bool NoComms, EmailPreference OwnerGames, EmailPreference OwnerEvents);
+
+    /// <summary>One email address, with the kids it answers for and whose preferences link it gets.</summary>
+    private sealed record Recipient(string Name, Language Lang, PreferenceSubject? Subject, List<(int Id, string First)> Kids);
 
     public async Task<EventNotificationResult> SendAsync(EventNotificationJob job, CancellationToken ct)
     {
@@ -202,21 +211,10 @@ public class EventNotificationSender
         var changes = job.Before is null ? Array.Empty<EventField>() : EventSnapshot.Diff(job.Before, after);
         if (job.Before is not null && changes.Count == 0) return none; // edit with nothing parent-facing
 
-        var teamId = await _db.ScheduledGames.Where(g => g.Id == job.EventId).Select(g => g.TeamId).FirstAsync(ct);
-        var kids = await _db.TeamPlayers
-            .Where(tp => tp.TeamId == teamId)
-            .Select(tp => new
-            {
-                tp.PlayerId, tp.Player!.FirstName, tp.Player.ParentAccountId,
-                OwnerUserId = tp.Player.ParentAccount!.UserId,
-                OwnerEmail = tp.Player.ParentAccount.User != null ? tp.Player.ParentAccount.User.Email : null,
-                OwnerName = tp.Player.ParentAccount.FirstName,
-                OwnerLanguage = tp.Player.ParentAccount.Language,
-                NoComms = tp.Player.ParentAccount.NoCommunications,
-            })
-            .ToListAsync(ct);
+        var kids = await LoadKidsAsync(job.EventId, ct);
         if (kids.Count == 0) return none;
 
+        // ---- Push: one per family, in the family's language, to owner + guardian logins ----
         var familyIds = kids.Select(k => k.ParentAccountId).Distinct().ToList();
         var guardianLogins = (await _db.ParentAccountCollaborators
                 .Where(c => familyIds.Contains(c.ParentAccountId) && c.AccessLevel == FamilyAccessLevel.Guardian)
@@ -224,19 +222,6 @@ public class EventNotificationSender
                 .ToListAsync(ct))
             .GroupBy(c => c.ParentAccountId)
             .ToDictionary(g => g.Key, g => g.Select(x => x.UserId).ToList());
-        var guardianContacts = (await _db.ParentContacts
-                .Where(c => familyIds.Contains(c.ParentAccountId) && c.AccessLevel == FamilyAccessLevel.Guardian
-                            && c.Email != null && c.Email != "")
-                .Select(c => new { c.ParentAccountId, c.FirstName, c.Email, c.Language })
-                .ToListAsync(ct))
-            .GroupBy(c => c.ParentAccountId)
-            .ToDictionary(g => g.Key, g => g.ToList());
-        var kidIds = kids.Select(k => k.PlayerId).ToList();
-        var answers = await _db.EventAttendances
-            .Where(a => a.ScheduledGameId == job.EventId && kidIds.Contains(a.PlayerId))
-            .ToDictionaryAsync(a => a.PlayerId, a => a.Status, ct);
-
-        // ---- Push: one per family, in the family's language, to owner + guardian logins ----
         var pushes = 0;
         foreach (var family in kids.GroupBy(k => k.ParentAccountId))
         {
@@ -255,40 +240,126 @@ public class EventNotificationSender
             pushes++;
         }
 
-        // ---- Email: one per address (primary parent + guardian contacts), kids merged across families ----
-        var recipients = new Dictionary<string, (string Name, Language Lang, List<(int Id, string First)> Kids)>(StringComparer.OrdinalIgnoreCase);
-        void AddRecipient(string? email, string? name, Language lang, int kidId, string kidFirst)
+        var kind = job.Before is null ? EventEmailKind.Created : EventEmailKind.Updated;
+        var emails = await EmailAsync(job.EventId, after, job.Before, changes, kind, kids, ct);
+
+        _logger.LogInformation("Event {EventId} {Kind}: {Pushes} push(es), {Emails} email(s).",
+            job.EventId, job.Before is null ? "created" : "updated", pushes, emails);
+        return new EventNotificationResult(pushes, emails, changes);
+    }
+
+    /// <summary>The reminder email before an event, once per family: kids already reminded are
+    /// skipped, and the rest are stamped before anything is sent. Returns the emails sent.</summary>
+    public async Task<int> SendReminderAsync(int eventId, CancellationToken ct)
+    {
+        var e = await EventSnapshot.LoadAsync(_db, eventId, ct);
+        if (e is null || e.IsCancelled || e.StartsAt < DateTime.UtcNow) return 0;
+
+        var kids = await LoadKidsAsync(eventId, ct);
+        var kidIds = kids.Select(k => k.PlayerId).ToList();
+        var rows = await _db.EventAttendances
+            .Where(a => a.ScheduledGameId == eventId && kidIds.Contains(a.PlayerId))
+            .ToDictionaryAsync(a => a.PlayerId, ct);
+        var due = kids.Where(k => !rows.TryGetValue(k.PlayerId, out var r) || r.ReminderEmailSentAt is null).ToList();
+        if (due.Count == 0) return 0;
+
+        var now = DateTime.UtcNow;
+        foreach (var k in due)
+        {
+            if (!rows.TryGetValue(k.PlayerId, out var row))
+            {
+                row = new EventAttendance { ScheduledGameId = eventId, PlayerId = k.PlayerId, Status = AttendanceStatus.Pending };
+                _db.EventAttendances.Add(row);
+            }
+            row.ReminderEmailSentAt = now;
+        }
+        await _db.SaveChangesAsync(ct);
+
+        var emails = await EmailAsync(eventId, e, null, Array.Empty<EventField>(), EventEmailKind.Reminder, due, ct);
+        if (emails > 0) _logger.LogInformation("Event {EventId} reminder: {Emails} email(s).", eventId, emails);
+        return emails;
+    }
+
+    private async Task<List<Kid>> LoadKidsAsync(int eventId, CancellationToken ct)
+    {
+        var teamId = await _db.ScheduledGames.Where(g => g.Id == eventId).Select(g => g.TeamId).FirstAsync(ct);
+        return await _db.TeamPlayers
+            .Where(tp => tp.TeamId == teamId)
+            .Select(tp => new Kid(
+                tp.PlayerId, tp.Player!.FirstName, tp.Player.ParentAccountId,
+                tp.Player.ParentAccount!.UserId,
+                tp.Player.ParentAccount.User != null ? tp.Player.ParentAccount.User.Email : null,
+                tp.Player.ParentAccount.FirstName,
+                tp.Player.ParentAccount.Language,
+                tp.Player.ParentAccount.NoCommunications,
+                tp.Player.ParentAccount.User != null ? tp.Player.ParentAccount.User.GameEmails : EmailPreference.Default,
+                tp.Player.ParentAccount.User != null ? tp.Player.ParentAccount.User.EventEmails : EmailPreference.Default))
+            .ToListAsync(ct);
+    }
+
+    /// <summary>Emails each address (primary parent + guardian contacts) once, kids merged across
+    /// families, skipping opted-out families and anyone who chose "Don't email" for this kind of event.</summary>
+    private async Task<int> EmailAsync(int eventId, EventSnapshot after, EventSnapshot? before, IReadOnlyList<EventField> changes,
+        EventEmailKind kind, IReadOnlyList<Kid> kids, CancellationToken ct)
+    {
+        var familyIds = kids.Select(k => k.ParentAccountId).Distinct().ToList();
+        // A contact linked to a login uses the login's choices (set in the app); otherwise their own.
+        var guardianContacts = (await _db.ParentContacts
+                .Where(c => familyIds.Contains(c.ParentAccountId) && c.AccessLevel == FamilyAccessLevel.Guardian
+                            && c.Email != null && c.Email != "")
+                .Select(c => new
+                {
+                    c.Id, c.ParentAccountId, c.FirstName, c.Email, c.Language, c.UserId,
+                    Games = c.User != null ? c.User.GameEmails : c.GameEmails,
+                    Events = c.User != null ? c.User.EventEmails : c.EventEmails,
+                })
+                .ToListAsync(ct))
+            .GroupBy(c => c.ParentAccountId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+        var kidIds = kids.Select(k => k.PlayerId).ToList();
+        var answers = await _db.EventAttendances
+            .Where(a => a.ScheduledGameId == eventId && kidIds.Contains(a.PlayerId))
+            .ToDictionaryAsync(a => a.PlayerId, a => a.Status, ct);
+
+        var recipients = new Dictionary<string, Recipient>(StringComparer.OrdinalIgnoreCase);
+        void Add(string? email, string? name, Language lang, PreferenceSubject? subject, EmailPreference games,
+            EmailPreference events, Kid kid)
         {
             if (string.IsNullOrWhiteSpace(email)) return;
+            if (!NotificationPreferenceRules.WantsEmail(after.Kind, games, events)) return;
             var key = email.Trim();
-            if (!recipients.TryGetValue(key, out var r)) recipients[key] = r = (name ?? string.Empty, lang, new());
-            if (!r.Kids.Any(k => k.Id == kidId)) r.Kids.Add((kidId, kidFirst));
+            if (!recipients.TryGetValue(key, out var r)) recipients[key] = r = new Recipient(name ?? string.Empty, lang, subject, new());
+            if (!r.Kids.Any(k => k.Id == kid.PlayerId)) r.Kids.Add((kid.PlayerId, kid.FirstName));
         }
         foreach (var k in kids.Where(k => !k.NoComms))
         {
-            AddRecipient(k.OwnerEmail, k.OwnerName, k.OwnerLanguage, k.PlayerId, k.FirstName);
+            Add(k.OwnerEmail, k.OwnerName, k.OwnerLanguage,
+                k.OwnerUserId is null ? null : PreferenceSubject.ForUser(k.OwnerUserId), k.OwnerGames, k.OwnerEvents, k);
             if (guardianContacts.TryGetValue(k.ParentAccountId, out var contacts))
-                foreach (var c in contacts) AddRecipient(c.Email, c.FirstName, c.Language, k.PlayerId, k.FirstName);
+                foreach (var c in contacts)
+                    Add(c.Email, c.FirstName, c.Language,
+                        c.UserId is not null ? PreferenceSubject.ForUser(c.UserId) : PreferenceSubject.ForContact(c.Id),
+                        c.Games, c.Events, k);
         }
 
         var baseUrl = (_app.PublicBaseUrl ?? string.Empty).TrimEnd('/');
+        var wordingFor = await EventEmailWording.LoadAllAsync(_db, ct);
         var emails = 0;
         foreach (var (address, r) in recipients)
         {
             var text = EventMessageText.For(r.Lang);
             var kidLinks = r.Kids
                 .Select(k => new KidRsvp(k.First, answers.TryGetValue(k.Id, out var s) ? s : AttendanceStatus.Pending,
-                    $"{baseUrl}/rsvp?t={Uri.EscapeDataString(_tokens.Create(job.EventId, k.Id, after.StartsAt))}"))
+                    $"{baseUrl}/rsvp?t={Uri.EscapeDataString(_tokens.Create(eventId, k.Id, after.StartsAt))}"))
                 .ToList();
-            var (subject, plain, html) = EventEmail.Build(text, after, job.Before, changes, r.Name, kidLinks, baseUrl);
+            var prefsUrl = r.Subject is null ? null
+                : $"{baseUrl}/notification-preferences?t={Uri.EscapeDataString(_prefTokens.Create(r.Subject))}";
+            var (subject, plain, html) = EventEmail.Build(text, wordingFor(kind, r.Lang), after, before, changes, r.Name, kidLinks, prefsUrl);
             var result = await _email.SendAsync(address, subject, plain, html, ct);
             if (result.Success) emails++;
             else _logger.LogWarning("Event email to {Email} failed: {Message}", address, result.Message);
         }
-
-        _logger.LogInformation("Event {EventId} {Kind}: {Pushes} push(es), {Emails} email(s).",
-            job.EventId, job.Before is null ? "created" : "updated", pushes, emails);
-        return new EventNotificationResult(pushes, emails, changes);
+        return emails;
     }
 }
 
@@ -325,7 +396,7 @@ public class EventMessageText
         ScheduledEventKind.Miscellaneous => _es ? "Evento" : "Event",
         _ => _es ? "Partido" : "Game",
     };
-    private string KindLower(ScheduledEventKind k) => Kind(k).ToLower(_culture);
+    public string KindLower(ScheduledEventKind k) => Kind(k).ToLower(_culture);
 
     public string Title(EventSnapshot e) =>
         e.Kind == ScheduledEventKind.Game
@@ -391,34 +462,20 @@ public class EventMessageText
     public string Maybe => _es ? "Tal vez" : "Maybe";
     public string NotGoing => _es ? "No asiste" : "Not going";
 
-    public string SubjectNew(EventSnapshot e) => _es
-        ? $"Nuevo {KindLower(e.Kind)}: {e.TeamName} {Title(e)} — {WhenShort(e.StartsAt)}"
-        : $"New {KindLower(e.Kind)}: {e.TeamName} {Title(e)} — {WhenShort(e.StartsAt)}";
-    public string SubjectUpdated(EventSnapshot e) => _es
-        ? $"Actualizado: {e.TeamName} {Title(e)} — {WhenShort(e.StartsAt)}"
-        : $"Updated: {e.TeamName} {Title(e)} — {WhenShort(e.StartsAt)}";
-
-    public string Hello(string name) => string.IsNullOrWhiteSpace(name) ? (_es ? "Hola:" : "Hi,") : (_es ? $"Hola {name}:" : $"Hi {name},");
-    public string IntroNew(EventSnapshot e) => _es
-        ? $"Se agregó un nuevo {KindLower(e.Kind)} para {e.TeamName}."
-        : $"A new {KindLower(e.Kind)} was added for {e.TeamName}.";
-    public string IntroUpdated(EventSnapshot e) => _es
-        ? $"Se actualizó este {KindLower(e.Kind)} de {e.TeamName}."
-        : $"This {e.TeamName} {KindLower(e.Kind)} was updated.";
     public string WhatChanged => _es ? "Qué cambió" : "What changed";
     public string Was => _es ? "antes" : "was";
     public string Details => _es ? "Detalles" : "Details";
     public string WillAttend(string kid) => _es ? $"¿{kid} asistirá?" : $"Will {kid} be there?";
     public string CurrentAnswer(string status) => _es ? $"Respuesta actual: {status}" : $"Current answer: {status}";
-    public string TapToAnswer => _es ? "Toque una opción para responder. Puede cambiarla en cualquier momento." : "Tap an option to answer. You can change it any time.";
-    public string OpenApp => _es ? "También puede verlo en la app LV Soccer School." : "You can also see it in the LV Soccer School app.";
     public string Signature => "Las Vegas Soccer School";
+    public string PrefsQuestion => _es ? "¿No quiere recibir estos recordatorios?" : "Don’t want these reminders?";
+    public string PrefsLink => _es ? "Actualice sus preferencias aquí." : "Update your preferences here.";
 
-    public string PushNewTitle(EventSnapshot e) => _es ? $"Nuevo {KindLower(e.Kind)}: {e.TeamName}" : $"New {KindLower(e.Kind)}: {e.TeamName}";
+    public string PushNewTitle(EventSnapshot e) => _es ? $"Nuevo en el calendario: {e.TeamName}" : $"New {KindLower(e.Kind)}: {e.TeamName}";
     public string PushNewBody(EventSnapshot e, string names) => _es
         ? $"{Title(e)} · {WhenShort(e.StartsAt)}. Toque para confirmar si asiste {names}."
         : $"{Title(e)} · {WhenShort(e.StartsAt)}. Tap to confirm for {names}.";
-    public string PushUpdatedTitle(EventSnapshot e) => _es ? $"{Kind(e.Kind)} actualizado: {e.TeamName}" : $"{Kind(e.Kind)} updated: {e.TeamName}";
+    public string PushUpdatedTitle(EventSnapshot e) => _es ? $"Cambio en el calendario: {e.TeamName}" : $"{Kind(e.Kind)} updated: {e.TeamName}";
     public string PushUpdatedBody(EventSnapshot e, IReadOnlyList<EventField> changes) =>
         $"{string.Join(", ", changes.Select(FieldLabel))} · {Title(e)} {WhenShort(e.StartsAt)}";
 }
@@ -426,11 +483,15 @@ public class EventMessageText
 public static class EventEmail
 {
     public static (string Subject, string Plain, string Html) Build(
-        EventMessageText t, EventSnapshot e, EventSnapshot? before, IReadOnlyList<EventField> changes,
-        string recipientName, IReadOnlyList<KidRsvp> kids, string baseUrl)
+        EventMessageText t, EventEmailWording wording, EventSnapshot e, EventSnapshot? before,
+        IReadOnlyList<EventField> changes, string recipientName, IReadOnlyList<KidRsvp> kids, string? preferencesUrl)
     {
         var isUpdate = before is not null;
-        var subject = isUpdate ? t.SubjectUpdated(e) : t.SubjectNew(e);
+        var values = EventEmailPlaceholders.Values(t, e, changes, recipientName, kids.Select(k => k.FirstName));
+        // A subject is one line: an admin's stray line break would otherwise break the header.
+        var subject = System.Text.RegularExpressions.Regex.Replace(EventEmailPlaceholders.Render(wording.Subject, values), @"\s+", " ").Trim();
+        var message = EventEmailPlaceholders.Render(wording.Message, values).Trim();
+        var footer = EventEmailPlaceholders.Render(wording.Footer, values).Trim();
         static string H(string s) => Esc(s);
 
         // Details shown for every email: the fields that have a value.
@@ -443,8 +504,7 @@ public static class EventEmail
         if (!string.IsNullOrWhiteSpace(e.Notes)) detailFields.Add(EventField.Notes);
 
         var plain = new StringBuilder();
-        plain.AppendLine(t.Hello(recipientName)).AppendLine();
-        plain.AppendLine(isUpdate ? t.IntroUpdated(e) : t.IntroNew(e)).AppendLine();
+        plain.AppendLine(message).AppendLine();
         plain.AppendLine($"{t.Kind(e.Kind)}: {t.Title(e)}");
         if (isUpdate)
         {
@@ -461,7 +521,9 @@ public static class EventEmail
             plain.AppendLine($"  {t.Maybe}: {k.LinkBase}&s=maybe");
             plain.AppendLine($"  {t.NotGoing}: {k.LinkBase}&s=no");
         }
-        plain.AppendLine().AppendLine(t.OpenApp).AppendLine().AppendLine(t.Signature);
+        if (footer.Length > 0) plain.AppendLine().AppendLine(footer);
+        if (preferencesUrl is not null) plain.AppendLine().AppendLine($"{t.PrefsQuestion} {t.PrefsLink}: {preferencesUrl}");
+        plain.AppendLine().AppendLine(t.Signature);
 
         var html = new StringBuilder();
         html.Append("<!doctype html><html><body style=\"margin:0;background:#f3f5f4;font-family:Arial,Helvetica,sans-serif;color:#1f2a24\">");
@@ -471,8 +533,7 @@ public static class EventEmail
         html.Append($"<div style=\"font-size:22px;font-weight:bold;margin-top:4px\">{H(t.Title(e))}</div>");
         html.Append($"<div style=\"font-size:15px;margin-top:4px\">{H(t.WhenLong(e))}</div></div>");
         html.Append("<div style=\"background:#fff;border-radius:0 0 10px 10px;padding:20px\">");
-        html.Append($"<p style=\"margin:0 0 8px\">{H(t.Hello(recipientName))}</p>");
-        html.Append($"<p style=\"margin:0 0 16px\">{H(isUpdate ? t.IntroUpdated(e) : t.IntroNew(e))}</p>");
+        html.Append(EventEmailPlaceholders.ToHtmlParagraphs(message, "margin:0 0 12px;line-height:1.45"));
 
         if (isUpdate && changes.Count > 0)
         {
@@ -500,7 +561,13 @@ public static class EventEmail
             html.Append(Button(k.LinkBase + "&s=no", t.NotGoing, "#c62828"));
             html.Append("</div>");
         }
-        html.Append($"<p style=\"font-size:12px;color:#5b6b63;margin:16px 0 0\">{H(t.TapToAnswer)} {H(t.OpenApp)}</p>");
+        if (footer.Length > 0)
+            html.Append("<div style=\"margin-top:16px\">")
+                .Append(EventEmailPlaceholders.ToHtmlParagraphs(footer, "font-size:12px;color:#5b6b63;margin:0 0 6px;line-height:1.45"))
+                .Append("</div>");
+        if (preferencesUrl is not null)
+            html.Append($"<p style=\"font-size:12px;color:#5b6b63;margin:12px 0 0\">{H(t.PrefsQuestion)} "
+                + $"<a href=\"{Esc(preferencesUrl)}\" style=\"color:#0b6b4f\">{H(t.PrefsLink)}</a></p>");
         html.Append("</div>");
         html.Append($"<p style=\"text-align:center;font-size:12px;color:#8a978f;margin-top:12px\">{H(t.Signature)}</p>");
         html.Append("</div></body></html>");

@@ -377,6 +377,59 @@ export interface PermissionAuditEntry {
 }
 
 /** Settings → Mobile app. */
+/** 0 = new event, 1 = event updated, 2 = reminder before the event (backend EventEmailKind). */
+export type EventEmailKind = 0 | 1 | 2
+
+/** 0 = Default (email), 1 = Email, 2 = Don't email (backend EmailPreference). */
+export type EmailPreference = 0 | 1 | 2
+
+/** A parent's notification settings, opened from the link in event emails. */
+export interface NotificationPreferences {
+  firstName: string
+  email: string
+  /** False for a family contact without an account: no push setting. */
+  hasLogin: boolean
+  pushNotifications: boolean
+  gameEmails: EmailPreference
+  eventEmails: EmailPreference
+  /** Phones this login has the app on: 'ios' | 'android'. */
+  appPlatforms: string[]
+}
+
+/** Wording of one automatic event email (Admin → Settings → Event emails). */
+export interface EventEmailTemplate {
+  kind: EventEmailKind
+  /** 0 = English, 1 = Spanish. */
+  language: number
+  subject: string
+  message: string
+  footer: string
+  /** False = the built-in default is in use. */
+  isCustom: boolean
+  updatedAt: string | null
+  updatedBy: string | null
+  defaultSubject: string
+  defaultMessage: string
+  defaultFooter: string
+}
+
+export interface EventEmailPlaceholder {
+  key: string
+  labelEn: string
+  labelEs: string
+}
+
+export interface EventEmailTemplatesResponse {
+  templates: EventEmailTemplate[]
+  placeholders: EventEmailPlaceholder[]
+}
+
+export interface EventEmailWording {
+  subject: string
+  message: string
+  footer: string
+}
+
 export interface MobileAppSettings {
   /** Oldest allowed app version; older installs must update. Null = no minimum. */
   minimumVersion: string | null

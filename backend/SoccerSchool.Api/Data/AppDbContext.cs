@@ -76,6 +76,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
     public DbSet<InboundMessage> InboundMessages => Set<InboundMessage>();
     public DbSet<MessagingSettings> MessagingSettings => Set<MessagingSettings>();
     public DbSet<MobileAppSettings> MobileAppSettings => Set<MobileAppSettings>();
+    public DbSet<EventEmailTemplate> EventEmailTemplates => Set<EventEmailTemplate>();
     public DbSet<AgeClassification> AgeClassifications => Set<AgeClassification>();
     public DbSet<Uniform> Uniforms => Set<Uniform>();
     public DbSet<PlayerUniformAssignment> PlayerUniformAssignments => Set<PlayerUniformAssignment>();
@@ -814,6 +815,9 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
 
         // Singleton row (Id is always 1), so the key is set by the app, not the database.
         modelBuilder.Entity<MobileAppSettings>().Property(s => s.Id).ValueGeneratedNever();
+
+        // One wording per email kind and language.
+        modelBuilder.Entity<EventEmailTemplate>().HasIndex(t => new { t.Kind, t.Language }).IsUnique();
 
         modelBuilder.Entity<DeviceToken>(b =>
         {

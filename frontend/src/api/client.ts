@@ -1,6 +1,12 @@
 import axios from 'axios'
 import type {
   MobileAppSettings,
+  EventEmailKind,
+  EventEmailTemplate,
+  EventEmailTemplatesResponse,
+  EventEmailWording,
+  NotificationPreferences,
+  EmailPreference,
   AccessCatalog,
   EditableRole,
   PermissionAuditEntry,
@@ -436,6 +442,21 @@ export const Api = {
   },
   async saveMobileAppSettings(payload: { minimumVersion: string | null }) {
     const r = await api.put<MobileAppSettings>('/admin/mobile-app-settings', payload)
+    return r.data
+  },
+  async eventEmailTemplates() {
+    const r = await api.get<EventEmailTemplatesResponse>('/admin/event-email-templates')
+    return r.data
+  },
+  async saveEventEmailTemplate(kind: EventEmailKind, language: number, payload: EventEmailWording) {
+    const r = await api.put<EventEmailTemplate>(`/admin/event-email-templates/${kind}/${language}`, payload)
+    return r.data
+  },
+  async resetEventEmailTemplate(kind: EventEmailKind, language: number) {
+    await api.delete(`/admin/event-email-templates/${kind}/${language}`)
+  },
+  async previewEventEmail(kind: EventEmailKind, language: number, payload: EventEmailWording) {
+    const r = await api.post<{ subject: string; html: string }>('/admin/event-email-templates/preview', { kind, language, ...payload })
     return r.data
   },
   async listUsers() {
@@ -1375,6 +1396,16 @@ export const Api = {
   /** One-click attendance from event emails: read the current answer (no change). */
   async getRsvp(token: string) {
     const r = await api.get<RsvpInfo>(`/rsvp?t=${encodeURIComponent(token)}`)
+    return r.data
+  },
+  async getNotificationPreferences(token: string) {
+    const r = await api.get<NotificationPreferences>(`/notification-preferences?t=${encodeURIComponent(token)}`)
+    return r.data
+  },
+  async saveNotificationPreferences(payload: {
+    token: string; gameEmails: EmailPreference; eventEmails: EmailPreference; pushNotifications: boolean | null
+  }) {
+    const r = await api.put<NotificationPreferences>('/notification-preferences', payload)
     return r.data
   },
   /** Record an answer from an event email link: going | maybe | no. */

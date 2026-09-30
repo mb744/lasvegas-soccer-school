@@ -23,6 +23,7 @@ import { AdminAccessPage } from './pages/admin/AccessPage'
 import { TournamentPublicPage } from './pages/TournamentPublicPage'
 import { ResetPlayerPasswordPage } from './pages/ResetPlayerPasswordPage'
 import { RsvpPage } from './pages/RsvpPage'
+import { NotificationPreferencesPage } from './pages/NotificationPreferencesPage'
 import { LoginPage } from './pages/LoginPage'
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage'
 import { ResetPasswordPage } from './pages/ResetPasswordPage'
@@ -140,6 +141,7 @@ export default function App() {
           <Route path="/tournament/:slug" element={<TournamentPublicPage />} />
           <Route path="/reset-player-password" element={<ResetPlayerPasswordPage />} />
           <Route path="/rsvp" element={<RsvpPage />} />
+          <Route path="/notification-preferences" element={<NotificationPreferencesPage />} />
           <Route path="*" element={<LandingPage />} />
         </Routes>
       </AuthProvider>
