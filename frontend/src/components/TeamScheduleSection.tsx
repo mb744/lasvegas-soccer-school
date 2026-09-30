@@ -75,6 +75,8 @@ export function TeamScheduleSection({
   const [venueId, setVenueId] = useState<number | ''>('')
   const [shoeType, setShoeType] = useState<ShoeType>(0)
   const [summary, setSummary] = useState('')
+  // Push + email the team's parents on save. Re-checked every time a form opens.
+  const [notifyParents, setNotifyParents] = useState(true)
 
   // Club-wide venues for the location picker; loaded once.
   const [venues, setVenues] = useState<Venue[]>([])
@@ -98,19 +100,19 @@ export function TeamScheduleSection({
     setEditingId('new-practice'); setEditingKind('practice')
     setStartsAt(''); setArriveAt(''); setArriveTouched(false); setEndsAt('')
     setLocation(''); setVenueId(''); setShoeType(0); setSummary(''); setNotes('')
-    setOpponentName(''); setIsHome(null)
+    setOpponentName(''); setIsHome(null); setNotifyParents(true)
   }
   const startNewMisc = () => {
     setEditingId('new-misc'); setEditingKind('misc')
     setStartsAt(''); setArriveAt(''); setArriveTouched(false); setEndsAt('')
     setLocation(''); setVenueId(''); setShoeType(0); setSummary(''); setNotes('')
-    setOpponentName(''); setIsHome(null)
+    setOpponentName(''); setIsHome(null); setNotifyParents(true)
   }
   const startNewGame = () => {
     setEditingId('new-game'); setEditingKind('game')
     setStartsAt(''); setArriveAt(''); setArriveTouched(false); setEndsAt('')
     setLocation(''); setVenueId(''); setShoeType(0); setSummary(''); setNotes('')
-    setOpponentName(''); setIsHome(null)
+    setOpponentName(''); setIsHome(null); setNotifyParents(true)
   }
   const startSeries = () => {
     setEditingId('series'); setEditingKind('practice')
@@ -127,6 +129,7 @@ export function TeamScheduleSection({
   }
   const startEdit = (ev: ScheduledGame) => {
     setEditingId(ev.id)
+    setNotifyParents(true)
     setEditingKind(ev.kind === 0 ? 'game' : ev.kind === 2 ? 'misc' : 'practice')
     // datetime-local wants YYYY-MM-DDTHH:mm in local time (no timezone). Strip seconds/ms.
     setStartsAt(toDateTimeLocal(ev.startsAt))
@@ -187,6 +190,7 @@ export function TeamScheduleSection({
           notes: trimmedNotes,
           venueId: venueIdValue,
           shoeType,
+          notifyParents,
         }
         if (editingId === 'new-game') await Api.createGame(teamId, payload)
         else if (typeof editingId === 'number') await Api.updateGame(editingId, payload)
@@ -200,6 +204,7 @@ export function TeamScheduleSection({
           notes: trimmedNotes,
           venueId: venueIdValue,
           shoeType,
+          notifyParents,
         }
         if (editingId === 'new-misc') await Api.createMiscEvent(teamId, payload)
         else if (typeof editingId === 'number') await Api.updateMiscEvent(editingId, payload)
@@ -213,6 +218,7 @@ export function TeamScheduleSection({
           notes: trimmedNotes,
           venueId: venueIdValue,
           shoeType,
+          notifyParents,
         }
         if (editingId === 'new-practice') await Api.createPractice(teamId, payload)
         else if (typeof editingId === 'number') await Api.updatePractice(editingId, payload)
@@ -538,6 +544,15 @@ export function TeamScheduleSection({
                 rows={3} maxLength={2000}
                 placeholder={t('admin.evtNotesPlaceholder')}
                 className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+            </label>
+            <label className="sm:col-span-2 flex items-start gap-2 text-sm">
+              <input type="checkbox" checked={notifyParents} onChange={e => setNotifyParents(e.target.checked)} className="mt-0.5" />
+              <span>
+                <span className="font-medium text-slate-700">{t('admin.evtNotifyParents')}</span>
+                <span className="block text-xs text-slate-500">
+                  {typeof editingId === 'number' ? t('admin.evtNotifyParentsEditHelp') : t('admin.evtNotifyParentsHelp')}
+                </span>
+              </span>
             </label>
             <div className="sm:col-span-2 flex items-center gap-3 pt-2">
               <button type="submit"

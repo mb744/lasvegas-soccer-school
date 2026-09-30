@@ -558,6 +558,7 @@ function TournamentTeamPanel({
   const [gVenueId, setGVenueId] = useState<number | ''>('')
   const [gShoeType, setGShoeType] = useState<ShoeType>(0)
   const [gNotes, setGNotes] = useState('')
+  const [gNotify, setGNotify] = useState(true)
   const vGame = useRequiredValidation(['startsAt'])
 
   const reloadAll = async () => {
@@ -777,6 +778,7 @@ function TournamentTeamPanel({
     setGStart(''); setGArrive(''); setGArriveTouched(false)
     setGOpponent(''); setGHome('unknown'); setGLocation(''); setGUniformId(''); setGVenueId(''); setGShoeType(0)
     setGNotes('')
+    setGNotify(true)
     vGame.reset()
   }
 
@@ -797,6 +799,7 @@ function TournamentTeamPanel({
     setGVenueId(g.venueId ?? '')
     setGShoeType(g.shoeType)
     setGNotes(g.description ?? '')
+    setGNotify(true)
     vGame.reset()
     setShowAdd(true)
   }
@@ -818,6 +821,7 @@ function TournamentTeamPanel({
         uniformId: gUniformId ? Number(gUniformId) : null,
         venueId: gVenueId === '' ? null : gVenueId,
         shoeType: gShoeType,
+        notifyParents: gNotify,
       }
       if (editId !== null) {
         await Api.updateGame(editId, payload)
@@ -1076,6 +1080,15 @@ function TournamentTeamPanel({
                 rows={3} maxLength={2000}
                 placeholder={t('admin.evtNotesPlaceholder')}
                 className="mt-1 w-full border border-slate-300 rounded-md px-2 py-1 text-sm" />
+            </label>
+            <label className="sm:col-span-2 flex items-start gap-2 text-xs">
+              <input type="checkbox" checked={gNotify} onChange={e => setGNotify(e.target.checked)} className="mt-0.5" />
+              <span>
+                <span className="font-medium text-slate-700">{t('admin.evtNotifyParents')}</span>
+                <span className="block text-slate-500">
+                  {editId !== null ? t('admin.evtNotifyParentsEditHelp') : t('admin.evtNotifyParentsHelp')}
+                </span>
+              </span>
             </label>
             <div className="sm:col-span-2 flex gap-2">
               <button type="submit" disabled={busy}
