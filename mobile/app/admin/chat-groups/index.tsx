@@ -43,6 +43,17 @@ export default function AdminChatGroupsListScreen() {
           keyExtractor={(g) => String(g.id)}
           refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.brand} />}
           ListEmptyComponent={<Text style={styles.empty}>{t('admin.noChatGroups')}</Text>}
+          ListHeaderComponent={
+            (data?.length ?? 0) > 0 ? (
+              <TouchableOpacity
+                style={styles.broadcast}
+                onPress={() => router.push('/admin/chat-groups/broadcast')}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.broadcastText}>📣 {t('admin.broadcastButton')}</Text>
+              </TouchableOpacity>
+            ) : null
+          }
           renderItem={({ item }) => (
             <TouchableOpacity
               style={styles.row}
@@ -91,6 +102,16 @@ const styles = StyleSheet.create({
   rowName: { fontSize: 16, fontWeight: '700', color: colors.text },
   rowMeta: { fontSize: 13, color: colors.subtext, marginTop: 2 },
   rowChevron: { fontSize: 22, color: colors.subtext, marginLeft: spacing.sm },
+  broadcast: {
+    borderWidth: 1,
+    borderColor: colors.brand,
+    borderRadius: radius.lg,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+    marginBottom: spacing.md,
+    backgroundColor: colors.card,
+  },
+  broadcastText: { color: colors.brand, fontSize: 15, fontWeight: '800' },
   fab: {
     position: 'absolute',
     left: spacing.lg,

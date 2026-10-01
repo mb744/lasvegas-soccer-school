@@ -64,6 +64,7 @@ export default function RootLayout() {
               <Stack.Screen name="admin/events/index" options={{ headerShown: true, title: '' }} />
               <Stack.Screen name="admin/events/[id]" options={{ headerShown: true, title: '' }} />
               <Stack.Screen name="admin/chat-groups/index" options={{ headerShown: true, title: '' }} />
+              <Stack.Screen name="admin/chat-groups/broadcast" options={{ headerShown: true, title: '' }} />
               <Stack.Screen name="admin/chat-groups/[id]" options={{ headerShown: true, title: '' }} />
               <Stack.Screen name="admin/users/index" options={{ headerShown: true, title: '' }} />
               <Stack.Screen name="admin/users/[id]" options={{ headerShown: true, title: '' }} />

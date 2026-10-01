@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { Layout } from '../../components/Layout'
 import { Api } from '../../api/client'
 import type { ChatGroupAdmin, ChatParentSearch, TeamSummary } from '../../api/types'
+import { ChatBroadcastPanel } from './ChatBroadcastPanel'
 
 /**
  * Admin management of the native in-app chat groups parents use in the mobile app. Create a group
@@ -84,6 +85,12 @@ export function AdminChatGroupsPage() {
 
         {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded px-4 py-2 text-sm">{error}</div>}
         {notice && <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 rounded px-4 py-2 text-sm">{notice}</div>}
+
+        <ChatBroadcastPanel
+          groups={groups}
+          onSent={(n) => { setNotice(n); setError(null); void refresh() }}
+          onError={(e) => { setError(e); if (e) setNotice(null) }}
+        />
 
         <form onSubmit={create} className="bg-white border border-slate-200 rounded-lg p-4 space-y-3">
           <h2 className="font-semibold text-slate-800">New group</h2>
