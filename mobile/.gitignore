@@ -22,6 +22,11 @@ credentials/
 *.p12
 *.mobileprovision
 
+# Android: Play Console service-account key (used by `eas submit`) and any local keystores.
+play-service-account.json
+*.jks
+*.keystore
+
 # macOS
 .DS_Store
 

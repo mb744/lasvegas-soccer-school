@@ -13,12 +13,21 @@
     },
     "preview": {
       "distribution": "internal",
-      "channel": "preview"
+      "channel": "preview",
+      "android": {
+        "buildType": "apk"
+      }
     },
     "production": {
       "channel": "production",
       "autoIncrement": true,
-      "credentialsSource": "local"
+      "ios": {
+        "credentialsSource": "local"
+      },
+      "android": {
+        "credentialsSource": "remote",
+        "buildType": "app-bundle"
+      }
     }
   },
   "submit": {

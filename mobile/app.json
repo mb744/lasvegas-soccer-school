@@ -2,7 +2,7 @@
   "expo": {
     "name": "LV Soccer School",
     "slug": "lvss-mobile",
-    "version": "1.4.0",
+    "version": "1.5.0",
     "orientation": "portrait",
     "scheme": "lvss",
     "userInterfaceStyle": "automatic",
@@ -43,6 +43,13 @@
       },
       "permissions": [
         "NOTIFICATIONS"
+      ],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "category": ["BROWSABLE", "DEFAULT"],
+          "data": [{ "scheme": "fb1659218045358325", "host": "authorize" }]
+        }
       ]
     },
     "plugins": [
@@ -71,6 +78,12 @@
           "photosPermission": "LV Soccer School needs access to your photos so you can share pictures and videos in team chats and event galleries.",
           "cameraPermission": "LV Soccer School needs camera access so you can take photos and videos to share with your team.",
           "microphonePermission": "LV Soccer School needs microphone access to record sound with the videos you share."
+        }
+      ],
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.10228158424-ck054vcu69hkjmcvjjp6cg411bvnltap"
         }
       ]
     ],
