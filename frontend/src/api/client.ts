@@ -628,9 +628,21 @@ export const Api = {
     return r.data
   },
   // --- Admin Players ---
-  async listAdminPlayers(q?: string) {
-    const params = q?.trim() ? `?q=${encodeURIComponent(q.trim())}` : ''
-    const r = await api.get<AdminPlayerSummary[]>(`/admin/players${params}`)
+  async listAdminPlayers(q?: string, archived = false) {
+    const params = new URLSearchParams()
+    if (q?.trim()) params.set('q', q.trim())
+    if (archived) params.set('archived', 'true')
+    const qs = params.toString()
+    const r = await api.get<AdminPlayerSummary[]>(`/admin/players${qs ? `?${qs}` : ''}`)
+    return r.data
+  },
+  /** Archived players are hidden everywhere; their records and teams are kept for unarchiving. */
+  async archivePlayers(playerIds: number[]) {
+    const r = await api.post<{ count: number }>('/admin/players/archive', { playerIds })
+    return r.data
+  },
+  async unarchivePlayers(playerIds: number[]) {
+    const r = await api.post<{ count: number }>('/admin/players/unarchive', { playerIds })
     return r.data
   },
   async listPlayerUniforms(playerId: number) {

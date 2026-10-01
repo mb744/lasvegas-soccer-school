@@ -46,7 +46,7 @@ public class MobileInvoicesController : ControllerBase
         if (account is null) return Ok(Array.Empty<MobileInvoiceSummaryDto>());
 
         // Fetch, then sort in memory so we can key on (outstanding-first, due-date-ascending).
-        var rows = await _db.Invoices
+        var rows = await _db.Invoices.IgnoreQueryFilters()
             .Where(i => i.ParentAccountId == account.Id)
             .Select(i => new
             {
@@ -94,7 +94,7 @@ public class MobileInvoicesController : ControllerBase
         var account = await _accounts.ResolveGuardianByUserIdAsync(userId, ct);
         if (account is null) return NotFound();
 
-        var invoice = await _db.Invoices
+        var invoice = await _db.Invoices.IgnoreQueryFilters()
             .Where(i => i.Id == id && i.ParentAccountId == account.Id)
             .Select(i => new MobileInvoiceDetailDto(
                 i.Id,

@@ -114,6 +114,9 @@ public class AccountDeletionService : IAccountDeletionService
                 .Where(l => l.Player!.ParentAccountId == account.Id)
                 .ToListAsync(ct);
             _db.PlayerLogins.RemoveRange(kidLogins);
+
+            // The kids stay as school records but leave rosters, pickers and messaging.
+            await PlayerArchive.ArchiveFamilyAsync(_db, account.Id, ct);
         }
         else
         {

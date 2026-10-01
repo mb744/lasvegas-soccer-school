@@ -1449,6 +1449,10 @@ export interface AdminPlayerSummary {
   uniformCount: number
   /** Comma-joined jersey numbers of active (non-returned) uniform assignments. */
   activeJerseyNumbers: string
+  /** Set only in the archived list. */
+  archivedAt?: string | null
+  /** 0 = archived by an admin, 1 = the family deleted its account. */
+  archivedReason?: 0 | 1 | null
 }
 
 /** One Player row inside a duplicate group. rosterCount + registrationCount hint at which row

@@ -26,7 +26,18 @@ public record AdminPlayerSummaryDto(
     int UniformCount,
     /// <summary>Comma-joined jersey numbers from active (non-returned) uniform assignments,
     /// for an at-a-glance display in the admin list. Empty when no active assignments.</summary>
-    string ActiveJerseyNumbers);
+    string ActiveJerseyNumbers,
+    /// <summary>Set only in the archived list.</summary>
+    DateTime? ArchivedAt = null,
+    SoccerSchool.Api.Domain.PlayerArchiveReason? ArchivedReason = null);
+
+/// <summary>Players to archive or unarchive in one go.</summary>
+public class PlayerIdsRequest
+{
+    public List<int> PlayerIds { get; set; } = new();
+}
+
+public record PlayerArchiveResult(int Count);
 
 /// <summary>Full uniform-assignment row for the player detail panel.</summary>
 public record PlayerUniformAssignmentDto(

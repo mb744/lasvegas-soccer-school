@@ -95,6 +95,7 @@ public class AuthController : ControllerBase
             account.Language = req.Language;
             account.NoCommunications = false;
             account.ReclaimEmailHash = null;
+            await PlayerArchive.RestoreFamilyAsync(_db, account.Id, ct);
             _logger.LogInformation("Reunited signup {Email} with previously-deleted family {AccountId}.", req.Email, account.Id);
         }
         else

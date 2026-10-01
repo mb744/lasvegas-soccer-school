@@ -44,16 +44,56 @@ export function AdminPlayersPage() {
   const [editingId, setEditingId] = useState<number | null>(null)
   const [duplicates, setDuplicates] = useState<PlayerDuplicateGroup[]>([])
   const [showDupes, setShowDupes] = useState(false)
+  // Active players, or the archived ones (hidden everywhere else) to bring back.
+  const [view, setView] = useState<'active' | 'archived'>('active')
+  const [checked, setChecked] = useState<Set<number>>(new Set())
+  const [busy, setBusy] = useState(false)
+  const archivedView = view === 'archived'
 
-  const refresh = async (q: string) => {
+  const refresh = async (q: string, v = view) => {
     try {
       const [rows, dupes] = await Promise.all([
-        Api.listAdminPlayers(q),
-        Api.listPlayerDuplicates(),
+        Api.listAdminPlayers(q, v === 'archived'),
+        v === 'archived' ? Promise.resolve([] as PlayerDuplicateGroup[]) : Api.listPlayerDuplicates(),
       ])
       setPlayers(rows)
       setDuplicates(dupes)
+      // Keep only ticks for players still in the list.
+      setChecked(prev => new Set([...prev].filter(id => rows.some(r => r.id === id))))
     } catch (e: any) { setError(errMsg(e)) }
+  }
+
+  const switchView = (v: 'active' | 'archived') => {
+    if (v === view) return
+    setView(v); setChecked(new Set()); setEditingId(null); setSelectedId(null)
+    void refresh(query, v)
+  }
+
+  const toggleChecked = (id: number) =>
+    setChecked(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next })
+  const allChecked = players.length > 0 && players.every(p => checked.has(p.id))
+
+  /** Archive (active view) or unarchive (archived view) the given players. */
+  const applyArchive = async (ids: number[]) => {
+    if (ids.length === 0 || busy) return
+    const names = ids.length === 1
+      ? (() => { const p = players.find(x => x.id === ids[0]); return p ? `${p.firstName} ${p.lastName}` : '' })()
+      : ''
+    const one = ids.length === 1
+    const confirmText = archivedView
+      ? (one ? t('admin.playersUnarchiveConfirmOne', { name: names }) : t('admin.playersUnarchiveConfirmMany', { count: ids.length }))
+      : (one ? t('admin.playersArchiveConfirmOne', { name: names }) : t('admin.playersArchiveConfirmMany', { count: ids.length }))
+    if (!confirm(confirmText)) return
+    setBusy(true); setError(null)
+    try {
+      const r = archivedView ? await Api.unarchivePlayers(ids) : await Api.archivePlayers(ids)
+      setChecked(new Set())
+      await refresh(query)
+      setNotice(archivedView
+        ? t('admin.playersUnarchivedNotice', { count: r.count })
+        : t('admin.playersArchivedNotice', { count: r.count }))
+    } catch (e: any) { setError(errMsg(e)); setNotice(null) }
+    finally { setBusy(false) }
   }
 
   const merge = async (keepId: number, deleteId: number) => {
@@ -159,6 +199,30 @@ export function AdminPlayersPage() {
             onCancel={() => setShowAdd(false)} />
         )}
 
+        <div className="flex flex-wrap items-center gap-1 border-b border-slate-200">
+          {(['active', 'archived'] as const).map(v => (
+            <button key={v} onClick={() => switchView(v)}
+              className={`px-4 py-2 text-sm font-medium border-b-2 ${view === v
+                ? 'border-emerald-700 text-emerald-800'
+                : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+              {v === 'active' ? t('admin.playersTabActive') : t('admin.playersTabArchived')}
+            </button>
+          ))}
+        </div>
+        {archivedView && <p className="text-xs text-slate-500">{t('admin.playersArchivedHelp')}</p>}
+
+        {checked.size > 0 && (
+          <div className="flex items-center gap-3 text-sm bg-slate-50 border border-slate-200 rounded-md px-3 py-2">
+            <span className="text-slate-700">{t('admin.playersSelectedCount', { count: checked.size })}</span>
+            <button onClick={() => applyArchive([...checked])} disabled={busy}
+              className={`ml-auto text-white text-sm font-semibold px-3 py-1.5 rounded-md disabled:opacity-60 ${archivedView
+                ? 'bg-emerald-700 hover:bg-emerald-800' : 'bg-slate-700 hover:bg-slate-800'}`}>
+              {archivedView ? t('admin.playersUnarchiveSelected') : t('admin.playersArchiveSelected')}
+            </button>
+            <button onClick={() => setChecked(new Set())} className="text-slate-500 hover:underline">{t('admin.cancel')}</button>
+          </div>
+        )}
+
         <div className="flex items-center gap-2">
           <input type="text" value={query} onChange={e => setQuery(e.target.value)}
             placeholder={t('admin.playersSearchPlaceholder')}
@@ -173,6 +237,10 @@ export function AdminPlayersPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-slate-500 border-b">
+                <th className="py-2 pl-3 w-8">
+                  <input type="checkbox" checked={allChecked} aria-label={t('admin.playersSelectAll')}
+                    onChange={() => setChecked(allChecked ? new Set() : new Set(players.map(p => p.id)))} />
+                </th>
                 <th className="py-2 px-3">{t('admin.playersColName')}</th>
                 <th className="py-2 px-3">{t('admin.playersColDob')}</th>
                 <th className="py-2 px-3">{t('admin.playersColBracket')}</th>
@@ -187,9 +255,19 @@ export function AdminPlayersPage() {
               {players.map(p => (
                 <Fragment key={p.id}>
                   <tr className="border-b last:border-0 align-top">
+                    <td className="py-2 pl-3">
+                      <input type="checkbox" checked={checked.has(p.id)} onChange={() => toggleChecked(p.id)}
+                        aria-label={`${p.firstName} ${p.lastName}`} />
+                    </td>
                     <td className="py-2 px-3">
                       <div className="font-medium text-slate-800">{p.firstName} {p.lastName}</div>
                       <div className="text-[10px] text-slate-400">#{p.id}</div>
+                      {archivedView && p.archivedAt && (
+                        <div className="text-[11px] text-slate-500 mt-0.5">
+                          {t('admin.playersArchivedOn', { date: new Date(p.archivedAt).toLocaleDateString() })}
+                          {p.archivedReason === 1 && <span> · {t('admin.playersArchivedFamilyDeleted')}</span>}
+                        </div>
+                      )}
                     </td>
                     <td className="py-2 px-3 whitespace-nowrap">{p.dateOfBirth}</td>
                     <td className="py-2 px-3">{p.ageBracket ?? <span className="text-slate-400">—</span>}</td>
@@ -215,6 +293,12 @@ export function AdminPlayersPage() {
                       )}
                     </td>
                     <td className="py-2 px-3 whitespace-nowrap text-right text-xs space-x-2">
+                      {archivedView ? (
+                        <button onClick={() => applyArchive([p.id])} disabled={busy}
+                          className="text-emerald-700 font-medium hover:underline">
+                          {t('admin.playersUnarchive')}
+                        </button>
+                      ) : (<>
                       <button onClick={() => { setEditingId(editingId === p.id ? null : p.id); setSelectedId(null) }}
                         className="text-emerald-700 hover:underline">
                         {editingId === p.id ? t('admin.cancel') : t('admin.edit')}
@@ -229,10 +313,15 @@ export function AdminPlayersPage() {
                           {t('admin.playersSendInvite')}
                         </button>
                       )}
+                      <button onClick={() => applyArchive([p.id])} disabled={busy}
+                        className="text-slate-500 hover:text-slate-800 hover:underline">
+                        {t('admin.playersArchive')}
+                      </button>
+                      </>)}
                     </td>
                   </tr>
                   {editingId === p.id && (
-                    <tr><td colSpan={8} className="py-2 px-3 bg-emerald-50">
+                    <tr><td colSpan={9} className="py-2 px-3 bg-emerald-50">
                       <EditPlayerForm player={p}
                         onSaved={async (updated) => {
                           setPlayers(prev => prev.map(x => x.id === updated.id ? updated : x))
@@ -244,7 +333,7 @@ export function AdminPlayersPage() {
                     </td></tr>
                   )}
                   {selectedId === p.id && (
-                    <tr><td colSpan={8} className="py-2 px-3 bg-emerald-50/40">
+                    <tr><td colSpan={9} className="py-2 px-3 bg-emerald-50/40">
                       <PlayerUniformPanel player={p}
                         onClose={() => setSelectedId(null)}
                         onChanged={() => refresh(query)}
@@ -255,7 +344,9 @@ export function AdminPlayersPage() {
                 </Fragment>
               ))}
               {players.length === 0 && (
-                <tr><td colSpan={8} className="py-6 text-center text-sm text-slate-400">{t('admin.playersEmpty')}</td></tr>
+                <tr><td colSpan={9} className="py-6 text-center text-sm text-slate-400">
+                  {archivedView ? t('admin.playersArchivedEmpty') : t('admin.playersEmpty')}
+                </td></tr>
               )}
             </tbody>
           </table>

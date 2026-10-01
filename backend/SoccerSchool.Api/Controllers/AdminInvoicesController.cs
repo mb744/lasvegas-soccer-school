@@ -41,7 +41,8 @@ public class AdminInvoicesController : ControllerBase
         [FromQuery] string? q,
         CancellationToken ct)
     {
-        var query = _db.Invoices.AsNoTracking().AsQueryable();
+        // IgnoreQueryFilters: invoices for archived players keep the player's name.
+        var query = _db.Invoices.AsNoTracking().IgnoreQueryFilters().AsQueryable();
         if (status is InvoiceStatus s) query = query.Where(i => i.Status == s);
         if (parentAccountId is int pid) query = query.Where(i => i.ParentAccountId == pid);
 
@@ -248,7 +249,7 @@ public class AdminInvoicesController : ControllerBase
 
     private async Task<InvoiceDto> BuildDtoAsync(int id, CancellationToken ct)
     {
-        var r = await _db.Invoices.AsNoTracking()
+        var r = await _db.Invoices.AsNoTracking().IgnoreQueryFilters()
             .Where(i => i.Id == id)
             .Select(i => new
             {

@@ -196,6 +196,7 @@ public class MobileAuthController : ControllerBase
                 account.LastName = string.IsNullOrWhiteSpace(identity.LastName) ? account.LastName : identity.LastName;
                 account.ReclaimEmailHash = null;
                 account.NoCommunications = false;
+                await PlayerArchive.RestoreFamilyAsync(_db, account.Id, ct);
                 reunionAccountId = account.Id;
                 _logger.LogInformation("Reunited external signup {Email} with previously-deleted family {AccountId}.", identity.Email, account.Id);
             }
