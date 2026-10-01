@@ -192,6 +192,9 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
                 .WithMany(a => a.Players)
                 .HasForeignKey(p => p.ParentAccountId)
                 .OnDelete(DeleteBehavior.Cascade);
+            // Archived players are hidden from every query. Use IgnoreQueryFilters() where
+            // they must still show: the archived list, registration and invoice records.
+            b.HasQueryFilter(p => p.ArchivedAt == null);
         });
 
         modelBuilder.Entity<Registration>(b =>
@@ -355,6 +358,9 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
                 .HasForeignKey(tp => tp.PlayerId)
                 .OnDelete(DeleteBehavior.Restrict);
             b.HasIndex(tp => new { tp.TeamId, tp.PlayerId }).IsUnique();
+            // Archived players' memberships are kept (for unarchiving) but hidden, so roster
+            // counts and id-only queries leave them out too.
+            b.HasQueryFilter(tp => tp.Player!.ArchivedAt == null);
         });
 
         modelBuilder.Entity<TeamCoach>(b =>

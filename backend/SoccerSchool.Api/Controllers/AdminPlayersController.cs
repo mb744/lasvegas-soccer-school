@@ -45,9 +45,10 @@ public class AdminPlayersController : ControllerBase
     /// parent contact, current team, current-season registration status, and a one-glance summary
     /// of active uniform assignments. Filter via the <paramref name="q"/> query string — name,
     /// parent name, parent phone (digit-suffix), or team name; case-insensitive.</summary>
+    /// <param name="archived">True lists only archived players (to unarchive them).</param>
     [HttpGet]
     public async Task<ActionResult<IEnumerable<AdminPlayerSummaryDto>>> List(
-        [FromQuery] string? q, CancellationToken ct)
+        [FromQuery] string? q, CancellationToken ct, [FromQuery] bool archived = false)
     {
         var season = _app.ActiveSeason;
         var qq = q?.Trim();
@@ -58,11 +59,18 @@ public class AdminPlayersController : ControllerBase
         //   - Latest RegistrationPlayer in the active season (for waiver + bracket)
         //   - Latest team (whatever team the player's currently on, if any)
         //   - PlayerUniformAssignments (for count + active jersey list)
-        var rows = await _db.Players
+        // Archived players are hidden by the query filter; the archived list turns it off (for the
+        // whole query, so their teams show too) and keeps only the archived ones.
+        var players = archived
+            ? _db.Players.IgnoreQueryFilters().Where(p => p.ArchivedAt != null)
+            : _db.Players;
+        var rows = await players
             .AsNoTracking()
             .Select(p => new
             {
                 p.Id,
+                p.ArchivedAt,
+                p.ArchivedReason,
                 p.FirstName,
                 p.LastName,
                 p.DateOfBirth,
@@ -110,7 +118,9 @@ public class AdminPlayersController : ControllerBase
                 r.ActiveReg?.SignedAt != null,
                 r.ActiveReg != null,
                 r.UniformCount,
-                string.Join(", ", r.ActiveJerseyNumbers)))
+                string.Join(", ", r.ActiveJerseyNumbers),
+                r.ArchivedAt,
+                r.ArchivedReason))
             .ToList();
 
         if (!string.IsNullOrWhiteSpace(qq))
@@ -131,6 +141,27 @@ public class AdminPlayersController : ControllerBase
         return Ok(items
             .OrderBy(i => i.LastName).ThenBy(i => i.FirstName)
             .ToList());
+    }
+
+    /// <summary>Archives players: they disappear from every list, roster, picker, schedule and
+    /// message, but keep their records and team memberships for unarchiving.</summary>
+    [HttpPost("archive")]
+    public async Task<ActionResult<PlayerArchiveResult>> Archive([FromBody] PlayerIdsRequest req, CancellationToken ct)
+    {
+        if (req.PlayerIds.Count == 0) return BadRequest("Pick at least one player.");
+        var count = await PlayerArchive.ArchiveAsync(_db, req.PlayerIds.Distinct().ToList(), PlayerArchiveReason.Admin, User.Identity?.Name, ct);
+        await _db.SaveChangesAsync(ct);
+        return Ok(new PlayerArchiveResult(count));
+    }
+
+    /// <summary>Brings archived players back, onto the teams they were on.</summary>
+    [HttpPost("unarchive")]
+    public async Task<ActionResult<PlayerArchiveResult>> Unarchive([FromBody] PlayerIdsRequest req, CancellationToken ct)
+    {
+        if (req.PlayerIds.Count == 0) return BadRequest("Pick at least one player.");
+        var count = await PlayerArchive.UnarchiveAsync(_db, req.PlayerIds.Distinct().ToList(), ct);
+        await _db.SaveChangesAsync(ct);
+        return Ok(new PlayerArchiveResult(count));
     }
 
     /// <summary>All uniform assignments for one player — drawer/detail panel on the admin row.</summary>

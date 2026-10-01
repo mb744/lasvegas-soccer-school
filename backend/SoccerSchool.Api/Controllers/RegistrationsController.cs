@@ -259,7 +259,7 @@ public class RegistrationsController : ControllerBase
     public async Task<ActionResult<RegistrationDetail>> Update(
         int id, [FromBody] UpdateRegistrationRequest request, CancellationToken ct)
     {
-        var registration = await _db.Registrations
+        var registration = await _db.Registrations.IgnoreQueryFilters()
             .Include(r => r.ParentAccount).ThenInclude(pa => pa!.Contacts)
             .Include(r => r.Players).ThenInclude(rp => rp.Player)
             .FirstOrDefaultAsync(r => r.Id == id, ct);
@@ -326,7 +326,7 @@ public class RegistrationsController : ControllerBase
     public async Task<ActionResult<RegistrationDetail>> SetCommunications(
         int id, [FromBody] SetRegistrationCommunicationsRequest request, CancellationToken ct)
     {
-        var registration = await _db.Registrations
+        var registration = await _db.Registrations.IgnoreQueryFilters()
             .Include(r => r.ParentAccount)
             .FirstOrDefaultAsync(r => r.Id == id, ct);
         if (registration is null || registration.ParentAccount is null) return NotFound();
@@ -360,7 +360,7 @@ public class RegistrationsController : ControllerBase
 
     private async Task<(Registration? registration, ActionResult? denied)> LoadAuthorizedAsync(int id, CancellationToken ct)
     {
-        var registration = await _db.Registrations
+        var registration = await _db.Registrations.IgnoreQueryFilters()
             .Include(x => x.ParentAccount).ThenInclude(pa => pa!.User)
             .Include(x => x.ParentAccount).ThenInclude(pa => pa!.Contacts)
             .Include(x => x.ParentAccount).ThenInclude(pa => pa!.Collaborators).ThenInclude(c => c.User)
@@ -391,7 +391,7 @@ public class RegistrationsController : ControllerBase
     public async Task<ActionResult<RegistrationPlayerDetail>> UpdatePlayerTrial(
         int id, int rpId, [FromBody] UpdatePlayerTrialRequest request, CancellationToken ct)
     {
-        var rp = await _db.RegistrationPlayers
+        var rp = await _db.RegistrationPlayers.IgnoreQueryFilters()
             .Include(p => p.Player)
             .Include(p => p.AgeClassification)
             .FirstOrDefaultAsync(p => p.Id == rpId && p.RegistrationId == id, ct);
@@ -470,7 +470,7 @@ public class RegistrationsController : ControllerBase
     public async Task<ActionResult<RegistrationDetail>> UpdatePlayer(
         int id, int rpId, [FromBody] UpdateRegistrationPlayerRequest request, CancellationToken ct)
     {
-        var rp = await _db.RegistrationPlayers
+        var rp = await _db.RegistrationPlayers.IgnoreQueryFilters()
             .Include(p => p.Player)
             .FirstOrDefaultAsync(p => p.Id == rpId && p.RegistrationId == id, ct);
         if (rp is null) return NotFound();
@@ -608,7 +608,7 @@ public class RegistrationsController : ControllerBase
     public async Task<ActionResult<RegistrationDetail>> LinkUser(
         int id, [FromBody] LinkUserToRegistrationRequest request, CancellationToken ct)
     {
-        var registration = await _db.Registrations
+        var registration = await _db.Registrations.IgnoreQueryFilters()
             .Include(r => r.ParentAccount).ThenInclude(pa => pa!.Collaborators)
             .FirstOrDefaultAsync(r => r.Id == id, ct);
         if (registration is null || registration.ParentAccount is null) return NotFound();
@@ -624,7 +624,9 @@ public class RegistrationsController : ControllerBase
             return Ok(await LoadDetailAsync(id, ct));
 
         // If the user has their own ParentAccount, merge it into the primary family.
-        var secondary = await _db.ParentAccounts
+        // IgnoreQueryFilters: archived kids must move too, or deleting the secondary family below
+        // would delete them with it.
+        var secondary = await _db.ParentAccounts.IgnoreQueryFilters()
             .Include(p => p.Players)
             .Include(p => p.Contacts)
             .Include(p => p.Registrations)
@@ -700,7 +702,7 @@ public class RegistrationsController : ControllerBase
     public async Task<ActionResult<RegistrationDetail>> UnlinkUser(
         int id, string userId, CancellationToken ct)
     {
-        var registration = await _db.Registrations
+        var registration = await _db.Registrations.IgnoreQueryFilters()
             .Include(r => r.ParentAccount)
             .FirstOrDefaultAsync(r => r.Id == id, ct);
         if (registration is null || registration.ParentAccount is null) return NotFound();
@@ -744,7 +746,7 @@ public class RegistrationsController : ControllerBase
 
     private async Task<RegistrationDetail> LoadDetailAsync(int id, CancellationToken ct)
     {
-        var registration = await _db.Registrations
+        var registration = await _db.Registrations.IgnoreQueryFilters()
             .Include(x => x.ParentAccount).ThenInclude(pa => pa!.User)
             .Include(x => x.ParentAccount).ThenInclude(pa => pa!.Contacts)
             .Include(x => x.ParentAccount).ThenInclude(pa => pa!.Collaborators).ThenInclude(c => c.User)
