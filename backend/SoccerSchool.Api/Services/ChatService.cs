@@ -26,11 +26,20 @@ public interface IChatService
     /// and <paramref name="asAdmin"/> let an admin post from the web without a ChatGroupMember row.</summary>
     Task<MobileChatMessageDto?> PostMessageAsync(
         int groupId, string userId, string body, CancellationToken ct,
-        string? overrideName = null, bool? asAdmin = null, MediaAsset? media = null);
+        string? overrideName = null, bool? asAdmin = null, MediaAsset? media = null, bool push = true);
+
+    /// <summary>Posts the same admin message into every listed group, then sends each person one
+    /// push (not one per group they're in), opening a group they belong to.</summary>
+    Task<ChatBroadcastResult> BroadcastAsync(
+        IReadOnlyList<int> groupIds, string userId, string senderName, string body, CancellationToken ct);
 
     /// <summary>Builds the media payload for a message; null when there's no attachment.</summary>
     MobileMediaDto? ToMediaDto(int? mediaId, MediaKind? kind, string? contentType, string? blobName);
 }
+
+/// <param name="Groups">Groups the message was posted to.</param>
+/// <param name="People">Logins notified (each once, however many of the groups they're in).</param>
+public record ChatBroadcastResult(int Groups, int People);
 
 public class ChatService : IChatService
 {
@@ -79,7 +88,7 @@ public class ChatService : IChatService
 
     public async Task<MobileChatMessageDto?> PostMessageAsync(
         int groupId, string userId, string body, CancellationToken ct,
-        string? overrideName = null, bool? asAdmin = null, MediaAsset? media = null)
+        string? overrideName = null, bool? asAdmin = null, MediaAsset? media = null, bool push = true)
     {
         var account = await _accounts.ResolveGuardianByUserIdAsync(userId, ct);
         var accountId = account?.Id;
@@ -122,17 +131,10 @@ public class ChatService : IChatService
         // Realtime fan-out to everyone currently connected to the group.
         await _hub.Clients.Group(ChatHub.GroupName(groupId)).SendAsync(ChatHub.ReceiveMessage, dto, ct);
 
+        if (!push) return dto;
+
         // Push every other member (offline ones get the notification; foreground apps suppress it).
-        // Anyone who has blocked the sender is skipped — no notification for muted content.
-        var recipientUserIds = (await GetMemberUserIdsAsync(groupId, ct)).Where(id => id != userId).ToList();
-        if (recipientUserIds.Count > 0)
-        {
-            var blockedBy = await _db.ChatUserBlocks
-                .Where(b => b.BlockedUserId == userId && recipientUserIds.Contains(b.BlockerUserId))
-                .Select(b => b.BlockerUserId)
-                .ToListAsync(ct);
-            if (blockedBy.Count > 0) recipientUserIds = recipientUserIds.Except(blockedBy).ToList();
-        }
+        var recipientUserIds = await PushRecipientsAsync(groupId, userId, ct);
         if (recipientUserIds.Count > 0)
         {
             var title = await _db.ChatGroups.Where(g => g.Id == groupId).Select(g => g.Title).FirstOrDefaultAsync(ct) ?? "New message";
@@ -146,6 +148,44 @@ public class ChatService : IChatService
         }
 
         return dto;
+    }
+
+    public async Task<ChatBroadcastResult> BroadcastAsync(
+        IReadOnlyList<int> groupIds, string userId, string senderName, string body, CancellationToken ct)
+    {
+        var text = body.Trim();
+        // First group (in the admin's order) each person is in: the one their push opens.
+        var pushTo = new Dictionary<string, int>();
+        var posted = 0;
+        foreach (var groupId in groupIds.Distinct())
+        {
+            var dto = await PostMessageAsync(groupId, userId, text, ct, overrideName: senderName, asAdmin: true, push: false);
+            if (dto is null) continue;
+            posted++;
+            foreach (var u in await PushRecipientsAsync(groupId, userId, ct))
+                pushTo.TryAdd(u, groupId);
+        }
+
+        var preview = text.Length > 120 ? text[..120] + "…" : text;
+        foreach (var byGroup in pushTo.GroupBy(kv => kv.Value))
+            await _push.SendToUsersAsync(byGroup.Select(kv => kv.Key).ToList(), new PushNotification(
+                "LV Soccer School", $"{senderName}: {preview}",
+                new Dictionary<string, object> { ["type"] = "chat", ["groupId"] = byGroup.Key }), ct);
+
+        return new ChatBroadcastResult(posted, pushTo.Count);
+    }
+
+    /// <summary>Members to push for a message from <paramref name="senderUserId"/>: everyone but the
+    /// sender, minus anyone who has blocked the sender (no notification for muted content).</summary>
+    private async Task<List<string>> PushRecipientsAsync(int groupId, string senderUserId, CancellationToken ct)
+    {
+        var recipientUserIds = (await GetMemberUserIdsAsync(groupId, ct)).Where(id => id != senderUserId).ToList();
+        if (recipientUserIds.Count == 0) return recipientUserIds;
+        var blockedBy = await _db.ChatUserBlocks
+            .Where(b => b.BlockedUserId == senderUserId && recipientUserIds.Contains(b.BlockerUserId))
+            .Select(b => b.BlockerUserId)
+            .ToListAsync(ct);
+        return blockedBy.Count > 0 ? recipientUserIds.Except(blockedBy).ToList() : recipientUserIds;
     }
 
     /// <summary>Every login that should receive notifications for the group: each parent member's

@@ -315,6 +315,12 @@ export async function fetchAdminChatGroups(): Promise<AdminChatGroup[]> {
   return data;
 }
 
+/** One message into every chat group (empty groupIds) or just the listed ones. */
+export async function broadcastChatMessage(body: string, groupIds: number[]): Promise<{ groups: number; people: number }> {
+  const { data } = await api.post<{ groups: number; people: number }>('/admin/chat-groups/broadcast', { body, groupIds });
+  return data;
+}
+
 export async function postAdminChatMessage(groupId: number, body: string): Promise<void> {
   await api.post(`/admin/chat-groups/${groupId}/messages`, { body });
 }

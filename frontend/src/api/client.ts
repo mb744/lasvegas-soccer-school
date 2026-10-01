@@ -1169,6 +1169,11 @@ export const Api = {
   },
 
   // --- Mobile app chat groups (native in-app chat the mobile app's parents use) ---
+  /** One message into every chat group (empty groupIds) or just the listed ones. */
+  async broadcastChatMessage(body: string, groupIds: number[]) {
+    const r = await api.post<{ groups: number; people: number }>('/admin/chat-groups/broadcast', { body, groupIds })
+    return r.data
+  },
   async listChatGroups() {
     const r = await api.get<ChatGroupAdmin[]>('/admin/chat-groups')
     return r.data

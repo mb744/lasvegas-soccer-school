@@ -175,6 +175,33 @@ public class ChatAdminController : ControllerBase
         return Ok(await SummarizeAsync(id, ct));
     }
 
+    /// <summary>Admin posts one message into all chat groups (or the listed ones), from the web or
+    /// the app. Each person gets a single push even if they're in several of the groups.</summary>
+    [HttpPost("broadcast")]
+    public async Task<ActionResult<ChatBroadcastResult>> Broadcast([FromBody] ChatBroadcastRequest req, CancellationToken ct)
+    {
+        var body = req.Body?.Trim();
+        if (string.IsNullOrEmpty(body)) return BadRequest("Message body is required.");
+        if (body.Length > 4000) return BadRequest("Message is too long (4000 characters max).");
+
+        var all = await _db.ChatGroups.OrderBy(g => g.Title).Select(g => g.Id).ToListAsync(ct);
+        var targets = req.GroupIds is { Count: > 0 } picked ? all.Where(picked.Contains).ToList() : all;
+        if (targets.Count == 0) return BadRequest("There are no chat groups to send to.");
+
+        var userId = _users.GetUserId(User)!;
+        var result = await _chat.BroadcastAsync(targets, userId, await AdminNameAsync(userId, ct), body, ct);
+        return Ok(result);
+    }
+
+    private async Task<string> AdminNameAsync(string userId, CancellationToken ct)
+    {
+        var name = await _db.ParentAccounts
+            .Where(a => a.UserId == userId)
+            .Select(a => $"{a.FirstName} {a.LastName}".Trim())
+            .FirstOrDefaultAsync(ct);
+        return string.IsNullOrWhiteSpace(name) ? "Coach" : name;
+    }
+
     /// <summary>Admin posts into the group from the web — same fan-out path as a parent message.</summary>
     [HttpPost("{id:int}/messages")]
     public async Task<ActionResult<MobileChatMessageDto>> PostMessage(int id, [FromBody] MobileSendMessageRequest req, CancellationToken ct)
@@ -400,4 +427,11 @@ public class ChatAdminController : ControllerBase
                 m.MemberEmail != null && coachEmails.Contains(m.MemberEmail),
                 m.AddedAt)).ToList());
     }
+}
+
+/// <summary>Body to post; GroupIds limits it to those groups (empty or null = every group).</summary>
+public class ChatBroadcastRequest
+{
+    public string? Body { get; set; }
+    public List<int>? GroupIds { get; set; }
 }
