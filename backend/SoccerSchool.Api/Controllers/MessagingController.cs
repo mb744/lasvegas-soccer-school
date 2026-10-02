@@ -2624,6 +2624,11 @@ public class MessagingController : ControllerBase
                 props["event.dateShort"] = localStart.ToString("MM/dd", us);
                 props["event.dayOfWeek"] = localStart.ToString("dddd", us);
                 props["event.time"] = localStart.ToString("h:mm tt", us);
+                string LocalTime(DateTime? utc) => utc is DateTime u
+                    ? (pacific is null ? u : TimeZoneInfo.ConvertTimeFromUtc(u, pacific)).ToString("h:mm tt", us)
+                    : string.Empty;
+                props["event.arriveTime"] = LocalTime(ev.ArriveAt);
+                props["event.endTime"] = LocalTime(ev.EndsAt);
                 // event.location: when a venue is set, combine "Name, Address" (just the name if it
                 // has no address); otherwise fall back to the free-text Location (what synced games
                 // carry). event.address is the venue address alone; event.field is the free-text
