@@ -1277,6 +1277,8 @@ const en = {
     msgNoRosterTeams: 'No teams with a roster yet. Build one under',
     teamGotSportHeading: 'Schedule sync (GotSport)',
     msgPickGame: 'Pick an event (autofills variables)',
+    msgNoReplyOnly: 'Only families who haven’t answered yet',
+    msgNoReplyOnlyHelp: 'Parents who already answered Going, Maybe or Not going for this event are skipped (coaches still get it). Turn off for news everyone needs. Cancellations go to everyone.',
     msgPickGameHint: 'Pick from upcoming events',
     msgPickGameHelp: 'Picking an event fills What / When / Where from the synced schedule and, if the team has a linked message group, sets that group as the recipient.',
     msgPerPlayer: 'Personalize per player',

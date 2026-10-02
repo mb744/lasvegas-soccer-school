@@ -353,6 +353,7 @@ export function TeamScheduleSection({
         whatsAppTemplateId: cancelState.template.id,
         templateVariables: cancelState.values,
         scheduledGameId: cancelState.event.id,
+        onlyNoReply: false, // a cancellation goes to everyone, whatever they answered
         target: { kind: 2, dynamicGroupKey: `team-${teamId}` },
       })
       if (cancelState.markAfter) {

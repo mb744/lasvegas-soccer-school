@@ -546,6 +546,9 @@ export interface BroadcastTarget {
 
 export interface CreateBroadcastRequest {
   channel: MessageChannel
+  /** WhatsApp about an event: only families still missing an answer. Omit for the server default
+   *  (on, except cancellations); false = everyone. */
+  onlyNoReply?: boolean | null
   /** English body. At least one of bodyEn/bodyEs required when not using a template. */
   bodyEn?: string | null
   /** Spanish body. */
@@ -572,6 +575,9 @@ export interface CreateBroadcastRequest {
 
 export interface SendPerPlayerRequest {
   channel: MessageChannel
+  /** WhatsApp about an event: only families still missing an answer. Omit for the server default
+   *  (on, except cancellations); false = everyone. */
+  onlyNoReply?: boolean | null
   whatsAppTemplateId: number
   defaultLanguage?: Language
   scheduledGameId?: number | null

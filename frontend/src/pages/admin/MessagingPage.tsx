@@ -337,6 +337,9 @@ function ComposeTab({
   const [subjectEs, setSubjectEs] = useState('')
   const [defaultLang, setDefaultLang] = useState<Language>(0)
   const [pickedEventId, setPickedEventId] = useState<number | null>(null)
+  // WhatsApp about an event goes only to families who haven't answered yet. null = the default:
+  // on, except for cancellation templates (everyone needs those).
+  const [noReplyOnly, setNoReplyOnly] = useState<boolean | null>(null)
   // Personalize per player: fan one message out per rostered player (each child's name resolved
   // individually), so a parent with multiple players on the team gets one message per child.
   const [perPlayer, setPerPlayer] = useState(false)
@@ -372,6 +375,8 @@ function ComposeTab({
   const channelAvailable = (c: MessageChannel) =>
     c === 0 ? config?.sms : c === 1 ? config?.whatsApp : config?.email
   const isWhatsAppChannel = channel === 1
+  // Back to the default whenever the event changes.
+  useEffect(() => { setNoReplyOnly(null) }, [pickedEventId])
   const isEmailChannel = channel === 2
 
   // Curated + dynamic groups carry each recipient's own language, so the send auto-routes to the
@@ -546,11 +551,25 @@ function ComposeTab({
     setPreviewStep('edit')
   }
 
+  const noReplyApplies = isWhatsAppChannel && pickedEventId != null
+  const looksLikeCancellation = !!selectedTemplate && /cancel/i.test(selectedTemplate.name)
+  const noReplyChecked = noReplyOnly ?? !looksLikeCancellation
+  const noReplyToggle = noReplyApplies ? (
+    <label className="flex items-start gap-2 text-sm bg-amber-50/60 border border-amber-200 rounded-md p-2">
+      <input type="checkbox" checked={noReplyChecked} onChange={e => setNoReplyOnly(e.target.checked)} className="mt-0.5" />
+      <span>
+        <span className="font-medium text-slate-700">{t('admin.msgNoReplyOnly')}</span>
+        <span className="block text-xs text-slate-500">{t('admin.msgNoReplyOnlyHelp')}</span>
+      </span>
+    </label>
+  ) : null
+
   const perPlayerPayload = () => ({
     channel,
     whatsAppTemplateId: selectedTemplate!.id,
     defaultLanguage: defaultLang,
     scheduledGameId: pickedEventId,
+    onlyNoReply: noReplyApplies ? noReplyChecked : null,
     templateVariables: templateValues,
     target: target(),
   })
@@ -593,6 +612,7 @@ function ComposeTab({
                 whatsAppTemplateId: selectedTemplate!.id,
                 templateVariables: templateValues,
                 scheduledGameId: pickedEventId,
+                onlyNoReply: noReplyApplies ? noReplyChecked : null,
                 target: target(),
               })
           : {
@@ -603,6 +623,7 @@ function ComposeTab({
               subjectEs: isEmailChannel ? (subjectEs.trim() || null) : null,
               defaultLanguage: defaultLang,
               scheduledGameId: pickedEventId,
+              onlyNoReply: noReplyApplies ? noReplyChecked : null,
               target: target(),
             }
         const r = await Api.createBroadcast(payload)
@@ -853,6 +874,7 @@ function ComposeTab({
               <p className="mt-1 text-xs text-slate-500">{t('admin.msgPickGameHelp')}</p>
             </div>
           )}
+          {noReplyToggle}
           {canPerPlayer && (
             <label className="flex items-start gap-2 text-sm bg-emerald-50/60 border border-emerald-200 rounded-md p-2">
               <input type="checkbox" checked={perPlayer} onChange={e => setPerPlayer(e.target.checked)} className="mt-0.5" />
@@ -941,6 +963,7 @@ function ComposeTab({
               <p className="mt-1 text-xs text-slate-500">{t('admin.msgPickGameFreeFormHelp')}</p>
             </div>
           )}
+          {noReplyToggle}
           {isEmailChannel && (
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">{t('admin.msgSubject')}</label>
