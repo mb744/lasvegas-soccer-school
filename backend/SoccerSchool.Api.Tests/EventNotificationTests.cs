@@ -283,6 +283,20 @@ public class EventNotificationTests
     }
 
     [Fact]
+    public async Task Reminder_email_skips_kids_who_already_answered()
+    {
+        await using var h = new Harness();
+        var (_, gameId, _, _, anaId) = await SeedAsync(h);
+        h.Db.EventAttendances.Add(new EventAttendance { ScheduledGameId = gameId, PlayerId = anaId, Status = AttendanceStatus.Confirmed });
+        await h.Db.SaveChangesAsync();
+
+        var email = new FakeEmail();
+        // Ana's family already said Going; the other family opted out of messages: nothing to send.
+        Assert.Equal(0, await Sender(h, new FakePush(), email).SendReminderAsync(gameId, default));
+        Assert.Empty(email.Sent);
+    }
+
+    [Fact]
     public async Task Cancelled_or_past_events_send_nothing()
     {
         await using var h = new Harness();

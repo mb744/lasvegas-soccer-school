@@ -551,7 +551,8 @@ function ComposeTab({
     setPreviewStep('edit')
   }
 
-  const noReplyApplies = isWhatsAppChannel && pickedEventId != null
+  // Text messages about an event (WhatsApp or SMS) go only to families who haven't answered.
+  const noReplyApplies = (isWhatsAppChannel || channel === 0) && pickedEventId != null
   const looksLikeCancellation = !!selectedTemplate && /cancel/i.test(selectedTemplate.name)
   const noReplyChecked = noReplyOnly ?? !looksLikeCancellation
   const noReplyToggle = noReplyApplies ? (

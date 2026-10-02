@@ -59,12 +59,12 @@ public class WhatsAppNoReplyTests
         var api = new MessagingController(h.Db, sender, null!, new RecipientResolver(h.Db, app), null!, null!, null!,
             Microsoft.Extensions.Options.Options.Create(new TwilioOptions()), app, NullLogger<MessagingController>.Instance);
 
-        async Task<List<string>> Send(bool? onlyNoReply)
+        async Task<List<string>> Send(bool? onlyNoReply, MessageChannel channel = MessageChannel.WhatsApp)
         {
             sender.To.Clear();
             var r = await api.CreateBroadcast(new CreateBroadcastRequest
             {
-                Channel = MessageChannel.WhatsApp,
+                Channel = channel,
                 BodyEn = "Is your player coming Saturday?",
                 ScheduledGameId = game.Id,
                 OnlyNoReply = onlyNoReply,
@@ -78,6 +78,8 @@ public class WhatsAppNoReplyTests
         Assert.Equal(new[] { phones["pending"], phones["norow"] }.OrderBy(x => x), await Send(null));
         // Turned off: everyone.
         Assert.Equal(3, (await Send(false)).Count);
+        // SMS follows the same rule; email doesn't.
+        Assert.Equal(new[] { phones["pending"], phones["norow"] }.OrderBy(x => x), await Send(null, MessageChannel.Sms));
 
         // Once everyone has answered there's nobody to send to.
         h.Db.EventAttendances.Single(a => a.PlayerId == kids["pending"].Id).Status = AttendanceStatus.Declined;
@@ -93,5 +95,43 @@ public class WhatsAppNoReplyTests
         game.IsCancelled = true;
         await h.Db.SaveChangesAsync();
         Assert.Equal(3, (await Send(null)).Count);
+    }
+
+    [Fact]
+    public async Task Tournament_confirmations_skip_families_who_already_answered()
+    {
+        await using var h = new Harness();
+        var team = new Team { Name = "U11 Red" };
+        h.Db.Teams.Add(team);
+        await h.Db.SaveChangesAsync();
+        var kids = new List<Player>();
+        foreach (var (key, phone) in new[] { ("yes", "+17025550101"), ("open", "+17025550102") })
+        {
+            var user = await h.UserAsync($"{key}@test");
+            var family = new ParentAccount { UserId = user.Id, FirstName = key, LastName = "Family", CellPhone = phone, HasWhatsApp = true };
+            h.Db.ParentAccounts.Add(family);
+            await h.Db.SaveChangesAsync();
+            var kid = new Player { ParentAccountId = family.Id, FirstName = key, LastName = "Kid", DateOfBirth = new DateOnly(2016, 1, 1) };
+            h.Db.Players.Add(kid);
+            await h.Db.SaveChangesAsync();
+            h.Db.TeamPlayers.Add(new TeamPlayer { TeamId = team.Id, PlayerId = kid.Id });
+            kids.Add(kid);
+        }
+        var tournament = new Tournament { Name = "Fall Cup", TeamId = team.Id, StartDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(10)), CostPerPlayer = 40m };
+        h.Db.Tournaments.Add(tournament);
+        h.Db.WhatsAppTemplates.Add(new WhatsAppTemplate { Name = "tournamentparticipation_english", ContentSid = "HX1", Language = Language.English });
+        await h.Db.SaveChangesAsync();
+        h.Db.TournamentAttendances.Add(new TournamentAttendance { TournamentId = tournament.Id, PlayerId = kids[0].Id, Status = AttendanceStatus.Confirmed });
+        await h.Db.SaveChangesAsync();
+
+        var sender = new FakeSender();
+        var app = Microsoft.Extensions.Options.Options.Create(new AppOptions());
+        var api = new MessagingController(h.Db, sender, null!, new RecipientResolver(h.Db, app), null!, null!, null!,
+            Microsoft.Extensions.Options.Options.Create(new TwilioOptions()), app, NullLogger<MessagingController>.Instance);
+
+        var result = Assert.IsType<SendTournamentConfirmationsResult>(Assert.IsType<OkObjectResult>(
+            (await api.SendTournamentConfirmations(tournament.Id, null, default)).Result).Value);
+        Assert.Equal((1, 1, 1), (result.Sent, result.AlreadyAnswered, result.Total));
+        Assert.Equal(new[] { "+17025550102" }, sender.To);
     }
 }

@@ -789,12 +789,12 @@ public class MessagingController : ControllerBase
     }
 
     /// <summary>Whether a send about an event goes only to families still missing an answer: WhatsApp
-    /// only, and by default not for cancellations (a cancelled event, or a cancellation template),
-    /// which everyone needs. An explicit <paramref name="requested"/> value wins.</summary>
+    /// and SMS (not email), and by default not for cancellations (a cancelled event, or a
+    /// cancellation template), which everyone needs. An explicit <paramref name="requested"/> value wins.</summary>
     private async Task<bool> OnlyNoReplyAppliesAsync(MessageChannel channel, int? eventId, WhatsAppTemplate? template,
         bool? requested, CancellationToken ct)
     {
-        if (channel != MessageChannel.WhatsApp || eventId is null) return false;
+        if (channel == MessageChannel.Email || eventId is null) return false;
         if (requested is bool explicitChoice) return explicitChoice;
         if (template is not null && IsCancellationTemplate(template)) return false;
         var cancelled = await _db.ScheduledGames.Where(g => g.Id == eventId).Select(g => (bool?)g.IsCancelled).FirstOrDefaultAsync(ct);
@@ -2206,15 +2206,23 @@ public class MessagingController : ControllerBase
         var datesStr = FormatTournamentDates(tournament.StartDate.Value, tournament.EndDate);
         var costStr = tournament.CostPerPlayer.Value.ToString("C", System.Globalization.CultureInfo.GetCultureInfo("en-US"));
 
+        // Players whose family already answered (Going / Maybe / Not going) aren't asked again.
+        var answered = (await _db.TournamentAttendances
+                .Where(a => a.TournamentId == tournamentId && a.Status != AttendanceStatus.Pending)
+                .Select(a => a.PlayerId)
+                .ToListAsync(ct))
+            .ToHashSet();
+
         // One batch id per fan-out so the History view can collapse the per-player rows into
         // one summary line ("Tournament X — confirmations (N players)").
         var batchId = Guid.NewGuid();
-        int sent = 0, skipped = 0, targeted = 0;
+        int sent = 0, skipped = 0, targeted = 0, alreadyAnswered = 0;
         foreach (var tp in team.Roster)
         {
             var player = tp.Player;
             if (player is null) { skipped++; continue; }
             if (includePlayerIds is not null && !includePlayerIds.Contains(player.Id)) continue;
+            if (answered.Contains(player.Id)) { alreadyAnswered++; continue; }
             targeted++;
             // Resolve per-player properties + variable values via the template's mapping.
             // Falls back to the legacy hard-coded positions when the template hasn't been
@@ -2259,8 +2267,8 @@ public class MessagingController : ControllerBase
             else skipped++;
         }
 
-        var total = includePlayerIds is null ? team.Roster.Count : targeted;
-        return Ok(new SendTournamentConfirmationsResult(sent, skipped, total, null));
+        var total = includePlayerIds is null ? team.Roster.Count - alreadyAnswered : targeted;
+        return Ok(new SendTournamentConfirmationsResult(sent, skipped, total, null, AlreadyAnswered: alreadyAnswered));
     }
 
     /// <summary>Bilingual EN/ES preview for the fee-reminder send. Mirrors GetTournamentSendPreview

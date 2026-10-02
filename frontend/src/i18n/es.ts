@@ -977,6 +977,7 @@ const es: Translations = {
     evtTournResendGo: 'Reenviar a los seleccionados',
     evtTournResendPickFilter: 'Seleccione al menos un filtro de reenvío.',
     evtTournResendDone: 'Reenvío realizado para {{sent}} de {{total}} jugadores coincidentes.',
+    evtTournAlreadyAnswered: '{{count}} ya respondieron, así que no se les volvió a preguntar.',
     evtTournResendRateLimited: '{{count}} excluidos por límite (131049) — reintentar más tarde.',
     evtTournResendRateLimitedHint: 'Los destinatarios con error WhatsApp 131049 de las últimas 24h se omiten automáticamente — Meta limita las plantillas de marketing por destinatario y los reintentos inmediatos fallan de nuevo.',
     evtTournAddPlayers: 'Agregar jugadores al roster',

@@ -260,7 +260,10 @@ public class EventNotificationSender
         var rows = await _db.EventAttendances
             .Where(a => a.ScheduledGameId == eventId && kidIds.Contains(a.PlayerId))
             .ToDictionaryAsync(a => a.PlayerId, ct);
-        var due = kids.Where(k => !rows.TryGetValue(k.PlayerId, out var r) || r.ReminderEmailSentAt is null).ToList();
+        // Only kids still without an answer: a family that already said Going / Maybe / Not going
+        // isn't asked again.
+        var due = kids.Where(k => !rows.TryGetValue(k.PlayerId, out var r)
+            || (r.ReminderEmailSentAt is null && r.Status == AttendanceStatus.Pending)).ToList();
         if (due.Count == 0) return 0;
 
         var now = DateTime.UtcNow;
