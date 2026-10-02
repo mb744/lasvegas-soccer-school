@@ -101,10 +101,14 @@ public class RecipientResolver : IRecipientResolver
         // Counts come from the same resolvers used at send time, so the picker shows exactly who will
         // be reached — including every additional parent/guardian on each family's account, deduped
         // by phone/email. Keeping these in sync with the loaders avoids the picker undercounting.
-        var allCount = (await LoadAllParentsAsync(ct)).Count;
-        var activeCount = (await LoadActiveSeasonParentsAsync(ct)).Count;
-        var trialOverCount = (await LoadTrialOverParentsAsync(ct)).Count;
-        var noAppCount = (await LoadNoAppParentsAsync(ct)).Count;
+        // Archived families are left out of every send, so of the counts too.
+        var archived = await FamilyArchive.ArchivedIdsAsync(_db, ct);
+        int Count(IEnumerable<ResolvedRecipient> list) =>
+            list.Count(r => r.ParentAccountId is not int id || !archived.Contains(id));
+        var allCount = Count(await LoadAllParentsAsync(ct));
+        var activeCount = Count(await LoadActiveSeasonParentsAsync(ct));
+        var trialOverCount = Count(await LoadTrialOverParentsAsync(ct));
+        var noAppCount = Count(await LoadNoAppParentsAsync(ct));
 
         var teams = await _db.Teams
             .Where(t => t.Roster.Any())
@@ -122,12 +126,27 @@ public class RecipientResolver : IRecipientResolver
         foreach (var t in teams)
         {
             var recipients = await LoadTeamRosterParentsAsync(t.Id, ct);
-            result.Add(new DynamicGroupSummary($"{DynamicTeamPrefix}{t.Id}", $"Team: {t.Name}", recipients.Recipients.Count));
+            result.Add(new DynamicGroupSummary($"{DynamicTeamPrefix}{t.Id}", $"Team: {t.Name}", Count(recipients.Recipients)));
         }
         return result;
     }
 
     public async Task<RecipientList> ResolveAsync(RecipientTarget target, CancellationToken ct)
+    {
+        var list = await ResolveCoreAsync(target, ct);
+        if (target.Kind == RecipientTargetKind.Individual || list.Recipients.Count == 0) return list;
+        // Archived families (account deleted, or every kid archived) get no messages on any channel.
+        var archived = await FamilyArchive.ArchivedIdsAsync(_db, ct);
+        if (archived.Count == 0) return list;
+        return list with
+        {
+            Recipients = list.Recipients
+                .Where(r => r.ParentAccountId is not int id || !archived.Contains(id))
+                .ToList(),
+        };
+    }
+
+    private async Task<RecipientList> ResolveCoreAsync(RecipientTarget target, CancellationToken ct)
     {
         switch (target.Kind)
         {

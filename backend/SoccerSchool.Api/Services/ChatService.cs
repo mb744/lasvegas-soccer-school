@@ -79,7 +79,8 @@ public class ChatService : IChatService
     public async Task<List<int>> GetGroupIdsForUserAsync(string userId, CancellationToken ct)
     {
         var account = await _accounts.ResolveGuardianByUserIdAsync(userId, ct);
-        var accountId = account?.Id;
+        // An archived family (account deleted, or every kid archived) is out of the group chats.
+        var accountId = account is not null && !await FamilyArchive.IsArchivedAsync(_db, account.Id, ct) ? account.Id : (int?)null;
 
         return await _db.ChatGroupMembers
             .Where(m => (accountId != null && m.ParentAccountId == accountId) || m.UserId == userId)
@@ -91,7 +92,8 @@ public class ChatService : IChatService
     public async Task<bool> IsMemberAsync(int groupId, string userId, CancellationToken ct)
     {
         var account = await _accounts.ResolveGuardianByUserIdAsync(userId, ct);
-        var accountId = account?.Id;
+        // An archived family (account deleted, or every kid archived) is out of the group chats.
+        var accountId = account is not null && !await FamilyArchive.IsArchivedAsync(_db, account.Id, ct) ? account.Id : (int?)null;
         return await _db.ChatGroupMembers.AnyAsync(
             m => m.ChatGroupId == groupId &&
                  ((accountId != null && m.ParentAccountId == accountId) || m.UserId == userId), ct);
@@ -102,7 +104,8 @@ public class ChatService : IChatService
         string? overrideName = null, bool? asAdmin = null, MediaAsset? media = null, bool push = true)
     {
         var account = await _accounts.ResolveGuardianByUserIdAsync(userId, ct);
-        var accountId = account?.Id;
+        // An archived family (account deleted, or every kid archived) is out of the group chats.
+        var accountId = account is not null && !await FamilyArchive.IsArchivedAsync(_db, account.Id, ct) ? account.Id : (int?)null;
 
         var member = await _db.ChatGroupMembers.FirstOrDefaultAsync(
             m => m.ChatGroupId == groupId &&
@@ -196,9 +199,10 @@ public class ChatService : IChatService
             .ToListAsync(ct);
 
         var familyIds = members.Where(m => m.ParentAccountId != null).Select(m => m.ParentAccountId!.Value).Distinct().ToList();
-        // Families that deleted their account are anonymized; nobody to show or message there.
+        // Archived families (account deleted, or every kid archived) aren't shown or messageable.
+        var archivedFamilies = await FamilyArchive.ArchivedIdsAsync(_db, ct);
         var families = await _db.ParentAccounts
-            .Where(a => familyIds.Contains(a.Id) && a.ReclaimEmailHash == null)
+            .Where(a => familyIds.Contains(a.Id) && !archivedFamilies.Contains(a.Id))
             .Select(a => new
             {
                 a.Id, a.UserId, a.FirstName, a.LastName,
@@ -331,7 +335,9 @@ public class ChatService : IChatService
             .Select(m => new { m.ParentAccountId, m.UserId })
             .ToListAsync(ct);
 
-        var parentAccountIds = members.Where(m => m.ParentAccountId != null).Select(m => m.ParentAccountId!.Value).ToList();
+        var archived = await FamilyArchive.ArchivedIdsAsync(_db, ct);
+        var parentAccountIds = members.Where(m => m.ParentAccountId != null).Select(m => m.ParentAccountId!.Value)
+            .Where(id => !archived.Contains(id)).ToList();
         var userIds = new HashSet<string>(members.Where(m => m.UserId != null).Select(m => m.UserId!));
 
         if (parentAccountIds.Count > 0)

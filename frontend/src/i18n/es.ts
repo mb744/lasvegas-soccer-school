@@ -669,6 +669,7 @@ const es: Translations = {
     playersSendInviteConfirm: '¿Enviar un enlace de registro / consentimiento a {{email}}?',
     playersEmpty: 'No se encontraron jugadores.',
     playersTabActive: 'Activos',
+    showArchivedFamilies: 'Mostrar familias archivadas',
     playersTabArchived: 'Archivados',
     playersArchivedHelp: 'Los jugadores archivados se ocultan en todas partes: listas de jugadores, plantillas y selectores de equipos, calendarios, mensajes y la app de padres. Al desarchivarlos vuelven a los equipos donde estaban. Los niños de familias que eliminaron su cuenta se archivan automáticamente.',
     playersArchive: 'Archivar',

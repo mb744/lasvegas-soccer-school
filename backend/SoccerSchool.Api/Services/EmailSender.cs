@@ -49,6 +49,8 @@ public class EmailSender : IEmailSender
             return new EmailSendResult(false, null, "Email not configured (set Acs:ConnectionString and Acs:EmailFromAddress).");
         if (string.IsNullOrWhiteSpace(toEmail))
             return new EmailSendResult(false, null, "Missing recipient email.");
+        if (FamilyArchive.IsDeletedLoginEmail(toEmail))
+            return new EmailSendResult(false, null, "Skipped: this account was deleted.");
         if (string.IsNullOrWhiteSpace(subject))
             return new EmailSendResult(false, null, "Missing subject.");
 

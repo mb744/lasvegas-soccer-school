@@ -18,14 +18,17 @@ export function AdminRegistrationsPage() {
   const [details, setDetails] = useState<Record<number, RegistrationDetail>>({})
   const [loadingDetail, setLoadingDetail] = useState<number | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
+  // Archived families (account deleted, or every kid archived) are hidden by default.
+  const [showArchived, setShowArchived] = useState(false)
 
   const load = async () => {
     setError(null)
-    try { setRegistrations(await Api.listRegistrations()) }
+    try { setRegistrations(await Api.listRegistrations(undefined, showArchived)) }
     catch (e: any) { setError(e?.message ?? 'Error') }
   }
 
-  useEffect(() => { load() }, [])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { load() }, [showArchived])
 
   const afterCreate = async (created: RegistrationDetail) => {
     setCreateOpen(false)
@@ -89,6 +92,10 @@ export function AdminRegistrationsPage() {
           <div className="flex items-center justify-between">
             <h2 className="font-bold text-emerald-800">{t('admin.registrations')}</h2>
             <div className="flex items-center gap-3">
+              <label className="flex items-center gap-1.5 text-xs text-slate-600">
+                <input type="checkbox" checked={showArchived} onChange={e => setShowArchived(e.target.checked)} />
+                {t('admin.showArchivedFamilies')}
+              </label>
               <button onClick={() => setCreateOpen(true)} className="text-sm text-emerald-700 hover:underline">
                 + {t('admin.regCreateBtn')}
               </button>

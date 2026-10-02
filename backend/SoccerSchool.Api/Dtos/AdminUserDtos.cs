@@ -18,7 +18,9 @@ public record UserSummary(
     int RegistrationCount,
     /// <summary>The user's ParentAccount id, or null when the Identity user has no parent
     /// profile yet (e.g. seed admin accounts). Targets admin actions that need a parent.</summary>
-    int? ParentAccountId
+    int? ParentAccountId,
+    /// <summary>Family archived (account deleted, or every kid archived). Only listed with ?archived=true.</summary>
+    bool IsArchived = false
 );
 
 /// <summary>Rename request — updates ParentAccount.FirstName/LastName. A user without a parent

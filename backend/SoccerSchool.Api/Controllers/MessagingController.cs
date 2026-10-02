@@ -88,13 +88,15 @@ public class MessagingController : ControllerBase
         // MemberCount mirrors what ResolveAsync(CustomGroup) will actually fan out to: reachable
         // (phone or email present) AND not opted out at the family level. Without this filter the
         // dropdown shows inflated counts vs. who actually receives the broadcast.
+        var archived = await FamilyArchive.ArchivedIdsAsync(_db, ct);
         var curated = await _db.MessageGroups
             .OrderBy(g => g.Name)
             .Select(g => new MessageGroupSummary(
                 g.Id, g.Name, g.Description, g.Language,
                 g.Members.Count(m =>
                     ((m.Phone != null && m.Phone != "") || (m.Email != null && m.Email != ""))
-                    && (m.ParentAccount == null || !m.ParentAccount.NoCommunications)),
+                    && (m.ParentAccount == null || !m.ParentAccount.NoCommunications)
+                    && (m.ParentAccountId == null || !archived.Contains(m.ParentAccountId.Value))),
                 g.CreatedAt))
             .ToListAsync(ct);
         var dynamicGroups = (await _resolver.ListDynamicGroupsAsync(ct))
@@ -110,9 +112,12 @@ public class MessagingController : ControllerBase
             .Include(x => x.Members)
             .FirstOrDefaultAsync(x => x.Id == id, ct);
         if (g is null) return NotFound();
+        var archived = await FamilyArchive.ArchivedIdsAsync(_db, ct);
         return Ok(new MessageGroupDetail(
             g.Id, g.Name, g.Description, g.Language, g.CreatedAt,
-            g.Members.Select(m => new MessageGroupMemberDto(m.Id, m.Name, m.Phone, m.Email, m.Language, m.ParentAccountId)).ToList()));
+            g.Members
+                .Where(m => m.ParentAccountId is not int fid || !archived.Contains(fid))
+                .Select(m => new MessageGroupMemberDto(m.Id, m.Name, m.Phone, m.Email, m.Language, m.ParentAccountId)).ToList()));
     }
 
     [HttpPost("groups")]
@@ -151,9 +156,11 @@ public class MessagingController : ControllerBase
         // Hydrate ParentAccount on members so the reachable+not-opted-out count matches ListGroups.
         await _db.Entry(g).Collection(x => x.Members).Query()
             .Include(m => m.ParentAccount).LoadAsync(ct);
+        var archivedFamilies = await FamilyArchive.ArchivedIdsAsync(_db, ct);
         var memberCount = g.Members.Count(m =>
             ((!string.IsNullOrWhiteSpace(m.Phone)) || (!string.IsNullOrWhiteSpace(m.Email)))
-            && (m.ParentAccount == null || !m.ParentAccount.NoCommunications));
+            && (m.ParentAccount == null || !m.ParentAccount.NoCommunications)
+            && (m.ParentAccountId is not int fid || !archivedFamilies.Contains(fid)));
         return Ok(new MessageGroupSummary(g.Id, g.Name, g.Description, g.Language, memberCount, g.CreatedAt));
     }
 
@@ -1530,8 +1537,9 @@ public class MessagingController : ControllerBase
     {
         var cap = Math.Clamp(limit, 1, 200);
         // Only parents we can actually reach by SMS/WhatsApp — phone-required.
+        var archived = await FamilyArchive.ArchivedIdsAsync(_db, ct);
         var query = _db.ParentAccounts
-            .Where(p => !p.NoCommunications && p.CellPhone != null && p.CellPhone != "");
+            .Where(p => !p.NoCommunications && p.CellPhone != null && p.CellPhone != "" && !archived.Contains(p.Id));
         if (!string.IsNullOrWhiteSpace(q))
         {
             var needle = q.Trim();

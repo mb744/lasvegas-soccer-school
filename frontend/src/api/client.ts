@@ -257,10 +257,12 @@ export const Api = {
     const r = await api.get<RegistrationSummary[]>('/registrations/mine')
     return r.data
   },
-  async listRegistrations(season?: string) {
-    const r = await api.get<RegistrationSummary[]>('/registrations', {
-      params: season ? { season } : undefined,
-    })
+  /** Archived families (account deleted, or every kid archived) are left out unless `archived`. */
+  async listRegistrations(season?: string, archived = false) {
+    const params: Record<string, string> = {}
+    if (season) params.season = season
+    if (archived) params.archived = 'true'
+    const r = await api.get<RegistrationSummary[]>('/registrations', { params })
     return r.data
   },
   async getRegistration(id: number) {
@@ -459,8 +461,9 @@ export const Api = {
     const r = await api.post<{ subject: string; html: string }>('/admin/event-email-templates/preview', { kind, language, ...payload })
     return r.data
   },
-  async listUsers() {
-    const r = await api.get<UserSummary[]>('/admin/users')
+  /** Parents of archived families (account deleted, or every kid archived) are left out unless `archived`. */
+  async listUsers(archived = false) {
+    const r = await api.get<UserSummary[]>('/admin/users', { params: archived ? { archived: 'true' } : undefined })
     return r.data
   },
   async banUser(id: string) {
