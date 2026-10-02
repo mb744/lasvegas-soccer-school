@@ -403,7 +403,9 @@ public record SendTournamentConfirmationsResult(
     /// <summary>How many otherwise-matched players were excluded from this resend because
     /// their last failure was WhatsApp 131049 within the rate-limit backoff window. The admin
     /// is told the count so they know retries weren't silently dropped.</summary>
-    int RateLimitedSkipped = 0);
+    int RateLimitedSkipped = 0,
+    /// <summary>Players left out because their family already answered (Going / Maybe / Not going).</summary>
+    int AlreadyAnswered = 0);
 
 /// <summary>Filters for the per-team "Re-send confirmations" flow. The admin opens a small
 /// dialog and ticks which buckets to include — each filter ORs into the included set:

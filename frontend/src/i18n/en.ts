@@ -974,6 +974,7 @@ const en = {
     evtTournResendGo: 'Re-send to selected',
     evtTournResendPickFilter: 'Pick at least one re-send filter.',
     evtTournResendDone: 'Re-send fired for {{sent}} of {{total}} matching players.',
+    evtTournAlreadyAnswered: '{{count}} already answered, so they weren’t asked again.',
     evtTournResendRateLimited: '{{count}} rate-limited (131049) excluded — retry later.',
     evtTournResendRateLimitedHint: 'Rate-limited (WhatsApp 131049) recipients from the last 24h are skipped automatically — Meta caps marketing templates per recipient and immediate retries fail again.',
     evtTournAddPlayers: 'Add players to the roster',

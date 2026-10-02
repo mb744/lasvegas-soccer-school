@@ -626,7 +626,8 @@ function TournamentTeamPanel({
     try {
       const r = await Api.sendTournamentTeamConfirmations(
         tour.id, tt.teamId, Object.keys(overrides).length > 0 ? overrides : null)
-      onNotice(t('admin.evtTournSendDone', { sent: r.sent, total: r.total }))
+      onNotice(t('admin.evtTournSendDone', { sent: r.sent, total: r.total })
+        + (r.alreadyAnswered ? ' ' + t('admin.evtTournAlreadyAnswered', { count: r.alreadyAnswered }) : ''))
       const att = await Api.getTournamentTeamAttendance(tour.id, tt.teamId)
       setAttendance(att)
       setPreview(null)
@@ -682,9 +683,10 @@ function TournamentTeamPanel({
     try {
       const r = await Api.resendTournamentTeamConfirmations(tour.id, tt.teamId, resendFilter)
       const base = t('admin.evtTournResendDone', { sent: r.sent, total: r.total })
-      const suffix = r.rateLimitedSkipped > 0
+      const suffix = (r.rateLimitedSkipped > 0
         ? ' ' + t('admin.evtTournResendRateLimited', { count: r.rateLimitedSkipped })
-        : ''
+        : '')
+        + (r.alreadyAnswered ? ' ' + t('admin.evtTournAlreadyAnswered', { count: r.alreadyAnswered }) : '')
       onNotice(base + suffix)
       const att = await Api.getTournamentTeamAttendance(tour.id, tt.teamId)
       setAttendance(att)

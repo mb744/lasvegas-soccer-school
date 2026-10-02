@@ -1069,6 +1069,8 @@ export interface SendTournamentConfirmationsResult {
   skipped: number
   total: number
   message: string | null
+  /** Players left out because their family already answered. Missing from older servers. */
+  alreadyAnswered?: number
   /** How many otherwise-matched players were excluded from this resend because their last
    *  failure was WhatsApp 131049 within the 24h backoff window. */
   rateLimitedSkipped: number
