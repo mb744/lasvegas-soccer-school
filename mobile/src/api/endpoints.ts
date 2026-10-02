@@ -36,6 +36,7 @@ import { FamilyAccessLevel } from './types';
 import type { AccessCatalog, EditableRole, PermissionAuditEntry, UserAccess } from './types';
 import type { EventMediaItem, MediaItem, MediaKind } from './types';
 import type { Roster, RosterPlayerDetail, RosterTeam } from './types';
+import type { ChatPerson } from './types';
 import type { NotificationPreferences, SaveNotificationPreferencesRequest } from './types';
 
 // ---- Auth ----
@@ -190,6 +191,17 @@ export async function deleteEventMedia(eventId: number, itemId: number): Promise
 
 export async function reportEventMedia(eventId: number, itemId: number): Promise<void> {
   await api.post(`/mobile/events/${eventId}/media/${itemId}/report`);
+}
+
+export async function fetchChatMembers(groupId: number): Promise<ChatPerson[]> {
+  const { data } = await api.get<ChatPerson[]>(`/mobile/chat/groups/${groupId}/members`);
+  return data;
+}
+
+/** Opens (or creates) a private chat with someone in the group; returns its chat id. */
+export async function openDirectChat(userId: string, groupId: number): Promise<{ groupId: number }> {
+  const { data } = await api.post<{ groupId: number }>('/mobile/chat/direct', { userId, groupId });
+  return data;
 }
 
 export async function markChatRead(groupId: number, messageId: number): Promise<void> {

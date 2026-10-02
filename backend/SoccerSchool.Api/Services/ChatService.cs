@@ -35,7 +35,18 @@ public interface IChatService
 
     /// <summary>Builds the media payload for a message; null when there's no attachment.</summary>
     MobileMediaDto? ToMediaDto(int? mediaId, MediaKind? kind, string? contentType, string? blobName);
+
+    /// <summary>Everyone in a group as people (logins): each member family's parent and guardian
+    /// logins, plus admin/staff members. Staff first, then parents by name.</summary>
+    Task<List<MobileChatPersonDto>> GetPeopleAsync(int groupId, string viewerUserId, CancellationToken ct);
+
+    /// <summary>Finds or creates the private chat between the caller and someone in a group they
+    /// both belong to.</summary>
+    Task<DirectChatOutcome> OpenDirectAsync(string callerUserId, string targetUserId, int viaGroupId, CancellationToken ct);
 }
+
+/// <param name="Forbidden">The caller isn't in the group, or the person isn't in it.</param>
+public record DirectChatOutcome(int? GroupId, string? Error = null, bool Forbidden = false);
 
 /// <param name="Groups">Groups the message was posted to.</param>
 /// <param name="People">Logins notified (each once, however many of the groups they're in).</param>
@@ -137,13 +148,15 @@ public class ChatService : IChatService
         var recipientUserIds = await PushRecipientsAsync(groupId, userId, ct);
         if (recipientUserIds.Count > 0)
         {
-            var title = await _db.ChatGroups.Where(g => g.Id == groupId).Select(g => g.Title).FirstOrDefaultAsync(ct) ?? "New message";
+            var group = await _db.ChatGroups.Where(g => g.Id == groupId).Select(g => new { g.Title, g.IsDirect }).FirstOrDefaultAsync(ct);
             var text = body.Trim();
             if (text.Length == 0 && media is not null)
                 text = media.Kind == MediaKind.Video ? "🎥 Video" : "📷 Photo";
             var preview = text.Length > 120 ? text[..120] + "…" : text;
+            // A direct message reads like a text: the sender is the title.
             await _push.SendToUsersAsync(recipientUserIds, new PushNotification(
-                title, $"{senderName}: {preview}",
+                group?.IsDirect == true ? senderName : group?.Title ?? "New message",
+                group?.IsDirect == true ? preview : $"{senderName}: {preview}",
                 new Dictionary<string, object> { ["type"] = "chat", ["groupId"] = groupId }), ct);
         }
 
@@ -173,6 +186,127 @@ public class ChatService : IChatService
                 new Dictionary<string, object> { ["type"] = "chat", ["groupId"] = byGroup.Key }), ct);
 
         return new ChatBroadcastResult(posted, pushTo.Count);
+    }
+
+    public async Task<List<MobileChatPersonDto>> GetPeopleAsync(int groupId, string viewerUserId, CancellationToken ct)
+    {
+        var members = await _db.ChatGroupMembers
+            .Where(m => m.ChatGroupId == groupId)
+            .Select(m => new { m.ParentAccountId, m.UserId, m.DisplayName, m.Role })
+            .ToListAsync(ct);
+
+        var familyIds = members.Where(m => m.ParentAccountId != null).Select(m => m.ParentAccountId!.Value).Distinct().ToList();
+        // Families that deleted their account are anonymized; nobody to show or message there.
+        var families = await _db.ParentAccounts
+            .Where(a => familyIds.Contains(a.Id) && a.ReclaimEmailHash == null)
+            .Select(a => new
+            {
+                a.Id, a.UserId, a.FirstName, a.LastName,
+                Kids = a.Players.OrderBy(p => p.FirstName).Select(p => p.FirstName).ToList(),
+            })
+            .ToListAsync(ct);
+        var guardians = await _db.ParentAccountCollaborators
+            .Where(c => familyIds.Contains(c.ParentAccountId) && c.AccessLevel == FamilyAccessLevel.Guardian)
+            .Select(c => new { c.ParentAccountId, c.UserId })
+            .ToListAsync(ct);
+        var guardianIds = guardians.Select(g => g.UserId).ToList();
+        var guardianNames = (await _db.ParentContacts
+                .Where(c => c.UserId != null && guardianIds.Contains(c.UserId))
+                .Select(c => new { c.UserId, c.FirstName, c.LastName })
+                .ToListAsync(ct))
+            .GroupBy(c => c.UserId!)
+            .ToDictionary(g => g.Key, g => $"{g.First().FirstName} {g.First().LastName}".Trim());
+
+        var people = new Dictionary<string, (string Name, string? Detail, bool Staff)>();
+        void Add(string? userId, string name, string? detail, bool staff)
+        {
+            if (string.IsNullOrEmpty(userId)) return;
+            // Someone in the group both as staff and through a family shows once, as staff.
+            if (people.TryGetValue(userId, out var existing) && (existing.Staff || !staff)) return;
+            people[userId] = (string.IsNullOrWhiteSpace(name) ? "—" : name, detail, staff);
+        }
+        foreach (var m in members.Where(m => m.UserId != null))
+            Add(m.UserId, m.DisplayName, null, staff: true);
+        foreach (var f in families)
+        {
+            var kids = f.Kids.Count > 0 ? string.Join(", ", f.Kids) : null;
+            var familyName = $"{f.FirstName} {f.LastName}".Trim();
+            Add(f.UserId, familyName, kids, staff: false);
+            foreach (var g in guardians.Where(g => g.ParentAccountId == f.Id))
+                Add(g.UserId, guardianNames.TryGetValue(g.UserId, out var n) ? n : familyName, kids, staff: false);
+        }
+
+        var ids = people.Keys.ToList();
+        var adminRoleId = await _db.Roles.Where(r => r.Name == Roles.Admin).Select(r => r.Id).FirstOrDefaultAsync(ct);
+        var adminIds = adminRoleId is null
+            ? new HashSet<string>()
+            : (await _db.UserRoles.Where(ur => ur.RoleId == adminRoleId && ids.Contains(ur.UserId)).Select(ur => ur.UserId).ToListAsync(ct)).ToHashSet();
+        var coachIds = (await _db.TeamCoaches.Where(tc => tc.UserId != null && ids.Contains(tc.UserId)).Select(tc => tc.UserId!).ToListAsync(ct))
+            .Concat(await _db.Coaches.Where(c => c.UserId != null && ids.Contains(c.UserId)).Select(c => c.UserId!).ToListAsync(ct))
+            .ToHashSet();
+        var onApp = (await _db.MobileAppInstalls.Where(i => ids.Contains(i.UserId)).Select(i => i.UserId).ToListAsync(ct))
+            .Concat(await _db.DeviceTokens.Where(d => ids.Contains(d.UserId)).Select(d => d.UserId).ToListAsync(ct))
+            .ToHashSet();
+        var staffRole = members.Where(m => m.UserId != null && m.Role == ChatMemberRole.Admin).Select(m => m.UserId!).ToHashSet();
+
+        return people
+            .Select(p => new MobileChatPersonDto(
+                p.Key, p.Value.Name, p.Value.Detail,
+                IsAdmin: adminIds.Contains(p.Key) || staffRole.Contains(p.Key),
+                IsCoach: coachIds.Contains(p.Key),
+                OnApp: onApp.Contains(p.Key),
+                IsYou: p.Key == viewerUserId))
+            .OrderBy(p => p.IsAdmin || p.IsCoach ? 0 : 1)
+            .ThenBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    public async Task<DirectChatOutcome> OpenDirectAsync(string callerUserId, string targetUserId, int viaGroupId, CancellationToken ct)
+    {
+        if (callerUserId == targetUserId) return new DirectChatOutcome(null, "That's you.");
+        if (!await IsMemberAsync(viaGroupId, callerUserId, ct)) return new DirectChatOutcome(null, Forbidden: true);
+        var people = await GetPeopleAsync(viaGroupId, callerUserId, ct);
+        var them = people.FirstOrDefault(p => p.UserId == targetUserId);
+        if (them is null) return new DirectChatOutcome(null, Forbidden: true);
+        var me = people.FirstOrDefault(p => p.UserId == callerUserId);
+
+        var blocked = await _db.ChatUserBlocks.AnyAsync(b =>
+            (b.BlockerUserId == callerUserId && b.BlockedUserId == targetUserId) ||
+            (b.BlockerUserId == targetUserId && b.BlockedUserId == callerUserId), ct);
+        if (blocked) return new DirectChatOutcome(null, "You can't message this person.");
+
+        var key = string.CompareOrdinal(callerUserId, targetUserId) < 0
+            ? $"{callerUserId}|{targetUserId}"
+            : $"{targetUserId}|{callerUserId}";
+        var existing = await _db.ChatGroups.Where(g => g.DirectKey == key).Select(g => (int?)g.Id).FirstOrDefaultAsync(ct);
+        if (existing is int id) return new DirectChatOutcome(id);
+
+        var myName = me?.Name ?? "Parent";
+        var title = $"{myName} & {them.Name}";
+        var chat = new ChatGroup
+        {
+            IsDirect = true,
+            DirectKey = key,
+            Title = title.Length > 128 ? title[..128] : title,
+            Members =
+            {
+                new ChatGroupMember { UserId = callerUserId, DisplayName = myName, Role = me?.IsAdmin == true ? ChatMemberRole.Admin : ChatMemberRole.Parent },
+                new ChatGroupMember { UserId = targetUserId, DisplayName = them.Name, Role = them.IsAdmin ? ChatMemberRole.Admin : ChatMemberRole.Parent },
+            },
+        };
+        _db.ChatGroups.Add(chat);
+        try
+        {
+            await _db.SaveChangesAsync(ct);
+            return new DirectChatOutcome(chat.Id);
+        }
+        catch (DbUpdateException)
+        {
+            // The other person opened the same chat at the same moment: use theirs.
+            _db.ChangeTracker.Clear();
+            var raced = await _db.ChatGroups.Where(g => g.DirectKey == key).Select(g => (int?)g.Id).FirstOrDefaultAsync(ct);
+            return raced is int r ? new DirectChatOutcome(r) : throw new InvalidOperationException("Could not open the chat.");
+        }
     }
 
     /// <summary>Members to push for a message from <paramref name="senderUserId"/>: everyone but the
