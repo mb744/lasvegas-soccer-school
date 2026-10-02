@@ -2906,6 +2906,11 @@ function applyGameToTemplate(
         next[key] = game.opponentName
           ? `${GAME_VS_PREFIX[lang]} ${game.opponentName}`
           : (game.summary?.trim() || PRACTICE_FALLBACK[lang])
+      } else if (label.includes('arriv') || label.includes('be there') || label.includes('llegada')) {
+        // Before 'when' so a "When to arrive" label gets the arrival time, not the start.
+        if (game.arriveAt) {
+          next[key] = new Date(game.arriveAt).toLocaleTimeString(locale, { hour: 'numeric', minute: '2-digit' })
+        }
       } else if (label.includes('when')) {
         const d = new Date(game.startsAt)
         next[key] = `${d.toLocaleDateString(locale, { weekday: 'short', month: 'numeric', day: 'numeric' })} ${d.toLocaleTimeString(locale, { hour: 'numeric', minute: '2-digit' })}`
