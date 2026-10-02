@@ -425,6 +425,19 @@ public class MessagingController : ControllerBase
             return BadRequest($"No recipients in this group have a {missing} on file — pick a different channel or audience.");
         }
 
+        // WhatsApp about an event: only families still missing an answer. Coaches and anyone not
+        // tied to a family (ParentAccountId null) still get it.
+        if (await OnlyNoReplyAppliesAsync(request.Channel, request.ScheduledGameId, template, request.OnlyNoReply, ct))
+        {
+            var awaiting = (await PlayersAwaitingReplyAsync(request.ScheduledGameId!.Value, ct))
+                .Select(p => p.ParentAccountId).ToHashSet();
+            reachableRecipients = reachableRecipients
+                .Where(r => r.ParentAccountId is not int fid || awaiting.Contains(fid))
+                .ToList();
+            if (reachableRecipients.Count == 0)
+                return BadRequest("Every family in this audience has already answered for this event — nobody left to message.");
+        }
+
         // For template sends, look up the language pair so we can route each recipient to the
         // template matching their language. Pair lookup is by base name with opposite Language.
         // If no pair exists, every recipient gets the primary template and the log notes the mismatch.
@@ -612,6 +625,7 @@ public class MessagingController : ControllerBase
                 ScheduledGameId = request.ScheduledGameId,
                 PlayerId = player.Id,
                 BatchId = batchId,
+                OnlyNoReply = false,
                 Target = new BroadcastTargetDto
                 {
                     Kind = RecipientTargetKindDto.DynamicGroup,
@@ -638,6 +652,7 @@ public class MessagingController : ControllerBase
                 ScheduledGameId = request.ScheduledGameId,
                 BatchId = batchId,
                 CoachTeamNameFallback = teamName,
+                OnlyNoReply = false,
                 Target = new BroadcastTargetDto
                 {
                     Kind = RecipientTargetKindDto.DynamicGroup,
@@ -742,6 +757,15 @@ public class MessagingController : ControllerBase
         if (players.Count == 0)
             return (null, template, empty, "No players matched this audience.");
 
+        // About an event: skip players whose family already answered for them.
+        if (await OnlyNoReplyAppliesAsync(request.Channel, request.ScheduledGameId, template, request.OnlyNoReply, ct))
+        {
+            var awaiting = (await PlayersAwaitingReplyAsync(request.ScheduledGameId!.Value, ct)).Select(p => p.Id).ToHashSet();
+            players = players.Where(p => awaiting.Contains(p.Id)).ToList();
+            if (players.Count == 0)
+                return (null, template, empty, "Every player has already answered for this event — nobody left to message.");
+        }
+
         // Shared values for every player, minus any position mapped to a per-player property —
         // those resolve per player so each child gets their own name.
         var shared = (request.TemplateVariables ?? new())
@@ -755,6 +779,37 @@ public class MessagingController : ControllerBase
                 shared.Remove(v.Position.ToString(CultureInfo.InvariantCulture));
         }
         return (players, template, shared, null);
+    }
+
+    /// <summary>Whether a send about an event goes only to families still missing an answer: WhatsApp
+    /// only, and by default not for cancellations (a cancelled event, or a cancellation template),
+    /// which everyone needs. An explicit <paramref name="requested"/> value wins.</summary>
+    private async Task<bool> OnlyNoReplyAppliesAsync(MessageChannel channel, int? eventId, WhatsAppTemplate? template,
+        bool? requested, CancellationToken ct)
+    {
+        if (channel != MessageChannel.WhatsApp || eventId is null) return false;
+        if (requested is bool explicitChoice) return explicitChoice;
+        if (template is not null && IsCancellationTemplate(template)) return false;
+        var cancelled = await _db.ScheduledGames.Where(g => g.Id == eventId).Select(g => (bool?)g.IsCancelled).FirstOrDefaultAsync(ct);
+        return cancelled == false;
+    }
+
+    private static bool IsCancellationTemplate(WhatsAppTemplate t) =>
+        t.Context == TemplateContext.EventCancellation
+        || t.Name.Contains("cancel", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Rostered players on the event's team with no answer yet (no row, or Pending).</summary>
+    private async Task<List<Domain.Player>> PlayersAwaitingReplyAsync(int eventId, CancellationToken ct)
+    {
+        var teamId = await _db.ScheduledGames.Where(g => g.Id == eventId).Select(g => (int?)g.TeamId).FirstOrDefaultAsync(ct);
+        if (teamId is null) return new List<Domain.Player>();
+        var answered = _db.EventAttendances
+            .Where(a => a.ScheduledGameId == eventId && a.Status != AttendanceStatus.Pending)
+            .Select(a => a.PlayerId);
+        return await _db.TeamPlayers
+            .Where(tp => tp.TeamId == teamId && !answered.Contains(tp.PlayerId))
+            .Select(tp => tp.Player!)
+            .ToListAsync(ct);
     }
 
     /// <summary>Resolves the players a per-player fan-out targets: a team's roster, OR the whole-club

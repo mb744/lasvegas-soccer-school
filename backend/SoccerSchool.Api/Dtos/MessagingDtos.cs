@@ -162,6 +162,11 @@ public record CreateBroadcastRequest
     /// blank and getting blocked). Not meant to be set by external callers.</summary>
     public string? CoachTeamNameFallback { get; init; }
 
+    /// <summary>WhatsApp sends about an event go only to families with a child who hasn't answered
+    /// yet (no reply / Pending). Null = that default (off for cancellation templates and cancelled
+    /// events, which everyone needs); false = send to everyone; true = force it.</summary>
+    public bool? OnlyNoReply { get; init; }
+
     public BroadcastTargetDto Target { get; init; } = new();
 }
 
@@ -181,6 +186,11 @@ public record SendPerPlayerRequest
     /// <summary>Admin-supplied/auto-filled values by position. Positions mapped to player.*/parent.*
     /// are ignored so each player gets their own resolved value.</summary>
     public Dictionary<string, string>? TemplateVariables { get; init; }
+
+    /// <summary>WhatsApp sends about an event go only to players who haven't answered
+    /// yet (no reply / Pending). Null = that default (off for cancellation templates and cancelled
+    /// events, which everyone needs); false = send to everyone; true = force it.</summary>
+    public bool? OnlyNoReply { get; init; }
 
     public BroadcastTargetDto Target { get; init; } = new();
 }

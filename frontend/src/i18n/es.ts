@@ -1279,6 +1279,8 @@ const es: Translations = {
     msgNoRosterTeams: 'Aún no hay equipos con roster. Cree uno en',
     teamGotSportHeading: 'Sincronización de calendario (GotSport)',
     msgPickGame: 'Elegir un evento (autocompleta variables)',
+    msgNoReplyOnly: 'Solo familias que aún no han respondido',
+    msgNoReplyOnlyHelp: 'Se omiten los padres que ya respondieron Asiste, Tal vez o No asiste para este evento (los entrenadores sí lo reciben). Desactívelo para avisos que todos necesitan. Las cancelaciones se envían a todos.',
     msgPickGameHint: 'Elegir de los próximos eventos',
     msgPickGameHelp: 'Al elegir un evento se completan Qué / Cuándo / Dónde con la información sincronizada. Si el equipo tiene un grupo enlazado, se selecciona como destinatario.',
     msgPerPlayer: 'Personalizar por jugador',
