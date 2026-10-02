@@ -2,6 +2,16 @@ import type { Translations } from './en';
 
 export const es: Translations = {
   appName: 'LV Soccer School',
+  datePicker: {
+    pick: 'Elija fecha y hora',
+    optional: 'Opcional',
+    hour: 'Hora',
+    minute: 'Minuto',
+    done: 'Listo',
+    clear: 'Borrar',
+    prevMonth: 'Mes anterior',
+    nextMonth: 'Mes siguiente',
+  },
   common: {
     retry: 'Reintentar',
     loading: 'Cargando…',
@@ -215,6 +225,7 @@ export const es: Translations = {
     homeAwayUnknown: 'Desconocido',
     uniformLabel: 'Uniforme',
     uniformAuto: 'Automático (Local/Visitante)',
+    uniformDefaultPractice: 'Predeterminado (uniforme de práctica)',
     venueLabel: 'Lugar',
     fieldLabel: 'Cancha / detalle de ubicación',
     summaryLabel: 'Resumen',

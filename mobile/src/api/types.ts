@@ -353,6 +353,8 @@ export interface SavePracticeRequest {
   notes: string | null;
   venueId: number | null;
   shoeType?: number;
+  /** Uniform to wear; null = the club practice uniform. */
+  uniformId?: number | null;
   /** Alert + email the team's parents (server default true). */
   notifyParents?: boolean;
 }

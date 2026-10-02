@@ -542,6 +542,7 @@ public class ScheduleController : ControllerBase
         if (!await CanManageTeamAsync(team.Id, ct)) return OutOfScope();
         if (request.StartsAt == default) return BadRequest("Start time is required.");
         if (await ValidateVenueAsync(request.VenueId, ct) is string ve) return BadRequest(ve);
+        if (await ValidateUniformAsync(request.UniformId, ct) is string ue) return BadRequest(ue);
 
         var practice = new ScheduledGame
         {
@@ -553,6 +554,7 @@ public class ScheduleController : ControllerBase
             Location = string.IsNullOrWhiteSpace(request.Location) ? null : request.Location.Trim(),
             VenueId = request.VenueId,
             ShoeType = request.ShoeType,
+            UniformId = request.UniformId,
             Summary = string.IsNullOrWhiteSpace(request.Summary) ? "Practice" : request.Summary.Trim(),
             Description = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim(),
             CreatedAt = DateTime.UtcNow,
@@ -587,6 +589,7 @@ public class ScheduleController : ControllerBase
         if (!TryParseTime(request.StartTime, out var startTime))
             return BadRequest("StartTime must be HH:mm (e.g. \"17:00\").");
         if (await ValidateVenueAsync(request.VenueId, ct) is string ve) return BadRequest(ve);
+        if (await ValidateUniformAsync(request.UniformId, ct) is string ue) return BadRequest(ue);
         TimeSpan? endTime = null;
         if (!string.IsNullOrWhiteSpace(request.EndTime))
         {
@@ -626,6 +629,7 @@ public class ScheduleController : ControllerBase
                 Location = string.IsNullOrWhiteSpace(request.Location) ? null : request.Location.Trim(),
                 VenueId = request.VenueId,
                 ShoeType = request.ShoeType,
+                UniformId = request.UniformId,
                 Summary = string.IsNullOrWhiteSpace(request.Summary) ? "Practice" : request.Summary.Trim(),
                 CreatedAt = now,
                 LastSeenAt = now
@@ -667,6 +671,7 @@ public class ScheduleController : ControllerBase
         if (!await CanManageTeamAsync(practice.TeamId, ct)) return OutOfScope();
         if (request.StartsAt == default) return BadRequest("Start time is required.");
         if (await ValidateVenueAsync(request.VenueId, ct) is string ve) return BadRequest(ve);
+        if (await ValidateUniformAsync(request.UniformId, ct) is string ue) return BadRequest(ue);
         var before = request.NotifyParents ? await EventSnapshot.LoadAsync(_db, id, ct) : null;
 
         practice.StartsAt = DateTime.SpecifyKind(request.StartsAt, DateTimeKind.Utc);
@@ -674,6 +679,7 @@ public class ScheduleController : ControllerBase
         practice.Location = string.IsNullOrWhiteSpace(request.Location) ? null : request.Location.Trim();
         practice.VenueId = request.VenueId;
         practice.ShoeType = request.ShoeType;
+        practice.UniformId = request.UniformId;
         practice.Summary = string.IsNullOrWhiteSpace(request.Summary) ? "Practice" : request.Summary.Trim();
         practice.Description = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim();
         practice.LastSeenAt = DateTime.UtcNow;
@@ -719,6 +725,7 @@ public class ScheduleController : ControllerBase
         if (!await CanManageTeamAsync(team.Id, ct)) return OutOfScope();
         if (request.StartsAt == default) return BadRequest("Start time is required.");
         if (await ValidateVenueAsync(request.VenueId, ct) is string ve) return BadRequest(ve);
+        if (await ValidateUniformAsync(request.UniformId, ct) is string ue) return BadRequest(ue);
 
         var ev = new ScheduledGame
         {
@@ -730,6 +737,7 @@ public class ScheduleController : ControllerBase
             Location = string.IsNullOrWhiteSpace(request.Location) ? null : request.Location.Trim(),
             VenueId = request.VenueId,
             ShoeType = request.ShoeType,
+            UniformId = request.UniformId,
             Summary = string.IsNullOrWhiteSpace(request.Summary) ? "Event" : request.Summary.Trim(),
             Description = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim(),
             CreatedAt = DateTime.UtcNow,
@@ -753,6 +761,7 @@ public class ScheduleController : ControllerBase
         if (!await CanManageTeamAsync(ev.TeamId, ct)) return OutOfScope();
         if (request.StartsAt == default) return BadRequest("Start time is required.");
         if (await ValidateVenueAsync(request.VenueId, ct) is string ve) return BadRequest(ve);
+        if (await ValidateUniformAsync(request.UniformId, ct) is string ue) return BadRequest(ue);
         var before = request.NotifyParents ? await EventSnapshot.LoadAsync(_db, id, ct) : null;
 
         ev.StartsAt = DateTime.SpecifyKind(request.StartsAt, DateTimeKind.Utc);
@@ -760,6 +769,7 @@ public class ScheduleController : ControllerBase
         ev.Location = string.IsNullOrWhiteSpace(request.Location) ? null : request.Location.Trim();
         ev.VenueId = request.VenueId;
         ev.ShoeType = request.ShoeType;
+        ev.UniformId = request.UniformId;
         ev.Summary = string.IsNullOrWhiteSpace(request.Summary) ? "Event" : request.Summary.Trim();
         ev.Description = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim();
         ev.LastSeenAt = DateTime.UtcNow;
@@ -1229,6 +1239,10 @@ public class ScheduleController : ControllerBase
     }
 
     /// <summary>Returns an error message when a non-null VenueId doesn't exist, else null.</summary>
+    /// <summary>Null when the uniform is unset or exists; otherwise the error to return.</summary>
+    private async Task<string?> ValidateUniformAsync(int? uniformId, CancellationToken ct) =>
+        uniformId is int uid && !await _db.Uniforms.AnyAsync(u => u.Id == uid, ct) ? "Uniform not found." : null;
+
     private async Task<string?> ValidateVenueAsync(int? venueId, CancellationToken ct)
         => venueId is int vid && !await _db.Venues.AnyAsync(v => v.Id == vid, ct) ? "Venue not found." : null;
 
