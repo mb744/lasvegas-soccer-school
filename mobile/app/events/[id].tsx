@@ -328,6 +328,14 @@ function LocationMap({ address }: { address: string }) {
   const { t } = useTranslation();
   const encoded = encodeURIComponent(address);
   const embedUrl = `https://www.google.com/maps?q=${encoded}&z=15&output=embed`;
+  // Google's embed map only draws inside an iframe; loaded as the page itself it stays blank.
+  // So the web view gets a tiny page that frames it.
+  const html = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">`
+    + `<style>html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#e8e6e1}`
+    + `iframe{border:0;width:100%;height:100%;display:block}</style></head>`
+    + `<body><iframe src="${embedUrl.replace(/&/g, '&amp;')}" loading="eager" referrerpolicy="no-referrer-when-downgrade"></iframe></body></html>`;
+  // If the map can't load (offline, blocked), show the address instead of an empty grey box.
+  const [failed, setFailed] = React.useState(false);
 
   const openMaps = useCallback(async () => {
     const url = `https://www.google.com/maps/search/?api=1&query=${encoded}`;
@@ -342,8 +350,15 @@ function LocationMap({ address }: { address: string }) {
   return (
     <TouchableOpacity style={styles.mapCard} activeOpacity={0.85} onPress={openMaps}>
       <View style={styles.mapWrap} pointerEvents="none">
+        {failed ? (
+          <View style={styles.mapFallback}>
+            <Text style={styles.mapFallbackPin}>📍</Text>
+            <Text style={styles.mapFallbackText} numberOfLines={3}>{address}</Text>
+          </View>
+        ) : (
         <WebView
-          source={{ uri: embedUrl }}
+          source={{ html, baseUrl: 'https://www.google.com' }}
+          originWhitelist={['*']}
           style={styles.mapWebview}
           scrollEnabled={false}
           scalesPageToFit
@@ -355,8 +370,10 @@ function LocationMap({ address }: { address: string }) {
               <ActivityIndicator color={colors.brand} />
             </View>
           )}
-          onError={() => {}}
+          onError={() => setFailed(true)}
+          onHttpError={() => setFailed(true)}
         />
+        )}
       </View>
       <View style={styles.openMapsBtn}>
         <Text style={styles.openMapsBtnText}>{t('event.openInMaps')} →</Text>
@@ -479,6 +496,9 @@ const styles = StyleSheet.create({
   mapWrap: { height: 200, backgroundColor: colors.border },
   mapWebview: { flex: 1, backgroundColor: 'transparent' },
   mapLoading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  mapFallback: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.lg },
+  mapFallbackPin: { fontSize: 32 },
+  mapFallbackText: { marginTop: spacing.sm, fontSize: 14, color: colors.text, textAlign: 'center', fontWeight: '600' },
   openMapsBtn: {
     backgroundColor: colors.brand,
     paddingVertical: spacing.md,
