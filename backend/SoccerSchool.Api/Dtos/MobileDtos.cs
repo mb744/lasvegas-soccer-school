@@ -117,7 +117,25 @@ public record MobileChatGroupDto(
     string? LastMessagePreview,
     string? LastMessageSender,
     DateTime? LastMessageAt,
-    int UnreadCount);
+    int UnreadCount,
+    /// <summary>A private two-person chat; Title is the other person's name.</summary>
+    bool IsDirect = false);
+
+/// <summary>One person in a group chat (a login). Families appear as their parents/guardians.</summary>
+public record MobileChatPersonDto(
+    string UserId,
+    string Name,
+    /// <summary>e.g. the family's kids ("Ana, Leo"), to tell parents apart.</summary>
+    string? Detail,
+    bool IsAdmin,
+    bool IsCoach,
+    /// <summary>Has signed in to the app on a phone (can get messages right away).</summary>
+    bool OnApp,
+    bool IsYou);
+
+public record OpenDirectChatRequest(string UserId, int GroupId);
+
+public record OpenDirectChatResult(int GroupId);
 
 public record MobileChatMessageDto(
     int Id,

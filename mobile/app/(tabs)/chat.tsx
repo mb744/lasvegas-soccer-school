@@ -50,8 +50,8 @@ function GroupRow({ group, onPress }: { group: ChatGroup; onPress: () => void })
     : '';
   return (
     <TouchableOpacity style={styles.row} onPress={onPress}>
-      <View style={styles.avatar}>
-        <Text style={styles.avatarText}>{group.title.charAt(0).toUpperCase()}</Text>
+      <View style={[styles.avatar, group.isDirect && styles.avatarDirect]}>
+        <Text style={styles.avatarText}>{group.isDirect ? group.title.charAt(0).toUpperCase() : '👥'}</Text>
       </View>
       <View style={styles.rowBody}>
         <View style={styles.rowTop}>
@@ -100,6 +100,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: spacing.md,
   },
+  avatarDirect: { backgroundColor: colors.brandLight },
   avatarText: { color: colors.white, fontSize: 20, fontWeight: '800' },
   rowBody: { flex: 1 },
   rowTop: { flexDirection: 'row', justifyContent: 'space-between' },

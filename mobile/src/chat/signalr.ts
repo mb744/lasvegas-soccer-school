@@ -50,6 +50,17 @@ export function onMessage(cb: (msg: ChatMessage) => void): () => void {
   return () => listeners.delete(cb);
 }
 
+/** Receive a chat's messages live. Chats are joined on connect, so one created since (a new
+ *  direct message) is joined when its screen opens. Best effort: history still loads over REST. */
+export async function joinGroup(groupId: number): Promise<void> {
+  if (!connection || connection.state !== HubConnectionState.Connected) return;
+  try {
+    await connection.invoke('JoinGroup', groupId);
+  } catch {
+    // Older server without JoinGroup, or not a member: nothing to join.
+  }
+}
+
 /** Send through the hub; falls back to throwing so callers can retry over REST. */
 export async function sendViaHub(groupId: number, body: string): Promise<void> {
   if (!connection || connection.state !== HubConnectionState.Connected) {

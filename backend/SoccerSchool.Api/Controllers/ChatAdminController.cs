@@ -35,7 +35,9 @@ public class ChatAdminController : ControllerBase
     public async Task<ActionResult<IEnumerable<ChatGroupAdminDto>>> List(CancellationToken ct)
     {
         var coachEmails = await CoachEmailsAsync(ct);
+        // Direct (two-person) chats are private; they aren't admin-managed groups.
         var groups = await _db.ChatGroups
+            .Where(g => !g.IsDirect)
             .OrderByDescending(g => g.CreatedAt)
             .Select(g => new
             {
@@ -184,7 +186,7 @@ public class ChatAdminController : ControllerBase
         if (string.IsNullOrEmpty(body)) return BadRequest("Message body is required.");
         if (body.Length > 4000) return BadRequest("Message is too long (4000 characters max).");
 
-        var all = await _db.ChatGroups.OrderBy(g => g.Title).Select(g => g.Id).ToListAsync(ct);
+        var all = await _db.ChatGroups.Where(g => !g.IsDirect).OrderBy(g => g.Title).Select(g => g.Id).ToListAsync(ct);
         var targets = req.GroupIds is { Count: > 0 } picked ? all.Where(picked.Contains).ToList() : all;
         if (targets.Count == 0) return BadRequest("There are no chat groups to send to.");
 

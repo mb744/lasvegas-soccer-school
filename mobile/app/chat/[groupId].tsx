@@ -13,7 +13,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useHeaderHeight } from 'expo-router/react-navigation';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -21,12 +21,13 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   blockChatUser,
   fetchChatBlocks,
+  fetchChatGroups,
   fetchChatMessages,
   markChatRead,
   reportChatMessage,
   sendChatMessage,
 } from '../../src/api/endpoints';
-import { onMessage, sendViaHub } from '../../src/chat/signalr';
+import { joinGroup, onMessage, sendViaHub } from '../../src/chat/signalr';
 import { useAuth } from '../../src/auth/AuthContext';
 import type { BlockedUser, ChatGroup, ChatMessage, MediaItem } from '../../src/api/types';
 import { messageTime } from '../../src/format';
@@ -64,11 +65,14 @@ export default function ChatThreadScreen() {
   // already covers that area, so the extra inset would just leave a gap above the keyboard.
   const composerBottom = keyboardOpen ? spacing.sm : Math.max(insets.bottom, spacing.sm);
 
-  // Title from the cached group list (avoids an extra fetch).
-  const title = useMemo(() => {
-    const groups = qc.getQueryData<ChatGroup[]>(['chatGroups']);
-    return groups?.find((g) => g.id === groupId)?.title ?? '';
-  }, [qc, groupId]);
+  // Title (and whether it's a direct chat) from the chat list; usually already cached.
+  const router = useRouter();
+  const { data: groups } = useQuery({ queryKey: ['chatGroups'], queryFn: fetchChatGroups });
+  const group = useMemo(() => groups?.find((g: ChatGroup) => g.id === groupId), [groups, groupId]);
+  const title = group?.title ?? '';
+
+  // A chat created after the live connection started (a new direct message) isn't joined yet.
+  useEffect(() => { void joinGroup(groupId); }, [groupId]);
 
   const { data, isLoading } = useQuery({
     queryKey: ['chatMessages', groupId],
@@ -259,7 +263,24 @@ export default function ChatThreadScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={Platform.OS === 'ios' ? headerHeight : 0}
     >
-      <Stack.Screen options={{ title }} />
+      <Stack.Screen
+        options={{
+          title,
+          // Group chats: see who's in it and message anyone privately.
+          headerRight: group && !group.isDirect
+            ? () => (
+                <TouchableOpacity
+                  onPress={() => router.push(`/chat/members/${groupId}`)}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('chat.membersButton')}
+                  style={{ paddingHorizontal: spacing.sm }}
+                >
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: colors.brandLight }}>👥 {t('chat.membersButton')}</Text>
+                </TouchableOpacity>
+              )
+            : undefined,
+        }}
+      />
       {isLoading ? (
         <View style={styles.center}>
           <ActivityIndicator size="large" color={colors.brand} />

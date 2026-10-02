@@ -114,6 +114,21 @@ export interface ChatGroup {
   lastMessageSender?: string | null;
   lastMessageAt?: string | null;
   unreadCount: number;
+  /** A private two-person chat; title is the other person's name. Missing from older servers. */
+  isDirect?: boolean;
+}
+
+/** One person in a group chat (a login), from GET /mobile/chat/groups/{id}/members. */
+export interface ChatPerson {
+  userId: string;
+  name: string;
+  /** The family's kids, e.g. "Ana, Leo". */
+  detail: string | null;
+  isAdmin: boolean;
+  isCoach: boolean;
+  /** Has signed in to the app on a phone. */
+  onApp: boolean;
+  isYou: boolean;
 }
 
 export interface ChatMessage {
