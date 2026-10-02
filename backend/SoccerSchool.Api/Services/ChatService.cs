@@ -191,7 +191,15 @@ public class ChatService : IChatService
         return new ChatBroadcastResult(posted, pushTo.Count);
     }
 
-    public async Task<List<MobileChatPersonDto>> GetPeopleAsync(int groupId, string viewerUserId, CancellationToken ct)
+    public async Task<List<MobileChatPersonDto>> GetPeopleAsync(int groupId, string viewerUserId, CancellationToken ct) =>
+        (await LoadPeopleAsync(groupId, viewerUserId, ct)).People;
+
+    /// <summary>The group's people, plus which login each duplicate login is shown as. A parent
+    /// who has a second login linked to the same family (e.g. signed up again with another email)
+    /// shows once: logins in one family with the same name or phone are one person, shown as the
+    /// login they used most recently (or as "you" when the viewer is one of them).</summary>
+    private async Task<(List<MobileChatPersonDto> People, Dictionary<string, string> ShownAs)> LoadPeopleAsync(
+        int groupId, string viewerUserId, CancellationToken ct)
     {
         var members = await _db.ChatGroupMembers
             .Where(m => m.ChatGroupId == groupId)
@@ -205,7 +213,7 @@ public class ChatService : IChatService
             .Where(a => familyIds.Contains(a.Id) && !archivedFamilies.Contains(a.Id))
             .Select(a => new
             {
-                a.Id, a.UserId, a.FirstName, a.LastName,
+                a.Id, a.UserId, a.FirstName, a.LastName, a.CellPhone,
                 Kids = a.Players.OrderBy(p => p.FirstName).Select(p => p.FirstName).ToList(),
             })
             .ToListAsync(ct);
@@ -214,20 +222,24 @@ public class ChatService : IChatService
             .Select(c => new { c.ParentAccountId, c.UserId })
             .ToListAsync(ct);
         var guardianIds = guardians.Select(g => g.UserId).ToList();
-        var guardianNames = (await _db.ParentContacts
+        var guardianContacts = (await _db.ParentContacts
                 .Where(c => c.UserId != null && guardianIds.Contains(c.UserId))
-                .Select(c => new { c.UserId, c.FirstName, c.LastName })
+                .Select(c => new { c.UserId, c.FirstName, c.LastName, c.CellPhone })
                 .ToListAsync(ct))
             .GroupBy(c => c.UserId!)
-            .ToDictionary(g => g.Key, g => $"{g.First().FirstName} {g.First().LastName}".Trim());
+            .ToDictionary(g => g.Key, g => (Name: $"{g.First().FirstName} {g.First().LastName}".Trim(), Phone: g.First().CellPhone));
 
         var people = new Dictionary<string, (string Name, string? Detail, bool Staff)>();
-        void Add(string? userId, string name, string? detail, bool staff)
+        var familyOf = new Dictionary<string, int>();
+        var phoneOf = new Dictionary<string, string?>();
+        void Add(string? userId, string name, string? detail, bool staff, int? familyId = null, string? phone = null)
         {
             if (string.IsNullOrEmpty(userId)) return;
             // Someone in the group both as staff and through a family shows once, as staff.
             if (people.TryGetValue(userId, out var existing) && (existing.Staff || !staff)) return;
             people[userId] = (string.IsNullOrWhiteSpace(name) ? "—" : name, detail, staff);
+            if (staff) familyOf.Remove(userId);
+            else if (familyId is int f) { familyOf[userId] = f; phoneOf[userId] = phone; }
         }
         foreach (var m in members.Where(m => m.UserId != null))
             Add(m.UserId, m.DisplayName, null, staff: true);
@@ -235,9 +247,12 @@ public class ChatService : IChatService
         {
             var kids = f.Kids.Count > 0 ? string.Join(", ", f.Kids) : null;
             var familyName = $"{f.FirstName} {f.LastName}".Trim();
-            Add(f.UserId, familyName, kids, staff: false);
+            Add(f.UserId, familyName, kids, staff: false, f.Id, f.CellPhone);
             foreach (var g in guardians.Where(g => g.ParentAccountId == f.Id))
-                Add(g.UserId, guardianNames.TryGetValue(g.UserId, out var n) ? n : familyName, kids, staff: false);
+            {
+                var contact = guardianContacts.TryGetValue(g.UserId, out var c) ? c : (Name: familyName, Phone: (string?)null);
+                Add(g.UserId, contact.Name, kids, staff: false, f.Id, contact.Phone);
+            }
         }
 
         var ids = people.Keys.ToList();
@@ -248,31 +263,80 @@ public class ChatService : IChatService
         var coachIds = (await _db.TeamCoaches.Where(tc => tc.UserId != null && ids.Contains(tc.UserId)).Select(tc => tc.UserId!).ToListAsync(ct))
             .Concat(await _db.Coaches.Where(c => c.UserId != null && ids.Contains(c.UserId)).Select(c => c.UserId!).ToListAsync(ct))
             .ToHashSet();
-        var onApp = (await _db.MobileAppInstalls.Where(i => ids.Contains(i.UserId)).Select(i => i.UserId).ToListAsync(ct))
-            .Concat(await _db.DeviceTokens.Where(d => ids.Contains(d.UserId)).Select(d => d.UserId).ToListAsync(ct))
-            .ToHashSet();
+        var installs = await _db.MobileAppInstalls.Where(i => ids.Contains(i.UserId)).Select(i => new { i.UserId, i.LastSeenAt }).ToListAsync(ct);
+        var devices = await _db.DeviceTokens.Where(d => ids.Contains(d.UserId)).Select(d => new { d.UserId, d.LastSeenAt }).ToListAsync(ct);
+        var onApp = installs.Select(i => i.UserId).Concat(devices.Select(d => d.UserId)).ToHashSet();
         var staffRole = members.Where(m => m.UserId != null && m.Role == ChatMemberRole.Admin).Select(m => m.UserId!).ToHashSet();
 
-        return people
-            .Select(p => new MobileChatPersonDto(
-                p.Key, p.Value.Name, p.Value.Detail,
-                IsAdmin: adminIds.Contains(p.Key) || staffRole.Contains(p.Key),
-                IsCoach: coachIds.Contains(p.Key),
-                OnApp: onApp.Contains(p.Key),
-                IsYou: p.Key == viewerUserId))
+        // Most recent sign of life per login, to pick which of a person's logins to show.
+        var lastActive = (await _db.Users.Where(u => ids.Contains(u.Id)).Select(u => new { u.Id, u.LastLoginAt }).ToListAsync(ct))
+            .ToDictionary(u => u.Id, u => u.LastLoginAt ?? DateTime.MinValue);
+        foreach (var a in installs.Select(i => (i.UserId, i.LastSeenAt)).Concat(devices.Select(d => (d.UserId, d.LastSeenAt))))
+            if (!lastActive.TryGetValue(a.UserId, out var cur) || a.LastSeenAt > cur) lastActive[a.UserId] = a.LastSeenAt;
+
+        // Same family + same name or phone = the same parent on two logins.
+        static string Norm(string s) => string.Join(' ', s.ToLowerInvariant().Split(' ', StringSplitOptions.RemoveEmptyEntries));
+        static string? Digits(string? phone)
+        {
+            var d = new string((phone ?? string.Empty).Where(char.IsDigit).ToArray());
+            return d.Length >= 10 ? d[^10..] : null;
+        }
+        bool SamePerson(string a, string b) =>
+            Norm(people[a].Name) == Norm(people[b].Name)
+            || (Digits(phoneOf.GetValueOrDefault(a)) is string pa && pa == Digits(phoneOf.GetValueOrDefault(b)));
+
+        var ownerIds = families.Select(f => f.UserId).ToHashSet();
+        var shownAs = new Dictionary<string, string>();
+        foreach (var family in familyOf.GroupBy(kv => kv.Value))
+        {
+            var clusters = new List<List<string>>();
+            foreach (var id in family.Select(kv => kv.Key))
+            {
+                var cluster = clusters.FirstOrDefault(cl => cl.Any(other => SamePerson(other, id)));
+                if (cluster is null) clusters.Add(new List<string> { id });
+                else cluster.Add(id);
+            }
+            foreach (var cluster in clusters.Where(cl => cl.Count > 1))
+            {
+                var shown = cluster.Contains(viewerUserId)
+                    ? viewerUserId
+                    : cluster.OrderByDescending(id => lastActive.GetValueOrDefault(id)).First();
+                foreach (var id in cluster) shownAs[id] = shown;
+            }
+        }
+
+        var result = new List<MobileChatPersonDto>();
+        foreach (var (id, p) in people)
+        {
+            if (shownAs.TryGetValue(id, out var shown) && shown != id) continue; // shown as another login
+            var logins = shownAs.Where(kv => kv.Value == id).Select(kv => kv.Key).DefaultIfEmpty(id).ToList();
+            // A merged person keeps the family's own spelling of their name when the owner login is one of them.
+            var name = logins.Where(ownerIds.Contains).Select(l => people[l].Name).FirstOrDefault() ?? p.Name;
+            result.Add(new MobileChatPersonDto(
+                id, name, p.Detail,
+                IsAdmin: logins.Any(l => adminIds.Contains(l) || staffRole.Contains(l)),
+                IsCoach: logins.Any(coachIds.Contains),
+                OnApp: logins.Any(onApp.Contains),
+                IsYou: logins.Contains(viewerUserId)));
+        }
+        var ordered = result
             .OrderBy(p => p.IsAdmin || p.IsCoach ? 0 : 1)
             .ThenBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
+        return (ordered, shownAs);
     }
 
     public async Task<DirectChatOutcome> OpenDirectAsync(string callerUserId, string targetUserId, int viaGroupId, CancellationToken ct)
     {
         if (callerUserId == targetUserId) return new DirectChatOutcome(null, "That's you.");
         if (!await IsMemberAsync(viaGroupId, callerUserId, ct)) return new DirectChatOutcome(null, Forbidden: true);
-        var people = await GetPeopleAsync(viaGroupId, callerUserId, ct);
+        var (people, shownAs) = await LoadPeopleAsync(viaGroupId, callerUserId, ct);
+        // A parent with two linked logins is one person: message the login they use.
+        targetUserId = shownAs.GetValueOrDefault(targetUserId, targetUserId);
+        if (targetUserId == callerUserId) return new DirectChatOutcome(null, "That's you.");
         var them = people.FirstOrDefault(p => p.UserId == targetUserId);
         if (them is null) return new DirectChatOutcome(null, Forbidden: true);
-        var me = people.FirstOrDefault(p => p.UserId == callerUserId);
+        var me = people.FirstOrDefault(p => p.IsYou);
 
         var blocked = await _db.ChatUserBlocks.AnyAsync(b =>
             (b.BlockerUserId == callerUserId && b.BlockedUserId == targetUserId) ||

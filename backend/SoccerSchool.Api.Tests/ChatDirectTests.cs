@@ -141,4 +141,56 @@ public class ChatDirectTests
         Assert.IsType<ForbidResult>((await Api(h, chat, mom).OpenDirect(new OpenDirectChatRequest(outsider.Id, group.Id), default)).Result);
         Assert.IsType<ForbidResult>((await Api(h, chat, outsider).OpenDirect(new OpenDirectChatRequest(mom.Id, group.Id), default)).Result);
     }
+
+    [Fact]
+    public async Task A_parent_with_two_linked_logins_shows_once_as_the_login_they_use()
+    {
+        await using var h = new Harness();
+        var oldLogin = await h.UserAsync("maria.old@test");
+        var newLogin = await h.UserAsync("maria.new@test");
+        var jose = await h.UserAsync("jose@test");
+        var sam = await h.UserAsync("sam@test");
+        oldLogin.LastLoginAt = DateTime.UtcNow.AddMonths(-3);
+        newLogin.LastLoginAt = DateTime.UtcNow.AddDays(-1);
+        await h.Users.UpdateAsync(oldLogin);
+        await h.Users.UpdateAsync(newLogin);
+
+        var lopez = new ParentAccount { UserId = oldLogin.Id, FirstName = "Maria", LastName = "Lopez", CellPhone = "+17025550111" };
+        var smith = new ParentAccount { UserId = sam.Id, FirstName = "Sam", LastName = "Smith" };
+        h.Db.AddRange(lopez, smith);
+        await h.Db.SaveChangesAsync();
+        // Maria's second login was linked to her family (same name); Jose is a real second parent.
+        h.Db.ParentAccountCollaborators.AddRange(
+            new ParentAccountCollaborator { ParentAccountId = lopez.Id, UserId = newLogin.Id, AccessLevel = FamilyAccessLevel.Guardian },
+            new ParentAccountCollaborator { ParentAccountId = lopez.Id, UserId = jose.Id, AccessLevel = FamilyAccessLevel.Guardian });
+        h.Db.ParentContacts.AddRange(
+            new ParentContact { ParentAccountId = lopez.Id, FirstName = "maria ", LastName = "LOPEZ", UserId = newLogin.Id },
+            new ParentContact { ParentAccountId = lopez.Id, FirstName = "Jose", LastName = "Lopez", UserId = jose.Id });
+        var group = new ChatGroup { Title = "U11 Red chat" };
+        h.Db.ChatGroups.Add(group);
+        await h.Db.SaveChangesAsync();
+        h.Db.ChatGroupMembers.AddRange(
+            new ChatGroupMember { ChatGroupId = group.Id, ParentAccountId = lopez.Id, DisplayName = "Maria Lopez" },
+            new ChatGroupMember { ChatGroupId = group.Id, ParentAccountId = smith.Id, DisplayName = "Sam Smith" });
+        await h.Db.SaveChangesAsync();
+
+        var chat = new ChatService(h.Db, new FakeHub(), new FakePush(), new ParentAccountResolver(h.Db, h.Users), new NoStorage());
+
+        // Sam sees Maria once (as the login she uses now), Jose, and himself.
+        var seen = await chat.GetPeopleAsync(group.Id, sam.Id, default);
+        Assert.Equal(new[] { "Jose Lopez", "Maria Lopez", "Sam Smith" }, seen.Select(p => p.Name));
+        Assert.Equal(newLogin.Id, seen.Single(p => p.Name == "Maria Lopez").UserId);
+
+        // From her old login she's still "you", not someone to message.
+        var fromOld = await chat.GetPeopleAsync(group.Id, oldLogin.Id, default);
+        Assert.True(fromOld.Single(p => p.Name == "Maria Lopez").IsYou);
+        Assert.Equal(3, fromOld.Count);
+
+        // Messaging her old login lands on the login she uses.
+        var viaOld = await chat.OpenDirectAsync(sam.Id, oldLogin.Id, group.Id, default);
+        var viaNew = await chat.OpenDirectAsync(sam.Id, newLogin.Id, group.Id, default);
+        Assert.NotNull(viaOld.GroupId);
+        Assert.Equal(viaNew.GroupId, viaOld.GroupId);
+        Assert.Equal("That's you.", (await chat.OpenDirectAsync(oldLogin.Id, newLogin.Id, group.Id, default)).Error);
+    }
 }
