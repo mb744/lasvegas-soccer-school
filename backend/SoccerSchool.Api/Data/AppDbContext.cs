@@ -724,6 +724,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
 
         modelBuilder.Entity<ChatGroup>(b =>
         {
+            b.HasIndex(g => g.DirectKey).IsUnique().HasFilter("[DirectKey] IS NOT NULL");
             // Team link is informational (see ChatGroup.cs). SetNull so a team delete leaves the
             // chat + its history intact.
             b.HasOne(g => g.Team)

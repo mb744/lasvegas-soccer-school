@@ -42,6 +42,17 @@ public class ChatHub : Hub
         await base.OnConnectedAsync();
     }
 
+    /// <summary>Start receiving a group's messages live. Groups are joined on connect, so a chat
+    /// created since (a new direct message) is joined when its screen opens.</summary>
+    public async Task JoinGroup(int groupId)
+    {
+        var userId = _users.GetUserId(Context.User!);
+        if (string.IsNullOrEmpty(userId)) throw new HubException("Not authenticated.");
+        if (!await _chat.IsMemberAsync(groupId, userId, Context.ConnectionAborted))
+            throw new HubException("You are not a member of this group.");
+        await Groups.AddToGroupAsync(Context.ConnectionId, GroupName(groupId));
+    }
+
     /// <summary>Post a message to a group the caller belongs to. Persists, fans out to the SignalR
     /// group, and pushes offline members. Throws <see cref="HubException"/> if the caller isn't a member.</summary>
     public async Task SendMessage(int groupId, string body)

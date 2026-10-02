@@ -60,6 +60,8 @@ public class ArchivedFamilyTests
         var chat = new ChatService(h.Db, null!, null!, new ParentAccountResolver(h.Db, h.Users), null!);
         Assert.True(await chat.IsMemberAsync(group.Id, active.UserId, default));
         Assert.False(await chat.IsMemberAsync(group.Id, gone.UserId, default));
+        // Not in the members list either, so nobody can start a direct message with them.
+        Assert.Equal(new[] { active.UserId }, (await chat.GetPeopleAsync(group.Id, active.UserId, default)).Select(p => p.UserId));
 
         // Unarchiving the kid brings the family back.
         var kid = h.Db.Players.IgnoreQueryFiltersFor(gone.Id);

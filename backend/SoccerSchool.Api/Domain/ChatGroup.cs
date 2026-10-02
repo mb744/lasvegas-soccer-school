@@ -23,6 +23,17 @@ public class ChatGroup
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
+    /// <summary>A private two-person chat started from a group's member list. Its two members are
+    /// logins (<see cref="ChatGroupMember.UserId"/>), not families, so a co-parent doesn't see it.
+    /// Hidden from the admin group list and "Message all groups"; reported messages still reach
+    /// the admin review queue.</summary>
+    public bool IsDirect { get; set; }
+
+    /// <summary>For direct chats: the two user ids, sorted, joined by '|'. Unique, so the same two
+    /// people always land in the same chat.</summary>
+    [MaxLength(128)]
+    public string? DirectKey { get; set; }
+
     public List<ChatGroupMember> Members { get; set; } = new();
     public List<ChatMessage> Messages { get; set; } = new();
 }

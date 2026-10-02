@@ -57,7 +57,9 @@ public class MobileChatController : ControllerBase
             .Where(g => groupIds.Contains(g.Id))
             .Select(g => new
             {
-                g.Id, g.Title,
+                g.Id, g.Title, g.IsDirect,
+                // A direct chat is titled with the other person's name.
+                Other = g.Members.Where(m => m.UserId != userId).Select(m => m.DisplayName).FirstOrDefault(),
                 Last = g.Messages.OrderByDescending(m => m.SentAt)
                     .Select(m => new
                     {
@@ -86,15 +88,39 @@ public class MobileChatController : ControllerBase
 
         var result = groups
             .Select(g => new MobileChatGroupDto(
-                g.Id, g.Title,
+                g.Id, g.IsDirect ? g.Other ?? g.Title : g.Title,
                 Preview(g.Last?.Body, g.Last?.MediaKind),
                 g.Last?.SenderName,
                 g.Last?.SentAt,
-                unreadByGroup.TryGetValue(g.Id, out var u) ? u : 0))
+                unreadByGroup.TryGetValue(g.Id, out var u) ? u : 0,
+                g.IsDirect))
             .OrderByDescending(g => g.LastMessageAt ?? DateTime.MinValue)
             .ToList();
 
         return Ok(result);
+    }
+
+    /// <summary>Who's in the group: every member can see it. Families show as their parent and
+    /// guardian logins, each of whom can be messaged directly.</summary>
+    [HttpGet("groups/{groupId:int}/members")]
+    public async Task<ActionResult<IEnumerable<MobileChatPersonDto>>> Members(int groupId, CancellationToken ct)
+    {
+        var userId = _users.GetUserId(User);
+        if (string.IsNullOrEmpty(userId)) return Unauthorized();
+        if (!await _chat.IsMemberAsync(groupId, userId, ct)) return Forbid();
+        return Ok(await _chat.GetPeopleAsync(groupId, userId, ct));
+    }
+
+    /// <summary>Opens (or creates) a private chat with someone in a group the caller is in.</summary>
+    [HttpPost("direct")]
+    public async Task<ActionResult<OpenDirectChatResult>> OpenDirect([FromBody] OpenDirectChatRequest req, CancellationToken ct)
+    {
+        var userId = _users.GetUserId(User);
+        if (string.IsNullOrEmpty(userId)) return Unauthorized();
+        var outcome = await _chat.OpenDirectAsync(userId, req.UserId, req.GroupId, ct);
+        if (outcome.Forbidden) return Forbid();
+        if (outcome.GroupId is not int id) return BadRequest(outcome.Error ?? "Could not open the chat.");
+        return Ok(new OpenDirectChatResult(id));
     }
 
     /// <summary>Message history for a group, newest-first, paginated with <c>before</c> (a message id;
