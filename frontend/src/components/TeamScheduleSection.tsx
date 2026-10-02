@@ -5,7 +5,7 @@ import { pickLatestTemplate } from '../api/templateNaming'
 import { RequiredLabel, useRequiredValidation } from './RequiredField'
 import { VenuePicker } from './VenuePicker'
 import { SHOE_TYPES, shoeTypeKey } from './shoeType'
-import type { ScheduledGame, EventAttendanceList, EventAttendanceSummary, AttendanceStatus, WhatsAppTemplate, TemplatePreviewResponse, Venue, ShoeType, TournamentSendPreview } from '../api/types'
+import type { ScheduledGame, EventAttendanceList, EventAttendanceSummary, AttendanceStatus, WhatsAppTemplate, TemplatePreviewResponse, Venue, ShoeType, TournamentSendPreview, Uniform } from '../api/types'
 
 function extractError(e: any): string {
   return e?.response?.data?.title || e?.response?.data || e?.message || 'Error'
@@ -74,6 +74,8 @@ export function TeamScheduleSection({
   const [location, setLocation] = useState('')
   const [venueId, setVenueId] = useState<number | ''>('')
   const [shoeType, setShoeType] = useState<ShoeType>(0)
+  // '' = the club default (practice uniform for practices, home/away uniform for games).
+  const [uniformId, setUniformId] = useState<number | ''>('')
   const [summary, setSummary] = useState('')
   // Push + email the team's parents on save. Re-checked every time a form opens.
   const [notifyParents, setNotifyParents] = useState(true)
@@ -84,6 +86,10 @@ export function TeamScheduleSection({
     try { setVenues(await Api.listVenues()) } catch (e: any) { onError(extractError(e)) }
   }
   useEffect(() => { reloadVenues() }, [])
+
+  // Club uniforms for the uniform picker; loaded once.
+  const [uniforms, setUniforms] = useState<Uniform[]>([])
+  useEffect(() => { Api.listUniforms().then(setUniforms).catch((e: any) => onError(extractError(e))) }, [])
 
   // Recurring-series form state (only used when editingId === 'series'):
   const [seriesStartDate, setSeriesStartDate] = useState('')
@@ -99,26 +105,26 @@ export function TeamScheduleSection({
   const startNewPractice = () => {
     setEditingId('new-practice'); setEditingKind('practice')
     setStartsAt(''); setArriveAt(''); setArriveTouched(false); setEndsAt('')
-    setLocation(''); setVenueId(''); setShoeType(0); setSummary(''); setNotes('')
+    setLocation(''); setVenueId(''); setShoeType(0); setUniformId(''); setSummary(''); setNotes('')
     setOpponentName(''); setIsHome(null); setNotifyParents(true)
   }
   const startNewMisc = () => {
     setEditingId('new-misc'); setEditingKind('misc')
     setStartsAt(''); setArriveAt(''); setArriveTouched(false); setEndsAt('')
-    setLocation(''); setVenueId(''); setShoeType(0); setSummary(''); setNotes('')
+    setLocation(''); setVenueId(''); setShoeType(0); setUniformId(''); setSummary(''); setNotes('')
     setOpponentName(''); setIsHome(null); setNotifyParents(true)
   }
   const startNewGame = () => {
     setEditingId('new-game'); setEditingKind('game')
     setStartsAt(''); setArriveAt(''); setArriveTouched(false); setEndsAt('')
-    setLocation(''); setVenueId(''); setShoeType(0); setSummary(''); setNotes('')
+    setLocation(''); setVenueId(''); setShoeType(0); setUniformId(''); setSummary(''); setNotes('')
     setOpponentName(''); setIsHome(null); setNotifyParents(true)
   }
   const startSeries = () => {
     setEditingId('series'); setEditingKind('practice')
     setSeriesStartDate(''); setSeriesEndDate('')
     setSeriesStartTime('17:00'); setSeriesEndTime('')
-    setSeriesDays(new Set()); setLocation(''); setVenueId(''); setShoeType(0); setSummary('')
+    setSeriesDays(new Set()); setLocation(''); setVenueId(''); setShoeType(0); setUniformId(''); setSummary('')
   }
   const toggleDay = (d: number) => {
     setSeriesDays(prev => {
@@ -141,6 +147,7 @@ export function TeamScheduleSection({
     setLocation(ev.location ?? '')
     setVenueId(ev.venueId ?? '')
     setShoeType(ev.shoeType)
+    setUniformId(ev.uniformId ?? '')
     setSummary(ev.summary ?? '')
     setNotes(ev.description ?? '')
     setOpponentName(ev.opponentName ?? '')
@@ -163,6 +170,7 @@ export function TeamScheduleSection({
           summary: summary.trim() || null,
           venueId: venueId === '' ? null : venueId,
           shoeType,
+          uniformId: uniformId === '' ? null : uniformId,
         })
         setEditingId(null)
         await onChanged()
@@ -190,6 +198,7 @@ export function TeamScheduleSection({
           notes: trimmedNotes,
           venueId: venueIdValue,
           shoeType,
+          uniformId: uniformId === '' ? null : uniformId,
           notifyParents,
         }
         if (editingId === 'new-game') await Api.createGame(teamId, payload)
@@ -204,6 +213,7 @@ export function TeamScheduleSection({
           notes: trimmedNotes,
           venueId: venueIdValue,
           shoeType,
+          uniformId: uniformId === '' ? null : uniformId,
           notifyParents,
         }
         if (editingId === 'new-misc') await Api.createMiscEvent(teamId, payload)
@@ -218,6 +228,7 @@ export function TeamScheduleSection({
           notes: trimmedNotes,
           venueId: venueIdValue,
           shoeType,
+          uniformId: uniformId === '' ? null : uniformId,
           notifyParents,
         }
         if (editingId === 'new-practice') await Api.createPractice(teamId, payload)
@@ -526,6 +537,14 @@ export function TeamScheduleSection({
                 className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
             </label>
             <label className="block text-sm sm:col-span-2">
+              <span className="font-medium text-slate-700">{t('admin.evtGameUniform')}</span>
+              <select value={uniformId} onChange={e => setUniformId(e.target.value === '' ? '' : Number(e.target.value))}
+                className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm">
+                <option value="">{editingKind === 'game' ? t('admin.evtGameUniformDefault') : t('admin.evtUniformDefaultPractice')}</option>
+                {uniforms.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+            </label>
+            <label className="block text-sm sm:col-span-2">
               <span className="font-medium text-slate-700">{t('admin.evtShoeType')}</span>
               <select value={shoeType} onChange={e => setShoeType(Number(e.target.value) as ShoeType)}
                 className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm">
@@ -623,6 +642,14 @@ export function TeamScheduleSection({
               <input type="text" value={location} onChange={e => setLocation(e.target.value)}
                 placeholder="Field 3"
                 className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm" />
+            </label>
+            <label className="block text-sm sm:col-span-2">
+              <span className="font-medium text-slate-700">{t('admin.evtGameUniform')}</span>
+              <select value={uniformId} onChange={e => setUniformId(e.target.value === '' ? '' : Number(e.target.value))}
+                className="mt-1 w-full border border-slate-300 rounded-md px-3 py-2 text-sm">
+                <option value="">{t('admin.evtUniformDefaultPractice')}</option>
+                {uniforms.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
             </label>
             <label className="block text-sm sm:col-span-2">
               <span className="font-medium text-slate-700">{t('admin.evtShoeType')}</span>

@@ -101,6 +101,10 @@ public record SavePracticeRequest
     /// <summary>Footwear (0 = Unspecified, 1 = Cleats, 2 = Turf, 3 = Tennis-court).</summary>
     public ShoeType ShoeType { get; init; } = ShoeType.Unspecified;
 
+    /// <summary>Uniform to wear. Null = the club default (the Practice-designated uniform for
+    /// practices; none for other events).</summary>
+    public int? UniformId { get; init; }
+
     /// <summary>Push + email the team's parents about this new/changed event. On by default so
     /// older clients that don't send it still notify; edits only notify when a parent-facing
     /// field actually changed.</summary>
@@ -188,6 +192,9 @@ public record SavePracticeSeriesRequest
 
     /// <summary>Footwear applied to every occurrence (0 = Unspecified, 1 = Cleats, 2 = Turf, 3 = Tennis-court).</summary>
     public ShoeType ShoeType { get; init; } = ShoeType.Unspecified;
+
+    /// <summary>Uniform for every occurrence. Null = the club's practice uniform.</summary>
+    public int? UniformId { get; init; }
 }
 
 public record PracticeSeriesCreatedDto(Guid SeriesId, int Count, IReadOnlyList<ScheduledGameDto> Occurrences);

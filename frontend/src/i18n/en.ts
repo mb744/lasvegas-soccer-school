@@ -1024,6 +1024,7 @@ const en = {
     evtNotifyParentsEditHelp: 'If you change the date, time, place, opponent, uniform or notes, parents get an alert and an email showing what changed.',
     evtGameUniform: 'Uniform',
     evtGameUniformDefault: 'Default (by home/away)',
+    evtUniformDefaultPractice: 'Default (practice uniform)',
     evtTournSendPreviewTitle: 'Send tournament confirmations — preview',
     evtTournSendPreviewHelp: 'One templated WhatsApp will go out per rostered player ({{count}} total). Each guardian receives the version matching their language preference. Sample below uses the first roster player\'s name; the actual sends fill in each kid\'s.',
     evtTournSendPreviewSample: 'Sample for {{name}}',

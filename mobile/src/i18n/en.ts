@@ -1,5 +1,15 @@
 export const en = {
   appName: 'LV Soccer School',
+  datePicker: {
+    pick: 'Pick a date and time',
+    optional: 'Optional',
+    hour: 'Hour',
+    minute: 'Minute',
+    done: 'Done',
+    clear: 'Clear',
+    prevMonth: 'Previous month',
+    nextMonth: 'Next month',
+  },
   common: {
     retry: 'Retry',
     loading: 'Loading…',
@@ -213,6 +223,7 @@ export const en = {
     homeAwayUnknown: 'Unknown',
     uniformLabel: 'Uniform',
     uniformAuto: 'Auto (Home/Away default)',
+    uniformDefaultPractice: 'Default (practice uniform)',
     venueLabel: 'Venue',
     fieldLabel: 'Field / location detail',
     summaryLabel: 'Summary',

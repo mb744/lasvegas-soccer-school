@@ -33,6 +33,7 @@ import {
 import { ScheduledEventKind } from '../../../src/api/types';
 import { colors, radius, spacing } from '../../../src/theme';
 import { useOptionPicker } from '../../../src/ui/useOptionPicker';
+import { DateTimeField, shiftLocal } from '../../../src/ui/DateTimeField';
 
 type KindStr = 'game' | 'practice' | 'misc';
 
@@ -131,6 +132,7 @@ export default function AdminEventComposer() {
           summary: trimmedSummary,
           notes: trimmedNotes,
           venueId,
+          uniformId,
           shoeType,
           notifyParents,
         };
@@ -144,6 +146,7 @@ export default function AdminEventComposer() {
           summary: trimmedSummary,
           notes: trimmedNotes,
           venueId,
+          uniformId,
           shoeType,
           notifyParents,
         };
@@ -185,8 +188,10 @@ export default function AdminEventComposer() {
     ...(venues.data ?? []).map((v) => ({ label: v.name, onPick: () => setVenueId(v.id) })),
   ]);
 
+  // "Default" means the home/away uniform for games and the practice uniform otherwise.
+  const uniformDefaultLabel = kind === 'game' ? t('admin.uniformAuto') : t('admin.uniformDefaultPractice');
   const openUniformPicker = () => picker.open(t('admin.pickUniform'), [
-    { label: t('admin.uniformAuto'), onPick: () => setUniformId(null) },
+    { label: uniformDefaultLabel, onPick: () => setUniformId(null) },
     ...(uniforms.data ?? []).map((u) => ({ label: u.name, onPick: () => setUniformId(u.id) })),
   ]);
 
@@ -201,7 +206,7 @@ export default function AdminEventComposer() {
 
   const teamLabel = teamId ? teams.data?.find((tm) => tm.id === teamId)?.name ?? '?' : t('admin.pickTeam');
   const venueLabel = venueId ? venues.data?.find((v) => v.id === venueId)?.name ?? '?' : t('admin.noneOption');
-  const uniformLabel = uniformId ? uniforms.data?.find((u) => u.id === uniformId)?.name ?? '?' : t('admin.uniformAuto');
+  const uniformLabel = uniformId ? uniforms.data?.find((u) => u.id === uniformId)?.name ?? '?' : uniformDefaultLabel;
 
   return (
     <KeyboardAvoidingView
@@ -236,15 +241,17 @@ export default function AdminEventComposer() {
         </TouchableOpacity>
 
         <Text style={styles.label}>{t('admin.startLabel')}</Text>
-        <TextInput style={styles.input} value={startsAt} onChangeText={setStartsAt} placeholder="YYYY-MM-DDTHH:MM" placeholderTextColor={colors.subtext} />
+        <DateTimeField value={startsAt} onChange={setStartsAt} title={t('admin.startLabel')} placeholder={t('datePicker.pick')} />
 
         <Text style={styles.label}>{t('admin.endLabel')}</Text>
-        <TextInput style={styles.input} value={endsAt} onChangeText={setEndsAt} placeholder="YYYY-MM-DDTHH:MM" placeholderTextColor={colors.subtext} />
+        <DateTimeField value={endsAt} onChange={setEndsAt} title={t('admin.endLabel')} placeholder={t('datePicker.optional')}
+          clearable seed={() => shiftLocal(startsAt, 90)} />
 
         {kind === 'game' ? (
           <>
             <Text style={styles.label}>{t('admin.arriveLabel')}</Text>
-            <TextInput style={styles.input} value={arriveAt} onChangeText={setArriveAt} placeholder="YYYY-MM-DDTHH:MM" placeholderTextColor={colors.subtext} />
+            <DateTimeField value={arriveAt} onChange={setArriveAt} title={t('admin.arriveLabel')} placeholder={t('datePicker.optional')}
+              clearable seed={() => shiftLocal(startsAt, -30)} />
 
             <Text style={styles.label}>{t('admin.opponentLabel')}</Text>
             <TextInput style={styles.input} value={opponentName} onChangeText={setOpponentName} maxLength={256} />
@@ -266,13 +273,14 @@ export default function AdminEventComposer() {
               ))}
             </View>
 
-            <Text style={styles.label}>{t('admin.uniformLabel')}</Text>
-            <TouchableOpacity style={styles.picker} onPress={openUniformPicker}>
-              <Text style={styles.pickerText}>{uniformLabel}</Text>
-              <Text style={styles.pickerChevron}>›</Text>
-            </TouchableOpacity>
           </>
         ) : null}
+
+        <Text style={styles.label}>{t('admin.uniformLabel')}</Text>
+        <TouchableOpacity style={styles.picker} onPress={openUniformPicker}>
+          <Text style={styles.pickerText}>{uniformLabel}</Text>
+          <Text style={styles.pickerChevron}>›</Text>
+        </TouchableOpacity>
 
         <Text style={styles.label}>{t('admin.venueLabel')}</Text>
         <TouchableOpacity style={styles.picker} onPress={openVenuePicker}>

@@ -1113,6 +1113,8 @@ export interface SavePracticeRequest {
   notes?: string | null      // free-form notes shown to parents on the mobile event detail
   venueId?: number | null
   shoeType?: ShoeType
+  /** Uniform to wear; null = the club default. */
+  uniformId?: number | null
   /** Push + email the team's parents (default true server-side). */
   notifyParents?: boolean
 }
@@ -1145,6 +1147,8 @@ export interface SavePracticeSeriesRequest {
   summary?: string | null
   venueId?: number | null
   shoeType?: ShoeType
+  /** Uniform for every occurrence; null = the club practice uniform. */
+  uniformId?: number | null
 }
 
 export interface PracticeSeriesCreated {
