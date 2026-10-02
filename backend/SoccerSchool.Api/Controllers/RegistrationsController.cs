@@ -235,11 +235,19 @@ public class RegistrationsController : ControllerBase
 
     [HttpGet]
     [Authorize(Roles = Roles.Admin)]
-    public async Task<ActionResult<IEnumerable<RegistrationSummary>>> List([FromQuery] string? season, CancellationToken ct)
+    public async Task<ActionResult<IEnumerable<RegistrationSummary>>> List([FromQuery] string? season, CancellationToken ct,
+        [FromQuery] bool archived = false)
     {
         var query = _db.Registrations.AsQueryable();
         if (!string.IsNullOrWhiteSpace(season))
             query = query.Where(r => r.Season == season);
+        // Families that are archived (account deleted, or every kid archived) drop out of the list
+        // unless asked for; their registrations are still on file.
+        if (!archived)
+        {
+            var archivedFamilies = await FamilyArchive.ArchivedIdsAsync(_db, ct);
+            if (archivedFamilies.Count > 0) query = query.Where(r => !archivedFamilies.Contains(r.ParentAccountId));
+        }
 
         var items = await query
             .OrderByDescending(r => r.CreatedAt)

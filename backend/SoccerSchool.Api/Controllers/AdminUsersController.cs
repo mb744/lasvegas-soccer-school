@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SoccerSchool.Api.Data;
 using SoccerSchool.Api.Domain;
+using SoccerSchool.Api.Services;
 using SoccerSchool.Api.Dtos;
 
 namespace SoccerSchool.Api.Controllers;
@@ -24,8 +25,10 @@ public class AdminUsersController : ControllerBase
         _permissions = permissions;
     }
 
+    /// <param name="archived">Also list parents whose family is archived (account deleted, or every
+    /// kid archived). Off by default so they drop out of the list.</param>
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<UserSummary>>> List(CancellationToken ct)
+    public async Task<ActionResult<IEnumerable<UserSummary>>> List(CancellationToken ct, [FromQuery] bool archived = false)
     {
         // Pull users + their parent account + role membership in one round-trip.
         var users = await _db.Users
@@ -68,8 +71,15 @@ public class AdminUsersController : ControllerBase
             .ToListAsync(ct);
         var coachUserIdSet = coachUserIds.Concat(profileUserIds).ToHashSet(StringComparer.Ordinal);
 
+        var archivedFamilies = await FamilyArchive.ArchivedIdsAsync(_db, ct);
+        bool IsArchived(string? email, int? familyId) =>
+            FamilyArchive.IsDeletedLoginEmail(email) || (familyId is int f && archivedFamilies.Contains(f));
+
         var now = DateTimeOffset.UtcNow;
-        return Ok(users.Select(u => new UserSummary(
+        return Ok(users
+            // Admins and coaches always show; archived parents only when asked for.
+            .Where(u => archived || u.IsAdmin || coachUserIdSet.Contains(u.Id) || !IsArchived(u.Email, u.Account?.Id))
+            .Select(u => new UserSummary(
             u.Id,
             u.Email ?? "",
             u.Account?.FirstName ?? "",
@@ -81,7 +91,8 @@ public class AdminUsersController : ControllerBase
             u.Account?.CreatedAt,
             u.LastLoginAt,
             u.RegistrationCount,
-            u.Account?.Id
+            u.Account?.Id,
+            IsArchived(u.Email, u.Account?.Id)
         )).ToList());
     }
 

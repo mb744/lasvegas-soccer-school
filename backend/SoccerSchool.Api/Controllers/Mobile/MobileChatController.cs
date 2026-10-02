@@ -39,7 +39,8 @@ public class MobileChatController : ControllerBase
         var userId = _users.GetUserId(User);
         if (string.IsNullOrEmpty(userId)) return Unauthorized();
         var account = await _accounts.ResolveGuardianByUserIdAsync(userId, ct);
-        var accountId = account?.Id;
+        // An archived family (account deleted, or every kid archived) is out of the group chats.
+        var accountId = account is not null && !await FamilyArchive.IsArchivedAsync(_db, account.Id, ct) ? account.Id : (int?)null;
 
         var members = await _db.ChatGroupMembers
             .Where(m => (accountId != null && m.ParentAccountId == accountId) || m.UserId == userId)
@@ -252,7 +253,8 @@ public class MobileChatController : ControllerBase
         var userId = _users.GetUserId(User);
         if (string.IsNullOrEmpty(userId)) return Unauthorized();
         var account = await _accounts.ResolveGuardianByUserIdAsync(userId, ct);
-        var accountId = account?.Id;
+        // An archived family (account deleted, or every kid archived) is out of the group chats.
+        var accountId = account is not null && !await FamilyArchive.IsArchivedAsync(_db, account.Id, ct) ? account.Id : (int?)null;
 
         var member = await _db.ChatGroupMembers.FirstOrDefaultAsync(
             m => m.ChatGroupId == groupId &&

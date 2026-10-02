@@ -667,6 +667,7 @@ const en = {
     playersSendInviteConfirm: 'Send a registration / waiver link to {{email}}?',
     playersEmpty: 'No players found.',
     playersTabActive: 'Active',
+    showArchivedFamilies: 'Show archived families',
     playersTabArchived: 'Archived',
     playersArchivedHelp: 'Archived players are hidden everywhere: player lists, team rosters and pickers, schedules, messages and the parent app. Unarchiving puts them back on the teams they were on. Kids of families that deleted their account are archived automatically.',
     playersArchive: 'Archive',

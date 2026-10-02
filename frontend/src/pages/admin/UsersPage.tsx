@@ -13,6 +13,8 @@ export function AdminUsersPage() {
   const [teams, setTeams] = useState<TeamSummary[]>([])
   const [error, setError] = useState<string | null>(null)
   const [q, setQ] = useState('')
+  // Parents of archived families (account deleted, or every kid archived) are hidden by default.
+  const [showArchived, setShowArchived] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editFirst, setEditFirst] = useState('')
   const [editLast, setEditLast] = useState('')
@@ -30,13 +32,14 @@ export function AdminUsersPage() {
   const load = async () => {
     setError(null)
     try {
-      const [u, t] = await Promise.all([Api.listUsers(), Api.listTeams()])
+      const [u, t] = await Promise.all([Api.listUsers(showArchived), Api.listTeams()])
       setUsers(u)
       setTeams(t)
     } catch (e: any) { setError(e?.message ?? 'Error') }
   }
 
-  useEffect(() => { load() }, [])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { load() }, [showArchived])
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase()
@@ -170,6 +173,10 @@ export function AdminUsersPage() {
                 placeholder="Search name or email"
                 className="text-sm border border-slate-300 rounded-md px-3 py-1.5 w-64"
               />
+              <label className="flex items-center gap-1.5 text-xs text-slate-600">
+                <input type="checkbox" checked={showArchived} onChange={e => setShowArchived(e.target.checked)} />
+                {t('admin.showArchivedFamilies')}
+              </label>
               <button onClick={load} className="text-sm text-emerald-700 hover:underline">↻</button>
             </div>
           </div>

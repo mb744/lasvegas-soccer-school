@@ -35,14 +35,19 @@ public class ChatAdminController : ControllerBase
     public async Task<ActionResult<IEnumerable<ChatGroupAdminDto>>> List(CancellationToken ct)
     {
         var coachEmails = await CoachEmailsAsync(ct);
+        // Archived families (account deleted, or every kid archived) aren't listed or counted.
+        var archived = await FamilyArchive.ArchivedIdsAsync(_db, ct);
         var groups = await _db.ChatGroups
             .OrderByDescending(g => g.CreatedAt)
             .Select(g => new
             {
                 g.Id, g.Title, g.TeamId,
                 TeamName = g.Team != null ? g.Team.Name : null,
-                MemberCount = g.Members.Count, MessageCount = g.Messages.Count, g.CreatedAt,
-                Members = g.Members.OrderBy(m => m.DisplayName)
+                MemberCount = g.Members.Count(m => m.ParentAccountId == null || !archived.Contains(m.ParentAccountId.Value)),
+                MessageCount = g.Messages.Count, g.CreatedAt,
+                Members = g.Members
+                    .Where(m => m.ParentAccountId == null || !archived.Contains(m.ParentAccountId.Value))
+                    .OrderBy(m => m.DisplayName)
                     .Select(m => new
                     {
                         m.Id, m.ParentAccountId, m.DisplayName, m.Role, m.AddedAt,

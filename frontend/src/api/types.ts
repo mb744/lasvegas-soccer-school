@@ -454,6 +454,8 @@ export interface UserSummary {
   registrationCount: number
   /** Null when the Identity user hasn't created a parent profile yet (e.g. seed admin accounts). */
   parentAccountId: number | null
+  /** Family archived (account deleted, or every kid archived). Only listed when asked for. */
+  isArchived?: boolean
 }
 
 export const OUTREACH_STATUS_LABELS: Record<OutreachStatus, string> = {

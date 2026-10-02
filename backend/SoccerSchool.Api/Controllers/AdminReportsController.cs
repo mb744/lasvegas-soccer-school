@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SoccerSchool.Api.Data;
 using SoccerSchool.Api.Domain;
+using SoccerSchool.Api.Services;
 using SoccerSchool.Api.Dtos;
 
 namespace SoccerSchool.Api.Controllers;
@@ -41,7 +42,7 @@ public class AdminReportsController : ControllerBase
                 u.Email,
                 u.LastLoginAt,
                 Account = _db.ParentAccounts.Where(p => p.UserId == u.Id)
-                    .Select(p => new { p.FirstName, p.LastName, p.CreatedAt })
+                    .Select(p => new { p.Id, p.FirstName, p.LastName, p.CreatedAt })
                     .FirstOrDefault(),
                 // Kids this login sees in the app: its own family's plus every family it's linked to
                 // (co-parent, grandparent — guardian or view-only). A player has exactly one family,
@@ -76,7 +77,10 @@ public class AdminReportsController : ControllerBase
         static DateTime? Earliest(params DateTime?[] values) => values.Where(v => v.HasValue).Min();
         static DateTime? Latest(params DateTime?[] values) => values.Where(v => v.HasValue).Max();
 
+        // Archived families (account deleted, or every kid archived) and deleted logins are left out.
+        var archived = await FamilyArchive.ArchivedIdsAsync(_db, ct);
         var result = rows
+            .Where(r => !FamilyArchive.IsDeletedLoginEmail(r.Email) && (r.Account is null || !archived.Contains(r.Account.Id)))
             .Select(r => new MobileUsageRow(
                 r.Id,
                 r.Email ?? "",
